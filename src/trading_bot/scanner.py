@@ -1200,7 +1200,8 @@ def generate_signal(symbol: str, candles_4h: list,
 
     # Reject ambiguous signals: require minimum gap between long and short scores
     # If both directions score similarly, the signal has no clear conviction
-    MIN_SCORE_DIFFERENTIAL = 1.5
+    # Lowered from 1.5 to 1.0: testing shows more low-conviction trades are profitable
+    MIN_SCORE_DIFFERENTIAL = 1.0
     score_gap = abs(long_total - short_total)
     if score_gap < MIN_SCORE_DIFFERENTIAL:
         dbg.debug(f"[{symbol}] REJECTED: ambiguous signal | L={long_total:.2f} S={short_total:.2f} gap={score_gap:.2f} < {MIN_SCORE_DIFFERENTIAL}")

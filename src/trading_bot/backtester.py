@@ -65,7 +65,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import importlib.util
 _scanner_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scanner", "market-scanner.py")
 if not os.path.exists(_scanner_path):
-    # Fallback: look in same directory
+    # Fallback: look for scanner.py in same directory
+    _scanner_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scanner.py")
+if not os.path.exists(_scanner_path):
+    # Fallback: look for market-scanner.py in same directory
     _scanner_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "market-scanner.py")
 
 spec = importlib.util.spec_from_file_location("scanner", _scanner_path)
@@ -687,8 +690,7 @@ def run_backtest(
             if use_next_open:
                 entry_price = candles[t + 1]["open"]
                 # Re-anchor TP/SL from actual entry using same ATR distances
-                sl_distance = atr_val * signal.get("rr_ratio", 2.0) / signal.get("rr_ratio", 2.0)  # = atr * multiplier_sl
-                # Simpler: compute distances from signal and apply to new entry
+                # Compute distances from signal and apply to new entry
                 if direction == "LONG":
                     tp_distance = tp_price - signal_entry
                     sl_distance = signal_entry - sl_price
@@ -735,8 +737,22 @@ def run_backtest(
 
             position_size = min(position_size, 1000.0)
 
-            # Capital constraint: check if we have enough free equity
-            if current_equity < position_size:
+            # Capital constraint: check if we have enough total equity (free + locked + unrealized P&L)
+            # This prevents liquidation when positions are underwater
+            unrealized_pnl = 0
+            for pos in open_positions:
+                current_price = candles[t]["close"]  # Use current candle close
+                if pos["direction"] == "LONG":
+                    price_change_pct = (current_price - pos["entry_price"]) / pos["entry_price"]
+                else:  # SHORT
+                    price_change_pct = (pos["entry_price"] - current_price) / pos["entry_price"]
+                unrealized_pnl += pos["position_size"] * price_change_pct
+
+            locked_capital = sum(pos["position_size"] for pos in open_positions)
+            total_equity = current_equity + locked_capital + unrealized_pnl
+            safe_equity = total_equity * 0.8  # 20% safety buffer
+
+            if safe_equity < position_size:
                 continue
 
             # ENTRY: Lock capital
