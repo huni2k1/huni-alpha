@@ -64,8 +64,8 @@ ALERT_THRESHOLD_HARD = 7.5     # High Confidence (full position)
 SIGNAL_THRESHOLD_TREND = 7.0        # Min score for trend_pullback signals
 SIGNAL_THRESHOLD_BREAKOUT = 6.0     # Min score for breakout signals
 MAX_OPEN_POSITIONS = 3              # Maximum concurrent trades
-SIGNAL_COOLDOWN_CANDLES = 6         # Min 4H-candles between signals per symbol (optimized from 48)
-RISK_PER_TRADE_PCT = 2.0            # Risk percentage of account per trade (optimized from 1.5%)
+SIGNAL_COOLDOWN_CANDLES = 48        # Min 1h-candles between signals per symbol (48h = 2 days, prevents re-entry after SL)
+RISK_PER_TRADE_PCT = 1.5            # Risk percentage of account per trade (1.5% historically optimal)
 
 LOG_FILE        = os.environ.get("SCANNER_LOG", "/tmp/scanner.log")
 DEBUG_LOG_FILE  = os.environ.get("SCANNER_DEBUG_LOG",
