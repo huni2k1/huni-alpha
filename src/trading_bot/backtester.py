@@ -357,9 +357,13 @@ def _close_position(pos: dict, exit_price: float, exit_reason: str, exit_candle:
     # Calculate position P&L in USD
     pnl_usd = pos["position_size"] * (pnl_pct / 100)
 
+    # Add partial TP profit if it was taken
+    partial_pnl = pos.get("partial_pnl_usd", 0.0)
+    pnl_usd += partial_pnl
+
     # EXIT: Release locked capital and add P&L
     current_equity += pos["position_size"]  # Release locked money
-    current_equity += pnl_usd                # Add profit/loss
+    current_equity += pnl_usd                # Add profit/loss (including partial)
 
     # Prevent liquidation
     if current_equity < 0:
@@ -443,6 +447,7 @@ def run_backtest(
     fixed_size: float = 0.0,            # Fixed $ per trade (0=use risk% sizing)
     max_drawdown_pct: float = 25.0,     # Circuit breaker: pause at this drawdown %
     recovery_candles: int = 168,        # Circuit breaker: candles to wait before resuming
+    partial_tp: bool = True,            # Close 50% at 1R, move SL to breakeven
 ) -> dict:
     """
     Walk-forward backtest using the scanner's generate_signal() (tech-only).
@@ -545,7 +550,37 @@ def run_backtest(
             # Update trailing stop
             _update_trailing_stop(pos, candle, trailing_stop)
 
-            # Check TP/SL
+            # Handle partial TP at 1R (close 50%, move SL to breakeven on remainder)
+            if partial_tp and not pos.get("partial_taken"):
+                entry = pos["entry_price"]
+                sl_distance = abs(entry - pos["sl_price"])
+
+                if pos["direction"] == "LONG":
+                    target_1r = entry + sl_distance
+                    hit_1r = candle["high"] >= target_1r
+                else:  # SHORT
+                    target_1r = entry - sl_distance
+                    hit_1r = candle["low"] <= target_1r
+
+                if hit_1r:
+                    # Close 50% at 1R
+                    half_size = pos["position_size"] * 0.5
+                    if pos["direction"] == "LONG":
+                        partial_pnl_pct = (target_1r - entry) / entry * 100
+                    else:
+                        partial_pnl_pct = (entry - target_1r) / entry * 100
+                    partial_pnl_pct -= fee_pct / 2  # Half fee for half position
+
+                    partial_pnl_usd = half_size * (partial_pnl_pct / 100)
+                    current_equity += half_size + partial_pnl_usd
+
+                    # Update position: reduce size and move SL to entry (breakeven)
+                    pos["position_size"] *= 0.5
+                    pos["current_sl"] = entry
+                    pos["partial_taken"] = True
+                    pos["partial_pnl_usd"] = partial_pnl_usd
+
+            # Check TP/SL (for remaining position if partial was taken)
             tp_hit, sl_hit = _check_tp_sl(pos, candle)
 
             # Update excursion
@@ -796,6 +831,8 @@ def run_backtest(
                 "tp_pct": tp_pct_sig,
                 "sl_pct": sl_pct_sig,
                 "signal": signal,
+                "partial_taken": False,
+                "partial_pnl_usd": 0.0,
             }
             open_positions.append(pos)
             last_signal_idx[symbol] = t
@@ -1144,6 +1181,8 @@ if __name__ == "__main__":
     parser.add_argument("--slippage-pct", type=float, default=0.05, help="Adverse slippage %% per side (default: 0.05)")
     parser.add_argument("--lookahead", action="store_true", help="Use signal candle close as entry (default: use next candle open)")
     parser.add_argument("--fixed-size", type=float, default=0.0, help="Fixed $ per trade (0=use risk%% sizing)")
+    parser.add_argument("--partial-tp", action="store_true", default=True, help="Close 50%% at 1R, move SL to breakeven (default: enabled)")
+    parser.add_argument("--no-partial-tp", action="store_false", dest="partial_tp", help="Disable partial TP feature")
     # Circuit breaker
     parser.add_argument("--max-drawdown", type=float, default=25.0, help="Max drawdown %% before circuit breaker (default: 25)")
     parser.add_argument("--recovery-candles", type=int, default=168, help="Candles to pause after circuit breaker (default: 168)")
@@ -1190,6 +1229,7 @@ if __name__ == "__main__":
         fixed_size=args.fixed_size,
         max_drawdown_pct=args.max_drawdown,
         recovery_candles=args.recovery_candles,
+        partial_tp=args.partial_tp,
     )
 
     print_summary(results)
