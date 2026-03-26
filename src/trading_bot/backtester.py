@@ -817,6 +817,28 @@ def run_backtest(
     gross_loss = abs(sum(t["pnl_usd"] for t in losses)) if losses else 0
     profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else float("inf")
 
+    # ── Score Band Analysis ──────────────────────────────────────
+    # Break down performance by signal confidence levels
+    score_bands = {}
+    for lower, upper in [(5.0, 5.5), (5.5, 6.0), (6.0, 6.5), (6.5, 7.0), (7.0, 8.0)]:
+        band_key = f"{lower:.1f}-{upper:.1f}"
+        band_trades = [t for t in all_trades if lower <= t["score"] < upper]
+        if band_trades:
+            band_wins = len([t for t in band_trades if t["pnl_pct"] > 0])
+            band_loss = len([t for t in band_trades if t["pnl_pct"] <= 0])
+            band_pnl = sum(t["pnl_usd"] for t in band_trades)
+            band_avg_pnl_pct = round(np.mean([t["pnl_pct"] for t in band_trades]), 2)
+            score_bands[band_key] = {
+                "trades": len(band_trades),
+                "wins": band_wins,
+                "losses": band_loss,
+                "win_rate": round(band_wins / len(band_trades) * 100, 1) if band_trades else 0,
+                "pnl_usd": round(band_pnl, 2),
+                "avg_win_pct": round(np.mean([t["pnl_pct"] for t in band_trades if t["pnl_pct"] > 0]), 2) if [t for t in band_trades if t["pnl_pct"] > 0] else 0,
+                "avg_loss_pct": round(np.mean([t["pnl_pct"] for t in band_trades if t["pnl_pct"] <= 0]), 2) if [t for t in band_trades if t["pnl_pct"] <= 0] else 0,
+                "avg_pnl_pct": band_avg_pnl_pct,
+            }
+
     # Max drawdown
     peak = account
     max_dd = 0
@@ -957,6 +979,7 @@ def run_backtest(
         "monthly": monthly_sorted,
         "rolling_returns": rolling_returns,
         "by_symbol": symbol_stats,
+        "by_score_band": score_bands,
         "equity_curve": equity_curve,
         "trades": all_trades,
     }
