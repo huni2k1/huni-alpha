@@ -354,16 +354,13 @@ def _close_position(pos: dict, exit_price: float, exit_reason: str, exit_candle:
         pnl_pct = (entry_price - exit_price) / entry_price * 100
     pnl_pct -= fee_pct  # Subtract round-trip fee
 
-    # Calculate position P&L in USD
+    # Calculate position P&L in USD (for remaining position only)
+    # NOTE: partial TP P&L was already added to current_equity when partial close happened
     pnl_usd = pos["position_size"] * (pnl_pct / 100)
-
-    # Add partial TP profit if it was taken
-    partial_pnl = pos.get("partial_pnl_usd", 0.0)
-    pnl_usd += partial_pnl
 
     # EXIT: Release locked capital and add P&L
     current_equity += pos["position_size"]  # Release locked money
-    current_equity += pnl_usd                # Add profit/loss (including partial)
+    current_equity += pnl_usd                # Add profit/loss (partial TP already included)
 
     # Prevent liquidation
     if current_equity < 0:
