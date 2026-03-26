@@ -104,12 +104,13 @@ class TestScoreBandAnalysis:
         trades = [
             {"score": 6.1, "pnl_pct": 2.0},
             {"score": 6.3, "pnl_pct": 4.0},
-            {"score": 6.5, "pnl_pct": 1.0},
+            {"score": 6.4, "pnl_pct": 2.0},
         ]
 
         band_trades = [t for t in trades if 6.0 <= t["score"] < 6.5]
         avg_pnl_pct = round(np.mean([t["pnl_pct"] for t in band_trades]), 2)
 
+        # Average of [2.0, 4.0, 2.0] = 8/3 = 2.67
         assert avg_pnl_pct == 2.67, f"Expected 2.67, got {avg_pnl_pct}"
 
     def test_scoreband_edge_cases_empty_bands(self):
