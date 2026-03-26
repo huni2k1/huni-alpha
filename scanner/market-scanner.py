@@ -63,8 +63,6 @@ ALERT_THRESHOLD_HARD = 7.5     # High Confidence (full position)
 # ─────────────────────────────────────────────────────────────────
 SIGNAL_THRESHOLD_TREND = 7.0        # Min score for trend_pullback signals
 SIGNAL_THRESHOLD_BREAKOUT = 6.0     # Min score for breakout signals
-SIGNAL_THRESHOLD_SOFT = 5.5         # Watch-only threshold (no position)
-
 MAX_OPEN_POSITIONS = 3              # Maximum concurrent trades
 SIGNAL_COOLDOWN_CANDLES = 6         # Min 4H-candles between signals per symbol (optimized from 48)
 
