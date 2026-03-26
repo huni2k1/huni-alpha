@@ -655,6 +655,13 @@ def run_backtest(
                 c = candles[j]
                 window_candles.append([c["open"], c["high"], c["low"], c["close"], c["volume"]])
 
+            # Skip Asia session entries (0-8 UTC) — use candle's historical time, not current time
+            candle_hour = datetime.fromtimestamp(
+                candles[t]["close_time"] / 1000, tz=timezone.utc
+            ).hour
+            if 0 <= candle_hour < 8:
+                continue
+
             # ── Generate signal ──
             try:
                 signal = generate_signal(symbol, window_candles,

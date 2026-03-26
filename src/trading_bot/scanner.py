@@ -1273,6 +1273,8 @@ def generate_signal(symbol: str, candles_4h: list,
             return None
 
     # Filter 4: Asia session (0-8 UTC) — low liquidity, false signals
+    # NOTE: Backtester applies this filter separately using candle timestamps (not current time)
+    # Live scanner uses current time, which is correct for real-time alerts
     if hour_utc >= 0 and hour_utc < 8:
         dbg.debug(f"[{symbol}] FILTERED: Asia session hour {hour_utc} UTC (low liquidity)")
         return None
