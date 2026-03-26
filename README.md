@@ -42,26 +42,32 @@ Rolling Returns Summary
 
 ## 📊 Performance Results
 
-### 12-Month Backtest (Mar 2025 - Mar 2026) — **Validated Configuration**
+### Latest Optimization: Breakout Threshold Analysis (Mar 2026)
 
-| Metric | Threshold 6.5 | Threshold 6.0 | Threshold 5.0 |
-|--------|--------|--------|--------|
-| **Final Equity** | **$1,119.79** | $1,147.50 | $1,134.20 |
-| **Total Return** | **+12.0%** | +14.8% | +13.4% |
-| **Total Trades** | 370 | 427 | 612 |
-| **Win Rate** | 35.4% | 36.1% | 35.2% |
-| **Profit Factor** | 1.08x | 1.12x | 1.06x |
-| **Max Drawdown** | **88.4%** | 89.2% | 91.1% |
-| **Trades/Month** | 30.8 | 35.6 | 51.0 |
-| **Avg EV/Trade** | +0.10% | +0.12% | +0.06% |
+**12-Month Validated Backtest (Apr 2025 - Mar 2026)**
 
-**Recommendation:** Threshold 6.5 filters strongest signals. With proper capital management and multi-month trading, realistic returns are **15-20% annually**. ✅ **All 33 tests passing** (19 unit + 14 integration).
+| Threshold | 12-Month Return | 6-Month Return | Trades | WR | Max DD | Status |
+|-----------|---------|----------|--------|-----|---------|--------|
+| **5.0** | 🔥 **-24.6%** | N/A | 153 | 23.5% | **25.1%** | ⚠️ UNUSABLE (circuit breaker triggered) |
+| **6.0** | ✅ **+8.0%** | +7.2% | 263 | 33.1% | 16.9% | **RECOMMENDED** (robust, balanced) |
+| **7.0** | +4.2% | **+16.1%** | 120 | 33.3% | 13.1% | Recent data only (Feb-Mar 2026) |
 
-**Key improvements (Latest Build):**
+**Key Findings:**
+- **Threshold 6.0 is optimal** for full-year trading: +8.0% return, healthy win rate (33.1%), controlled drawdown (16.9%)
+- **Threshold 5.0 is toxic**: Too many low-conviction signals, 23.5% WR, triggers circuit breaker repeatedly
+- **Threshold 7.0 optimizes for recent bull market** (Feb-Mar 2026): +16.1% on 6 months, but regresses to +4.2% on 12-month cycle
+- **Breakout vs Trend strategy:**
+  - At 6.0: Breakout profitable (+$17.33), Trend strong (+$62.42)
+  - At 7.0: Breakout weakens (-$33.96), relies entirely on Trend (+$75.85)
+
+**Recommendation:** **Keep default at 6.0** — Provides steady +8% annual returns with robust signal quality across market cycles. Use for live trading.
+
+**Latest improvements:**
 - ✅ Forming candle fix: Fetch 4001 candles, drop last (incomplete) candle
 - ✅ Time-ordered backtesting: Single pass across all symbols with shared capital constraints
 - ✅ Rolling returns: See 1M, 3M, 6M, 12M returns from single backtest run
 - ✅ ADX multiplier fix: Floor at 0.3 to prevent negative multipliers
+- ✅ Breakout threshold optimization: Validated 5.0, 6.0, 7.0 across 6 and 12-month periods
 
 ---
 
@@ -97,11 +103,11 @@ Rolling Returns Summary
 - Direction-aware: Fear boosts LONG, Greed boosts SHORT
 - Symbol-specific keyword filtering
 
-### Entry Thresholds
-- **6.5+** (RECOMMENDED): Strongest filters, ~31/month, +12.0% annual return with realistic capital constraints ✅
-- **6.0+** (BALANCED): Good balance, ~36/month, +14.8% annual return
-- **5.0+** (AGGRESSIVE): High volume, ~51/month, +13.4% annual return (lower quality, higher drawdown)
-- **7.0+** (CONSERVATIVE): Ultra-safe, ~3/month, low sample size
+### Entry Thresholds (Validated Mar 2026)
+- **6.0+** (RECOMMENDED): ✅ Optimal balance, ~22/month, **+8.0% 12-month return**, 33.1% WR, 16.9% max DD
+- **7.0+** (SELECTIVE): Conservative, ~10/month, +4.2% 12-month return (good for low-drawdown periods, risky across cycles)
+- **5.0+** (NOT RECOMMENDED): 🔥 Too many false signals, 23.5% WR, triggers circuit breaker, -24.6% 12-month loss
+- **Custom by symbol**: Planned feature to use different thresholds for major caps (BTC/ETH) vs alts
 
 ---
 

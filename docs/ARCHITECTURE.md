@@ -118,14 +118,23 @@ Historical walk-forward testing with realistic assumptions:
 - No need to re-run multiple backtests
 - Handles partial periods gracefully
 
-## Performance (Current Configuration)
+## Performance (Current Configuration — Mar 2026)
 
-**Threshold 6.5 + Optimizations:**
-- Return: +17.5% (12-month)
-- Win Rate: 35.5%
-- Profit Factor: 1.22
-- Max Drawdown: ~30%
-- Trades/Month: ~26
+**Threshold 6.0 (Recommended):**
+- Return: +8.0% (12-month, Apr 2025 - Mar 2026)
+- Win Rate: 33.1%
+- Profit Factor: 1.07x
+- Max Drawdown: 16.9%
+- Trades/Month: ~22
+
+**Threshold 7.0 (Conservative):**
+- Return: +4.2% (12-month)
+- Win Rate: 33.3%
+- Profit Factor: 1.07x
+- Max Drawdown: 13.1%
+- Trades/Month: ~10
+
+See `docs/OPTIMIZATION-V1-BREAKOUT-THRESHOLD.md` for detailed comparison.
 
 ## Data Sources
 
