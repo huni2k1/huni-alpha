@@ -113,6 +113,16 @@ def validate_code_match():
 validate_code_match()
 log.info("✅ Code validation passed: Using scanner's generate_signal() (WYTIWYT)")
 
+# ─────────────────────────────────────────────────────────────────
+# IMPORT STRATEGY PARAMETERS FROM SCANNER
+# ─────────────────────────────────────────────────────────────────
+# Use scanner's optimized defaults; CLI args can override for backtesting
+SCANNER_RISK_PCT = getattr(scanner, 'RISK_PER_TRADE_PCT', 2.0)
+SCANNER_COOLDOWN = getattr(scanner, 'SIGNAL_COOLDOWN_CANDLES', 6)
+SCANNER_TREND_THRESH = getattr(scanner, 'SIGNAL_THRESHOLD_TREND', 7.0)
+SCANNER_BREAKOUT_THRESH = getattr(scanner, 'SIGNAL_THRESHOLD_BREAKOUT', 6.0)
+SCANNER_MAX_POSITIONS = getattr(scanner, 'MAX_OPEN_POSITIONS', 3)
+log.info(f"✅ Strategy parameters loaded from scanner: risk={SCANNER_RISK_PCT}%, cooldown={SCANNER_COOLDOWN}h, trend={SCANNER_TREND_THRESH}, breakout={SCANNER_BREAKOUT_THRESH}, max_pos={SCANNER_MAX_POSITIONS}")
 
 # ─────────────────────────────────────────────────────────────────
 # BINANCE HISTORICAL DATA FETCHER
@@ -1112,18 +1122,18 @@ if __name__ == "__main__":
     parser.add_argument("--months", type=int, default=6, help="Months of history (default: 6)")
     parser.add_argument("--symbols", nargs="+", default=None, help="Symbols to test")
     parser.add_argument("--account", type=float, default=1000.0, help="Starting account USD")
-    parser.add_argument("--risk-pct", type=float, default=1.5, help="Risk %% per trade")
+    parser.add_argument("--risk-pct", type=float, default=SCANNER_RISK_PCT, help="Risk per trade (from scanner)")
     parser.add_argument("--entry-threshold", type=float, default=6.0, help="Global min score fallback (default: 6.0)")
-    parser.add_argument("--fee-pct", type=float, default=0.10, help="Round-trip fee %% (default: 0.10)")
+    parser.add_argument("--fee-pct", type=float, default=0.10, help="Round-trip fee (default: 0.10)")
     parser.add_argument("--trailing-stop", action="store_true", help="Enable trailing stop (default: disabled)")
     parser.add_argument("--reset-monthly", action="store_true", help="Reset balance to starting account at beginning of each month")
     parser.add_argument("--output", type=str, default="backtest-results.json", help="Output JSON file")
-    # Strategy-specific thresholds
-    parser.add_argument("--trend-threshold", type=float, default=7.0, help="Min score for trend_pullback signals (default: 7.0)")
-    parser.add_argument("--breakout-threshold", type=float, default=6.0, help="Min score for breakout signals (default: 6.0)")
-    # Realism controls
-    parser.add_argument("--cooldown", type=int, default=48, help="Cooldown candles between signals per symbol (default: 48)")
-    parser.add_argument("--max-positions", type=int, default=3, help="Max concurrent open positions (default: 3)")
+    # Strategy-specific thresholds (from scanner)
+    parser.add_argument("--trend-threshold", type=float, default=SCANNER_TREND_THRESH, help="Min score for trend_pullback signals (from scanner)")
+    parser.add_argument("--breakout-threshold", type=float, default=SCANNER_BREAKOUT_THRESH, help="Min score for breakout signals (from scanner)")
+    # Position management (from scanner)
+    parser.add_argument("--cooldown", type=int, default=SCANNER_COOLDOWN, help="Cooldown 4H-candles between signals per symbol (from scanner)")
+    parser.add_argument("--max-positions", type=int, default=SCANNER_MAX_POSITIONS, help="Max concurrent open positions (from scanner)")
     parser.add_argument("--slippage-pct", type=float, default=0.05, help="Adverse slippage %% per side (default: 0.05)")
     parser.add_argument("--lookahead", action="store_true", help="Use signal candle close as entry (default: use next candle open)")
     parser.add_argument("--fixed-size", type=float, default=0.0, help="Fixed $ per trade (0=use risk%% sizing)")
