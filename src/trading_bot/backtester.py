@@ -354,12 +354,15 @@ def _close_position(pos: dict, exit_price: float, exit_reason: str, exit_candle:
         pnl_pct = (entry_price - exit_price) / entry_price * 100
     pnl_pct -= fee_pct  # Subtract round-trip fee
 
+    # Use remaining_size if it exists (for partial TP), otherwise use position_size
+    close_size = pos.get("remaining_size", pos["position_size"])
+
     # Calculate position P&L in USD
-    pnl_usd = pos["position_size"] * (pnl_pct / 100)
+    pnl_usd = close_size * (pnl_pct / 100)
 
     # EXIT: Release locked capital and add P&L
-    current_equity += pos["position_size"]  # Release locked money
-    current_equity += pnl_usd                # Add profit/loss
+    current_equity += close_size  # Release locked money
+    current_equity += pnl_usd      # Add profit/loss
 
     # Prevent liquidation
     if current_equity < 0:
@@ -392,7 +395,7 @@ def _close_position(pos: dict, exit_price: float, exit_reason: str, exit_candle:
         "atr": pos["atr"],
         "pnl_pct": round(pnl_pct, 2),
         "pnl_usd": round(pnl_usd, 2),
-        "position_size": round(pos["position_size"], 2),
+        "position_size": round(close_size, 2),
         "equity_after": round(current_equity, 2),
         "max_favorable_pct": round(pos["max_favorable"], 2),
         "max_adverse_pct": round(pos["max_adverse"], 2),
@@ -443,6 +446,7 @@ def run_backtest(
     fixed_size: float = 0.0,            # Fixed $ per trade (0=use risk% sizing)
     max_drawdown_pct: float = 25.0,     # Circuit breaker: pause at this drawdown %
     recovery_candles: int = 168,        # Circuit breaker: candles to wait before resuming
+    partial_tp: bool = False,           # Close 50% at 1R, move SL to breakeven on remainder
 ) -> dict:
     """
     Walk-forward backtest using the scanner's generate_signal() (tech-only).
@@ -545,7 +549,73 @@ def run_backtest(
             # Update trailing stop
             _update_trailing_stop(pos, candle, trailing_stop)
 
-            # Check TP/SL
+            # Handle partial TP (close 50% at 1R, move SL to breakeven)
+            if partial_tp and not pos["partial_tp_hit"] and pos["remaining_size"] > 0:
+                risk_distance = abs(pos["entry_price"] - pos["sl_price"])
+                if pos["direction"] == "LONG":
+                    one_r_price = pos["entry_price"] + risk_distance
+                    one_r_hit = candle["high"] >= one_r_price
+                else:  # SHORT
+                    one_r_price = pos["entry_price"] - risk_distance
+                    one_r_hit = candle["low"] <= one_r_price
+
+                if one_r_hit:
+                    # Close 50% at 1R price
+                    half_position_size = pos["remaining_size"] / 2
+                    pnl_1r_pct = (one_r_price - pos["entry_price"]) / pos["entry_price"] * 100 if pos["direction"] == "LONG" else (pos["entry_price"] - one_r_price) / pos["entry_price"] * 100
+                    pnl_1r_pct -= fee_pct / 2  # Half fee on the closing half
+                    pnl_1r_usd = half_position_size * (pnl_1r_pct / 100)
+                    current_equity += half_position_size + pnl_1r_usd
+
+                    # Create complete trade record for partial close
+                    exit_time = datetime.fromtimestamp(candle["close_time"] / 1000, tz=timezone.utc)
+                    partial_trade = {
+                        "symbol": pos["symbol"],
+                        "direction": pos["direction"],
+                        "tier": pos["tier"],
+                        "score": round(pos["score"], 2),
+                        "entry_price": round(pos["entry_price"], 6),
+                        "entry_time": pos["entry_time"].isoformat(),
+                        "exit_price": round(one_r_price, 6),
+                        "exit_time": exit_time.isoformat(),
+                        "duration_hours": t - pos["entry_idx"],
+                        "exit_reason": "PARTIAL_TP_1R",
+                        "tp_price": round(pos["tp_price"], 6),
+                        "sl_price": round(pos["sl_price"], 6),
+                        "final_sl": round(one_r_price, 6),
+                        "trail_activated": pos["trail_activated"],
+                        "tp_pct": round(pos["tp_pct"], 2),
+                        "sl_pct": round(pos["sl_pct"], 2),
+                        "fee_pct": fee_pct,
+                        "atr": pos["atr"],
+                        "pnl_pct": round(pnl_1r_pct, 2),
+                        "pnl_usd": round(pnl_1r_usd, 2),
+                        "position_size": round(half_position_size, 2),
+                        "equity_after": round(current_equity, 2),
+                        "max_favorable_pct": 0.0,
+                        "max_adverse_pct": 0.0,
+                        "details": {
+                            "rsi": pos["signal"]["details"].get("rsi", {}).get("1h"),
+                            "adx": pos["signal"]["details"].get("adx"),
+                            "ema_bull": pos["signal"]["details"].get("ema_bull"),
+                            "ema_bear": pos["signal"]["details"].get("ema_bear"),
+                            "above_ema200": pos["signal"]["details"].get("above_e200"),
+                            "vol_ratio": pos["signal"]["details"].get("vol_ratio"),
+                            "regime": pos["signal"].get("regime", pos["signal"]["details"].get("regime", "")),
+                            "strategy": pos["signal"].get("strategy", pos["signal"]["details"].get("strategy", "")),
+                        }
+                    }
+                    all_trades.append(partial_trade)
+                    if pos["symbol"] not in sym_trades_map:
+                        sym_trades_map[pos["symbol"]] = []
+                    sym_trades_map[pos["symbol"]].append(partial_trade)
+
+                    # Update position: remaining 50% with SL moved to breakeven (entry price)
+                    pos["remaining_size"] = half_position_size
+                    pos["current_sl"] = pos["entry_price"]
+                    pos["partial_tp_hit"] = True
+
+            # Check TP/SL (for remaining position after partial close)
             tp_hit, sl_hit = _check_tp_sl(pos, candle)
 
             # Update excursion
@@ -789,6 +859,8 @@ def run_backtest(
                 "tp_pct": tp_pct_sig,
                 "sl_pct": sl_pct_sig,
                 "signal": signal,
+                "partial_tp_hit": False,
+                "remaining_size": position_size,
             }
             open_positions.append(pos)
             last_signal_idx[symbol] = t
@@ -1137,6 +1209,7 @@ if __name__ == "__main__":
     parser.add_argument("--slippage-pct", type=float, default=0.05, help="Adverse slippage %% per side (default: 0.05)")
     parser.add_argument("--lookahead", action="store_true", help="Use signal candle close as entry (default: use next candle open)")
     parser.add_argument("--fixed-size", type=float, default=0.0, help="Fixed $ per trade (0=use risk%% sizing)")
+    parser.add_argument("--partial-tp", action="store_true", help="Close 50%% at 1R, move SL to breakeven on remainder")
     # Circuit breaker
     parser.add_argument("--max-drawdown", type=float, default=25.0, help="Max drawdown %% before circuit breaker (default: 25)")
     parser.add_argument("--recovery-candles", type=int, default=168, help="Candles to pause after circuit breaker (default: 168)")
@@ -1183,6 +1256,7 @@ if __name__ == "__main__":
         fixed_size=args.fixed_size,
         max_drawdown_pct=args.max_drawdown,
         recovery_candles=args.recovery_candles,
+        partial_tp=args.partial_tp,
     )
 
     print_summary(results)

@@ -1248,6 +1248,35 @@ def generate_signal(symbol: str, candles_4h: list,
         # Trend pullback (default): balanced
         tp_sl = suggest_tp_sl(candles_4h, direction, multiplier_sl=1.5, rr_ratio=2.0)
 
+    # ─────────────────────────────────────────────────────────────────
+    # SIGNAL QUALITY FILTERS — Skip low-conviction combos
+    # ─────────────────────────────────────────────────────────────────
+    rsi = tech["details"].get("rsi", {}).get("1h", 50)
+    adx = tech["details"].get("adx", 25)
+    hour_utc = datetime.now(timezone.utc).hour
+
+    # Filter 1: SHORT trend_pullback only at RSI 40-50 (market mid-range, room to run)
+    if direction == "SHORT" and "trend_pullback" in strategy:
+        if not (40 <= rsi < 50):
+            dbg.debug(f"[{symbol}] FILTERED: SHORT trend_pullback at RSI {rsi:.0f} (only RSI 40-50 allowed)")
+            return None
+
+    # Filter 2: LONG breakout — skip entirely (losing pattern)
+    if direction == "LONG" and strategy == "breakout":
+        dbg.debug(f"[{symbol}] FILTERED: LONG breakout (inherently unprofitable)")
+        return None
+
+    # Filter 3: LONG trend_pullback at RSI 60-70 — only if ADX 40+ (parabolic trend)
+    if direction == "LONG" and "trend_pullback" in strategy:
+        if 60 <= rsi < 70 and adx < 40:
+            dbg.debug(f"[{symbol}] FILTERED: LONG trend_pullback RSI {rsi:.0f} ADX {adx:.1f} (need ADX 40+ at RSI 60-70)")
+            return None
+
+    # Filter 4: Asia session (0-8 UTC) — low liquidity, false signals
+    if hour_utc >= 0 and hour_utc < 8:
+        dbg.debug(f"[{symbol}] FILTERED: Asia session hour {hour_utc} UTC (low liquidity)")
+        return None
+
     return {
         "symbol":             symbol,
         "direction":          direction,
