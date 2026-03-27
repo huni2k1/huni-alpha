@@ -422,6 +422,45 @@ def _close_position(pos: dict, exit_price: float, exit_reason: str, exit_candle:
 
 
 # ─────────────────────────────────────────────────────────────────
+# KELLY CRITERION — Dynamic Position Sizing
+# ─────────────────────────────────────────────────────────────────
+def calculate_kelly_risk_multiplier(score: float, base_risk: float = 1.5) -> float:
+    """
+    Calculate dynamic risk multiplier based on signal score using Kelly Criterion.
+
+    Historical metrics:
+    - Win Rate: 37.5%
+    - Loss Rate: 62.5%
+    - Reward/Risk Ratio: ~2:1
+    - Kelly-optimal: ~6.25%, Half-Kelly: ~3.13%
+
+    Scaling:
+    - Score 6.0 (min entry): 0.8x multiplier = 1.2% risk
+    - Score 6.5: 1.0x multiplier = 1.5% risk (baseline)
+    - Score 7.0: 1.3x multiplier = 1.95% risk
+    - Score 8.0: 1.7x multiplier = 2.55% risk
+    - Score 9.0+: 2.0x multiplier = 3.0% risk (half-Kelly equivalent)
+
+    Curve: Linear scaling from score 6.0 to 9.0+
+    """
+    # Clamp score to valid range
+    score = max(6.0, min(9.5, score))
+
+    # Linear interpolation: 6.0 → 0.8x, 9.0+ → 2.0x
+    if score < 6.0:
+        multiplier = 0.8
+    elif score >= 9.0:
+        multiplier = 2.0
+    else:
+        # Linear: (score - 6.0) / 3.0 gives 0.0 to 1.0 over range 6.0-9.0
+        # Map 0.0-1.0 range to 0.8x-2.0x multiplier
+        norm = (score - 6.0) / 3.0
+        multiplier = 0.8 + (norm * 1.2)  # 0.8 + (0 to 1.2) = 0.8 to 2.0
+
+    return multiplier
+
+
+# ─────────────────────────────────────────────────────────────────
 # BACKTESTER CORE
 # ─────────────────────────────────────────────────────────────────
 def run_backtest(
@@ -445,6 +484,7 @@ def run_backtest(
     max_drawdown_pct: float = 25.0,     # Circuit breaker: pause at this drawdown %
     recovery_candles: int = 168,        # Circuit breaker: candles to wait before resuming
     partial_tp: bool = False,           # Close 50% at 1R, move SL to breakeven (disabled: degrades performance)
+    kelly_sizing: bool = False,         # Kelly Criterion-based dynamic position sizing
 ) -> dict:
     """
     Walk-forward backtest using the scanner's generate_signal() (tech-only).
@@ -780,7 +820,14 @@ def run_backtest(
                     equity_for_sizing = account
                 else:
                     equity_for_sizing = current_equity
-                risk_amount = equity_for_sizing * (risk_pct / 100)
+
+                # Dynamic risk based on Kelly Criterion (optional)
+                effective_risk_pct = risk_pct
+                if kelly_sizing:
+                    kelly_multiplier = calculate_kelly_risk_multiplier(score, risk_pct)
+                    effective_risk_pct = risk_pct * kelly_multiplier
+
+                risk_amount = equity_for_sizing * (effective_risk_pct / 100)
                 position_size = risk_amount / (sl_pct_sig / 100) if sl_pct_sig > 0 else risk_amount
                 position_size = min(position_size, equity_for_sizing * 0.5)
 
@@ -1180,6 +1227,7 @@ if __name__ == "__main__":
     parser.add_argument("--fixed-size", type=float, default=0.0, help="Fixed $ per trade (0=use risk%% sizing)")
     parser.add_argument("--partial-tp", action="store_true", help="Close 50%% at 1R, move SL to breakeven (DISABLED: degrades performance)")
     parser.add_argument("--no-partial-tp", action="store_false", dest="partial_tp", default=True, help="Disable partial TP feature (default: disabled)")
+    parser.add_argument("--kelly-sizing", action="store_true", help="Enable Kelly Criterion-based dynamic position sizing (score-dependent risk allocation)")
     # Circuit breaker
     parser.add_argument("--max-drawdown", type=float, default=25.0, help="Max drawdown %% before circuit breaker (default: 25)")
     parser.add_argument("--recovery-candles", type=int, default=168, help="Candles to pause after circuit breaker (default: 168)")
@@ -1227,6 +1275,7 @@ if __name__ == "__main__":
         max_drawdown_pct=args.max_drawdown,
         recovery_candles=args.recovery_candles,
         partial_tp=args.partial_tp,
+        kelly_sizing=args.kelly_sizing,
     )
 
     print_summary(results)
