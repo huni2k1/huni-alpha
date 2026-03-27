@@ -1227,7 +1227,8 @@ if __name__ == "__main__":
     parser.add_argument("--fixed-size", type=float, default=0.0, help="Fixed $ per trade (0=use risk%% sizing)")
     parser.add_argument("--partial-tp", action="store_true", help="Close 50%% at 1R, move SL to breakeven (DISABLED: degrades performance)")
     parser.add_argument("--no-partial-tp", action="store_false", dest="partial_tp", default=True, help="Disable partial TP feature (default: disabled)")
-    parser.add_argument("--kelly-sizing", action="store_true", help="Enable Kelly Criterion-based dynamic position sizing (score-dependent risk allocation)")
+    parser.add_argument("--kelly-sizing", action="store_true", dest="kelly_sizing", default=True, help="Enable Kelly Criterion-based dynamic position sizing (default: enabled)")
+    parser.add_argument("--no-kelly-sizing", action="store_false", dest="kelly_sizing", help="Disable Kelly sizing, use fixed 1.5% risk instead")
     # Circuit breaker
     parser.add_argument("--max-drawdown", type=float, default=25.0, help="Max drawdown %% before circuit breaker (default: 25)")
     parser.add_argument("--recovery-candles", type=int, default=168, help="Candles to pause after circuit breaker (default: 168)")
