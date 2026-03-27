@@ -971,25 +971,29 @@ def run_backtest(
     monthly_sorted = []
     for k in sorted(monthly.keys()):
         m = monthly[k]
+        # Calculate monthly return as: P&L / starting account per month
+        # When reset_monthly=True, each month starts fresh at `account` value
+        monthly_return_pct = (m["pnl_usd"] / account * 100) if account > 0 else 0
         monthly_sorted.append({
             "month": k,
             "trades": m["trades"],
             "wins": m["wins"],
             "win_rate": round(m["wins"] / m["trades"] * 100, 1) if m["trades"] > 0 else 0,
             "pnl_usd": round(m["pnl_usd"], 2),
+            "monthly_return_pct": round(monthly_return_pct, 2),
             "avg_pnl_pct": round(m["pnl_pct_sum"] / m["trades"], 2) if m["trades"] > 0 else 0,
         })
 
-    # Rolling returns (1M, 3M, 6M, 12M from end of period)
+    # Rolling returns (1M, 3M, 6M, 12M from start of period, forward in time)
     rolling_returns = {}
 
-    # Helper to calculate return from last N months
+    # Helper to calculate return from first N months (forward from start)
     def calc_rolling_return(n_months):
         if len(monthly_sorted) == 0:
             return {"pnl_usd": 0, "return_pct": 0}
 
-        # Take last n_months from monthly_sorted
-        months_slice = monthly_sorted[-n_months:] if n_months <= len(monthly_sorted) else monthly_sorted
+        # Take first n_months from monthly_sorted (forward from start, not backward from end)
+        months_slice = monthly_sorted[:n_months] if n_months <= len(monthly_sorted) else monthly_sorted
 
         total_pnl = sum(m["pnl_usd"] for m in months_slice)
         # Return percentage is: total_pnl / starting_account * 100
@@ -1132,10 +1136,10 @@ def print_summary(results: dict):
 
     # Monthly breakdown
     print(f"\n  {'─'*50}")
-    print(f"  {'Month':<10} {'Trades':>6} {'WR':>6} {'P&L':>10} {'Avg%':>7}")
+    print(f"  {'Month':<10} {'Trades':>6} {'WR':>6} {'P&L':>10} {'Return%':>8}")
     print(f"  {'─'*50}")
     for m in results["monthly"]:
-        print(f"  {m['month']:<10} {m['trades']:>6} {m['win_rate']:>5.0f}% ${m['pnl_usd']:>9,.2f} {m['avg_pnl_pct']:>+6.1f}%")
+        print(f"  {m['month']:<10} {m['trades']:>6} {m['win_rate']:>5.0f}% ${m['pnl_usd']:>9,.2f} {m['monthly_return_pct']:>+7.2f}%")
 
     # Rolling returns
     if "rolling_returns" in results:
