@@ -44,16 +44,11 @@ htmlcov/
 # Logs
 *.log
 /tmp/
+logs/
 
-# Config (credentials)
+# Config (credentials - keep out of git)
 config/binance-real.json
 config/telegram.json
 
-# Data (large files)
-data/*.json
-!data/.gitkeep
-logs/
-
-# Test versions
-*-test.py
-backtester-test.py
+# Backtest results (generated locally, don't commit)
+src/trading_bot/backtest-results.json
