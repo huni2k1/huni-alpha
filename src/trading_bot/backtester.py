@@ -2,21 +2,25 @@
 """
 Backtester for Market Scanner V3 — Validates REAL signal performance.
 
-Architecture: Calls generate_signal() from market-scanner.py (tech-only mode).
+Architecture: Calls generate_signal() from scanner.py (tech-only mode).
 The backtester owns NOTHING about scoring or TP/SL computation.
 It only does: fetch history → call generate_signal() → simulate fills → report stats.
 
 This guarantees WYTIWYT: What You Test Is What You Trade.
 
-Improvements over V2:
-  - 1000-candle window for accurate EMA200 (was 250)
+Key features:
+  - 1000-candle window for accurate EMA200
   - Trailing stop: breakeven at +1.5 ATR, then trail at 1x ATR
   - Round-trip fees subtracted (default 0.10%)
-  - 2:1 R:R (was 3:1) for higher win rate
-  - Volume scoring only boosts the leading direction
+  - Multi-position tracking: max 3 concurrent trades
+  - Whipsaw detection: 5-min direction lock to avoid choppy flips
+  - Circuit breaker: pauses at 25% drawdown, resumes after recovery
+  - Candle caching: disk-based cache for fast repeated backtests
+  - Kelly Criterion sizing: dynamic position sizing (0.8x-2.0x based on signal confidence)
+  - Asia session filter: skips low-liquidity hours (0-8 UTC)
 
 Usage:
-  python3 backtester.py                          # Default: 6mo, 10 symbols, threshold=4.5
+  python3 backtester.py                          # Default: 6mo, 10 symbols, trend_threshold=7.0, breakout_threshold=6.0
   python3 backtester.py --months 12              # 12 months
   python3 backtester.py --symbols BTCUSDT ETHUSDT
   python3 backtester.py --account 1000           # $1000 starting account
