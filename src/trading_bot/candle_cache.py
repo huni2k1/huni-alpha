@@ -117,8 +117,13 @@ def load_from_cache(symbol: str, interval: str, start_date: str,
         is_recent = cache_age_hours < 24
         is_complete = completeness >= min_completeness
 
-        if is_complete:
+        if is_complete and is_recent:
             return candles
+
+        if is_complete and not is_recent:
+            # Cache is complete but stale (>24h old) — log warning but accept for offline mode
+            # For live trading, consider forcing API refresh for recent data
+            print(f"[Cache] ⚠ {cache_path} is {cache_age_hours:.1f}h old (complete but stale)")
 
         return None
 
