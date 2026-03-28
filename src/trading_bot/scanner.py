@@ -32,6 +32,9 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+# Import candle caching module
+from . import candle_cache
+
 # ─────────────────────────────────────────────────────────────────
 # CONFIG — Load sensitive data from environment or config file
 # ─────────────────────────────────────────────────────────────────
@@ -261,6 +264,54 @@ def fetch_klines(symbol: str, interval: str, limit: int) -> Optional[list]:
         log.warning(f"  {symbol}: {gap_count} gap(s) in candle data")
 
     return all_candles
+
+
+def fetch_klines_cached(symbol: str, interval: str, limit: int,
+                       use_cache: bool = True) -> Optional[list]:
+    """
+    Fetch klines with local disk caching for speed.
+
+    For backtesting: caches entire date ranges to avoid repeated API calls.
+    For live scanning: uses cache if available, falls back to API.
+
+    Args:
+        symbol: Trading pair (e.g., "BTCUSDT")
+        interval: Candle interval ("1h", "4h")
+        limit: Number of candles to fetch
+        use_cache: Enable caching (default: True)
+
+    Returns:
+        List of candles [[open, high, low, close, volume], ...] or None
+    """
+    if not use_cache:
+        return fetch_klines(symbol, interval, limit)
+
+    # Calculate date range from limit
+    now = datetime.now(timezone.utc)
+    candles_per_day = 24 if interval == "1h" else 6  # approximate
+    days_needed = (limit + candles_per_day - 1) // candles_per_day
+    start_date = (now - timedelta(days=days_needed)).date()
+    end_date = now.date()
+
+    start_str = start_date.strftime("%Y-%m-%d")
+    end_str = end_date.strftime("%Y-%m-%d")
+
+    # Try to load from cache
+    cached_candles = candle_cache.load_from_cache(symbol, interval, start_str, end_str)
+    if cached_candles is not None:
+        log.debug(f"  {symbol}: Loaded {len(cached_candles)} candles from cache")
+        return cached_candles[-limit:] if len(cached_candles) > limit else cached_candles
+
+    # Not in cache — fetch from API
+    log.debug(f"  {symbol}: Cache miss, fetching from Binance API...")
+    candles = fetch_klines(symbol, interval, limit)
+
+    if candles is not None:
+        # Save to cache for future use
+        candle_cache.save_to_cache(symbol, interval, start_str, end_str, candles)
+        log.debug(f"  {symbol}: Cached {len(candles)} candles for {start_str}–{end_str}")
+
+    return candles
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -1412,7 +1463,8 @@ def scan_symbol(symbol: str, state: dict):
     # The last candle from Binance is always the CURRENT incomplete candle.
     # Its volume, high, low, and close are all partial — using it produces signals
     # that don't match the backtester which always works on fully closed candles.
-    candles_1h = fetch_klines(symbol, "1h", 4001)
+    # Use cached version for faster repeated fetches.
+    candles_1h = fetch_klines_cached(symbol, "1h", 4001, use_cache=True)
     if not candles_1h:
         log.warning(f"  No 1h data for {symbol}, skipping.")
         return
