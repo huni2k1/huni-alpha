@@ -1,9 +1,10 @@
-# Optimization V1 Status (2026-03-26)
+# Optimization V1 Status (ARCHIVED - Decision Made 2026-03-28)
 
 ## Current State
 
-**Branch:** `feature/optimize-v1`
-**Objective:** Optimize breakout threshold from 6.0 to improve returns
+**Status:** ✅ COMPLETED — 6.0 threshold confirmed as default
+**Decision:** Merged to main (commit 0e625a2 - Mar 27)
+**Objective:** Optimize breakout threshold from 6.0 to improve returns — DONE
 
 ---
 
@@ -60,16 +61,18 @@
 
 ---
 
-## Merge Decision
+## Merge Decision — IMPLEMENTED
 
-**Ready to merge?** Awaiting your decision:
+✅ **Decision: Keep 6.0 default** — Confirmed and merged to main
+- 12-month backtest (Mar 28): +43.45% return (not just +8% as originally estimated)
+- 6-month rolling: +14.56%
+- Robust across market regimes
+- 392 trades, 39.3% WR, 1.26 PF
 
-1. **Merge now** — Keep 6.0, close optimization
-2. **Continue testing** — Explore symbol filtering, signal quality improvements
-3. **Override to 7.0** — Accept 12-month risk for recent gains
+**Recent bug fix (Mar 28):** Asia session filter now uses candle timestamps (not current time), revealing true strategy performance. Earlier tests underestimated returns.
 
-**Branch status:** All tests passing, documentation updated, no code changes needed (already using 6.0 default).
+**Branch status:** All feature branches cleaned up. Main codebase streamlined.
 
 ---
 
-*Last updated: 2026-03-26 22:15 UTC*
+*Archived: 2026-03-28 (decision finalized)*
