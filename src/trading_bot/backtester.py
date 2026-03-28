@@ -592,7 +592,8 @@ def run_backtest(
     symbol_stats = {}
 
     # ── STEP 1: Pre-fetch all candles ──────────────────────────────
-    log.info(f"Fetching candles for {len(symbols)} symbols ({months}mo + warmup)...")
+    step1_start = time.time()
+    log.info(f"STEP 1: Fetching candles for {len(symbols)} symbols ({months}mo + warmup)...")
     all_candles = {}
     all_indicators = {}  # Cache pre-computed indicators (optimization)
     warmup_hours = warmup_days * 24
@@ -603,31 +604,38 @@ def run_backtest(
     skipped_symbols = []
 
     for symbol in symbols:
-        log.info(f"Fetching {symbol} 1h candles ({months}mo + warmup)...")
+        sym_fetch_start = time.time()
         # Use cached version for faster repeated backtests
         candles = fetch_klines_historical_cached(symbol, "1h", start_ms, end_ms, use_cache=True)
-        log.info(f"  Got {len(candles)} candles for {symbol}")
+        fetch_time = time.time() - sym_fetch_start
+        log.info(f"  {symbol}: Fetched {len(candles)} candles in {fetch_time:.2f}s")
 
         if len(candles) < 1010:
-            log.warning(f"  Not enough data for {symbol} ({len(candles)} < 1010), skipping.")
+            log.warning(f"    {symbol}: Not enough data ({len(candles)} < 1010), skipping")
             skipped_symbols.append((symbol, f"only {len(candles)} candles"))
             continue
 
         # Validate completeness and contiguity
+        sym_validate_start = time.time()
         is_valid, msg = validate_candle_completeness(symbol, candles, expected_hours)
+        validate_time = time.time() - sym_validate_start
         if not is_valid:
-            log.error(f"  DATA REJECTED: {msg}")
+            log.error(f"    {symbol}: DATA REJECTED: {msg}")
             skipped_symbols.append((symbol, msg))
             continue
-        log.info(f"  ✅ {msg}")
+        log.info(f"    {symbol}: ✅ {msg} ({validate_time:.2f}s)")
 
         all_candles[symbol] = candles
 
         # Pre-compute indicators for optimization (2-3x speedup on backtest signal generation)
-        log.debug(f"  Pre-computing indicators for {symbol}...")
+        sym_ind_start = time.time()
         candles_ohlcv = [[c["open"], c["high"], c["low"], c["close"], c["volume"]] for c in candles]
         all_indicators[symbol] = scanner.precompute_indicators_for_all_candles(candles_ohlcv)
-        log.debug(f"  Pre-computed {len(all_indicators[symbol])} indicator snapshots for {symbol}")
+        ind_time = time.time() - sym_ind_start
+        log.info(f"    {symbol}: Pre-computed {len(all_indicators[symbol])} indicator snapshots in {ind_time:.2f}s")
+
+    step1_time = time.time() - step1_start
+    log.info(f"STEP 1 completed in {step1_time:.2f}s")
 
     if skipped_symbols:
         log.warning(f"Skipped {len(skipped_symbols)}/{len(symbols)} symbols due to data issues:")
@@ -655,13 +663,25 @@ def run_backtest(
 
     # ── STEP 2: Time-ordered loop across all symbols ───────────────
     max_candles = max(len(candles) for candles in all_candles.values())
+    step2_start = time.time()
+    log.info(f"STEP 2: Running backtest loop ({max_candles - trade_start_idx} candles)...")
     open_positions = []  # List of active position dicts
     last_signal_idx = {sym: -999 for sym in all_candles.keys()}
     sym_trades_map = {}  # {symbol: [trades]}
     peak_equity = account
     circuit_breaker_until = -1  # Candle index when trading resumes
 
+    # Timing counters
+    signal_count = 0
+    position_close_count = 0
+    entry_count = 0
+
     for t in range(trade_start_idx, max_candles):
+        # Log progress every 500 candles
+        if (t - trade_start_idx) % 500 == 0 and t > trade_start_idx:
+            elapsed = time.time() - step2_start
+            progress_pct = (t - trade_start_idx) / (max_candles - trade_start_idx) * 100
+            log.info(f"  Progress: {progress_pct:.1f}% ({t - trade_start_idx}/{max_candles - trade_start_idx} candles, {elapsed:.1f}s elapsed)")
         # ── STEP A: Update/close open positions at candle t ────────
         for pos in open_positions[:]:  # iterate over copy
             symbol = pos["symbol"]
@@ -740,6 +760,7 @@ def run_backtest(
                                                 current_equity, equity_curve, all_trades,
                                                 sym_trades_map, fee_pct, t, slippage_pct)
                 open_positions.remove(pos)
+                position_close_count += 1
 
         # ── TRUE EQUITY TRACKING (includes unrealized P&L) ────────
         # current_equity is free cash only. Compute total equity = free + locked + unrealized
@@ -834,6 +855,7 @@ def run_backtest(
             if signal is None:
                 continue
 
+            signal_count += 1
             score = signal["score"]
             direction = signal["direction"]
 
@@ -969,8 +991,16 @@ def run_backtest(
             }
             open_positions.append(pos)
             last_signal_idx[symbol] = t
+            entry_count += 1
+
+    step2_time = time.time() - step2_start
+    log.info(f"STEP 2 completed in {step2_time:.2f}s")
+    log.info(f"  - Signals generated: {signal_count}")
+    log.info(f"  - Entries created: {entry_count}")
+    log.info(f"  - Positions closed: {position_close_count}")
 
     # ── STEP 3: Force-close remaining positions at end of data ─────
+    step3_start = time.time()
     for pos in open_positions:
         symbol = pos["symbol"]
         candles = all_candles[symbol]
@@ -978,8 +1008,11 @@ def run_backtest(
         current_equity = _close_position(pos, last_candle["close"], "TIMEOUT", last_candle,
                                          current_equity, equity_curve, all_trades,
                                          sym_trades_map, fee_pct, max_candles - 1, slippage_pct)
+    step3_time = time.time() - step3_start
+    log.info(f"STEP 3 (force-close remaining) completed in {step3_time:.2f}s")
 
     # ── Build per-symbol stats ──────────────────────────────────────
+    step4_start = time.time()
     for symbol, trades in sym_trades_map.items():
         if trades:
             wins = [t for t in trades if t["pnl_pct"] > 0]
@@ -1174,6 +1207,22 @@ def run_backtest(
         "equity_curve": equity_curve,
         "trades": all_trades,
     }
+
+    step4_time = time.time() - step4_start
+    log.info(f"STEP 4 (stats aggregation) completed in {step4_time:.2f}s")
+
+    # Print overall timing summary
+    total_time = step1_time + step2_time + step3_time + step4_time
+    log.info(f"\n{'═'*70}")
+    log.info(f"  BACKTEST TIMING SUMMARY")
+    log.info(f"{'═'*70}")
+    log.info(f"  Step 1 (Fetch + validate):     {step1_time:>8.2f}s ({step1_time/total_time*100:>5.1f}%)")
+    log.info(f"  Step 2 (Main loop):            {step2_time:>8.2f}s ({step2_time/total_time*100:>5.1f}%)")
+    log.info(f"  Step 3 (Force-close):          {step3_time:>8.2f}s ({step3_time/total_time*100:>5.1f}%)")
+    log.info(f"  Step 4 (Stats):                {step4_time:>8.2f}s ({step4_time/total_time*100:>5.1f}%)")
+    log.info(f"  {'-'*70}")
+    log.info(f"  TOTAL TIME:                    {total_time:>8.2f}s")
+    log.info(f"{'═'*70}\n")
 
     return results
 
