@@ -447,6 +447,8 @@ def _close_position(pos: dict, exit_price: float, exit_reason: str, exit_candle:
     trade = {
         "symbol": symbol,
         "direction": direction,
+        "strategy": pos["signal"].get("strategy", pos["signal"]["details"].get("strategy", "")),
+        "regime": pos["signal"].get("regime", pos["signal"]["details"].get("regime", "")),
         "tier": pos["tier"],
         "score": round(pos["score"], 2),
         "entry_price": round(entry_price, 6),
