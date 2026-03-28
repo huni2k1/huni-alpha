@@ -527,6 +527,128 @@ def bollinger_bandwidth(closes: list, period: int = 20, std_mult: float = 2.0) -
     return round(bw_now, 2), is_squeeze
 
 
+def precompute_indicators_for_all_candles(candles: list) -> dict:
+    """
+    Pre-compute cheap indicators (RSI, MACD, EMA) for every candle.
+
+    This optimization caches indicator values that are expensive to compute
+    repeatedly. Expected 1.5-2x speedup (ADX/Bollinger still computed on-demand).
+
+    Args:
+        candles: OHLCV format [[open, high, low, close, volume], ...]
+
+    Returns:
+        Dict mapping candle index to pre-computed indicators dict.
+
+    Note:
+        ADX and Bollinger Bandwidth are computed on-demand (too expensive to pre-compute).
+        Volume ratio is fast to compute, so also done on-demand.
+    """
+    if len(candles) < 50:
+        return {}
+
+    closes = [c[3] for c in candles]
+    volumes = [c[4] for c in candles]
+
+    indicators_cache = {}
+
+    # Pre-compute full series for EMA (these are fast and heavily used)
+    ema_9_series = ema(closes, 9)
+    ema_21_series = ema(closes, 21)
+    ema_50_series = ema(closes, 50)
+    ema_200_series = ema(closes, min(800, len(closes)))
+
+    # Pre-compute RSI series (Wilder smoothing)
+    rsi_series = []
+    if len(closes) >= 15:
+        gains, losses = [], []
+        for i in range(1, len(closes)):
+            d = closes[i] - closes[i - 1]
+            gains.append(max(d, 0))
+            losses.append(max(-d, 0))
+
+        avg_g = np.mean(gains[:14])
+        avg_l = np.mean(losses[:14])
+
+        # Prepend dummy values for the initial period
+        rsi_series = [50.0] * 14
+
+        for i in range(14, len(gains)):
+            avg_g = (avg_g * 13 + gains[i]) / 14
+            avg_l = (avg_l * 13 + losses[i]) / 14
+            if avg_l == 0:
+                rsi_series.append(100.0)
+            else:
+                rs = avg_g / avg_l
+                rsi_series.append(100 - (100 / (1 + rs)))
+
+    # Pre-compute MACD series (cheap relative to ADX)
+    ema_12 = ema(closes, 12)
+    ema_26 = ema(closes, 26)
+    offset = len(ema_12) - len(ema_26)
+    macd_line_series = [ema_12[offset + i] - ema_26[i] for i in range(len(ema_26))]
+    macd_signal_series = ema(macd_line_series, 9)
+
+    # Align histogram
+    offset2 = len(macd_line_series) - len(macd_signal_series)
+    macd_hist_series = [macd_line_series[offset2 + i] - macd_signal_series[i]
+                       for i in range(len(macd_signal_series))]
+
+    # Build cache using pre-computed series (no expensive per-position calculations)
+    for t in range(50, len(candles)):
+        # Index into pre-computed series
+        idx_rsi = min(t, len(rsi_series) - 1)
+        rsi_val = rsi_series[idx_rsi] if idx_rsi >= 0 else 50.0
+
+        # MACD: align to current position
+        idx_macd = t - (len(closes) - len(macd_line_series))
+        if idx_macd >= 0 and idx_macd < len(macd_line_series):
+            macd_line_val = macd_line_series[idx_macd]
+            idx_signal = idx_macd - (len(macd_line_series) - len(macd_signal_series))
+            macd_signal_val = macd_signal_series[idx_signal] if idx_signal >= 0 else 0
+            idx_hist = idx_macd - (len(macd_line_series) - len(macd_hist_series))
+            macd_hist_val = macd_hist_series[idx_hist] if idx_hist >= 0 else 0
+            macd_hist_prev = macd_hist_series[idx_hist - 1] if idx_hist > 0 and idx_hist < len(macd_hist_series) else macd_hist_val
+        else:
+            macd_line_val = macd_signal_val = macd_hist_val = macd_hist_prev = 0
+
+        # EMA alignment (index into pre-computed series)
+        idx_e9 = t - (len(closes) - len(ema_9_series))
+        idx_e21 = t - (len(closes) - len(ema_21_series))
+        idx_e50 = t - (len(closes) - len(ema_50_series))
+        idx_e200 = t - (len(closes) - len(ema_200_series))
+
+        e9 = ema_9_series[idx_e9] if 0 <= idx_e9 < len(ema_9_series) else None
+        e21 = ema_21_series[idx_e21] if 0 <= idx_e21 < len(ema_21_series) else None
+        e50 = ema_50_series[idx_e50] if 0 <= idx_e50 < len(ema_50_series) else None
+        e200 = ema_200_series[idx_e200] if 0 <= idx_e200 < len(ema_200_series) else None
+
+        bull_align = e9 and e21 and e50 and (e9 > e21 > e50)
+        bear_align = e9 and e21 and e50 and (e9 < e21 < e50)
+        above_e200 = e200 and (closes[t] > e200)
+        below_e200 = e200 and (closes[t] < e200)
+
+        # Cache the pre-computed values
+        indicators_cache[t] = {
+            'rsi': rsi_val,
+            'macd_line': macd_line_val,
+            'macd_signal': macd_signal_val,
+            'macd_hist': macd_hist_val,
+            'macd_hist_prev': macd_hist_prev,
+            'e9': e9,
+            'e21': e21,
+            'e50': e50,
+            'e200': e200,
+            'bull_align': bull_align,
+            'bear_align': bear_align,
+            'above_e200': above_e200,
+            'below_e200': below_e200,
+            # Note: ADX, Bollinger, Volume Ratio computed on-demand in score_technical
+        }
+
+    return indicators_cache
+
+
 def detect_regime(adx_val: float, bb_squeeze: bool, vol_r: float,
                   closes: list) -> str:
     """
@@ -778,11 +900,17 @@ def suggest_tp_sl(candles_4h: list, direction: str,
     }
 
 
-def score_technical(symbol: str, candles_4h: list) -> dict:
+def score_technical(symbol: str, candles_4h: list, precomputed_indicators: dict = None) -> dict:
     """
     Multi-regime technical scoring.
     Detects market regime (trending/ranging/breakout) and applies
     the appropriate strategy. Returns the best signal from the active regime.
+
+    Args:
+        symbol: Trading pair
+        candles_4h: OHLCV candles
+        precomputed_indicators: Optional dict with pre-computed indicator values (optimization for backtester).
+                               If provided, uses these instead of computing.
     """
     closes  = [c[3] for c in candles_4h]
     volumes = [c[4] for c in candles_4h]
@@ -792,23 +920,45 @@ def score_technical(symbol: str, candles_4h: list) -> dict:
     if len(closes) < 50:
         return {"score": 0, "direction": "NEUTRAL", "long_score": 0, "short_score": 0, "details": {}}
 
-    # ── Compute all indicators once ──
-    rsi_val = rsi(closes)
-    macd_line_val, sig_line_val, hist_curr = macd(closes)
-    hist_prev = macd(closes[:-1])[2] if len(closes) > 27 else hist_curr
-    vol_r = volume_ratio(volumes)
-    e9, e21, e50, bull_align, bear_align = ema_alignment(closes)
-    adx_val = adx(highs, lows, closes, period=14)
+    # ── Use pre-computed indicators if provided (optimization), else compute ──
+    if precomputed_indicators:
+        # Use pre-computed cheap indicators (RSI, MACD, EMA)
+        rsi_val = precomputed_indicators.get('rsi', 50.0)
+        macd_line_val = precomputed_indicators.get('macd_line', 0.0)
+        sig_line_val = precomputed_indicators.get('macd_signal', 0.0)
+        hist_curr = precomputed_indicators.get('macd_hist', 0.0)
+        hist_prev = precomputed_indicators.get('macd_hist_prev', 0.0)
+        e9 = precomputed_indicators.get('e9')
+        e21 = precomputed_indicators.get('e21')
+        e50 = precomputed_indicators.get('e50')
+        bull_align = precomputed_indicators.get('bull_align', False)
+        bear_align = precomputed_indicators.get('bear_align', False)
+        e200 = precomputed_indicators.get('e200')
+        above_e200 = precomputed_indicators.get('above_e200', True)
+        below_e200 = precomputed_indicators.get('below_e200', False)
 
-    # 200-EMA macro trend filter (migrated to 1H: use 800 to maintain ~33-day lookback)
-    # 4H system: 200 × 4h = 800 hours ≈ 33 days
-    # 1H system: 800 × 1h = 800 hours ≈ 33 days (equivalent scale)
-    e200 = ema(closes, min(800, len(closes)))[-1]
-    above_e200 = closes[-1] > e200
-    below_e200 = closes[-1] < e200
+        # Compute expensive indicators on-demand (ADX, Bollinger only computed here)
+        adx_val = adx(highs, lows, closes, period=14)
+        vol_r = volume_ratio(volumes)
+        bb_bw, bb_squeeze = bollinger_bandwidth(closes)
+    else:
+        # Compute all indicators once (slower path, for live scanner)
+        rsi_val = rsi(closes)
+        macd_line_val, sig_line_val, hist_curr = macd(closes)
+        hist_prev = macd(closes[:-1])[2] if len(closes) > 27 else hist_curr
+        vol_r = volume_ratio(volumes)
+        e9, e21, e50, bull_align, bear_align = ema_alignment(closes)
+        adx_val = adx(highs, lows, closes, period=14)
 
-    # Bollinger bandwidth & squeeze detection
-    bb_bw, bb_squeeze = bollinger_bandwidth(closes)
+        # 200-EMA macro trend filter (migrated to 1H: use 800 to maintain ~33-day lookback)
+        # 4H system: 200 × 4h = 800 hours ≈ 33 days
+        # 1H system: 800 × 1h = 800 hours ≈ 33 days (equivalent scale)
+        e200 = ema(closes, min(800, len(closes)))[-1]
+        above_e200 = closes[-1] > e200
+        below_e200 = closes[-1] < e200
+
+        # Bollinger bandwidth & squeeze detection
+        bb_bw, bb_squeeze = bollinger_bandwidth(closes)
 
     # ── Detect market regime ──
     regime = detect_regime(adx_val, bb_squeeze, vol_r, closes)
@@ -1206,7 +1356,8 @@ def generate_signal(symbol: str, candles_4h: list,
                     include_fundamentals: bool = True,
                     include_news: bool = True,
                     state: dict = None,
-                    current_time: Optional[datetime] = None) -> Optional[dict]:
+                    current_time: Optional[datetime] = None,
+                    precomputed_indicators: dict = None) -> Optional[dict]:
     """
     Generate a complete trade signal from candle data.
 
@@ -1216,13 +1367,14 @@ def generate_signal(symbol: str, candles_4h: list,
         include_fundamentals: False for backtesting (no historical data available)
         include_news: False for backtesting (no historical data available)
         current_time: Time to use for session filter (defaults to now). Backtester passes candle timestamp
+        precomputed_indicators: Optional dict of pre-computed indicators (optimization for backtester)
 
     Returns:
         Signal dict or None if no signal. Signal contains everything needed
         to execute the trade — the backtester just simulates fills against
         the tp/sl this function returns.
     """
-    tech = score_technical(symbol, candles_4h)
+    tech = score_technical(symbol, candles_4h, precomputed_indicators=precomputed_indicators)
     if tech["direction"] == "NEUTRAL":
         return None
 

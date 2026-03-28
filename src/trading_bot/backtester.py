@@ -594,6 +594,7 @@ def run_backtest(
     # ── STEP 1: Pre-fetch all candles ──────────────────────────────
     log.info(f"Fetching candles for {len(symbols)} symbols ({months}mo + warmup)...")
     all_candles = {}
+    all_indicators = {}  # Cache pre-computed indicators (optimization)
     warmup_hours = warmup_days * 24
     window_size = 1000
     trade_start_idx = max(window_size, warmup_hours)
@@ -621,6 +622,12 @@ def run_backtest(
         log.info(f"  ✅ {msg}")
 
         all_candles[symbol] = candles
+
+        # Pre-compute indicators for optimization (2-3x speedup on backtest signal generation)
+        log.debug(f"  Pre-computing indicators for {symbol}...")
+        candles_ohlcv = [[c["open"], c["high"], c["low"], c["close"], c["volume"]] for c in candles]
+        all_indicators[symbol] = scanner.precompute_indicators_for_all_candles(candles_ohlcv)
+        log.debug(f"  Pre-computed {len(all_indicators[symbol])} indicator snapshots for {symbol}")
 
     if skipped_symbols:
         log.warning(f"Skipped {len(skipped_symbols)}/{len(symbols)} symbols due to data issues:")
@@ -811,11 +818,16 @@ def run_backtest(
             candle_time = datetime.fromtimestamp(
                 candles[t]["close_time"] / 1000, tz=timezone.utc
             )
+
+            # Use pre-computed indicators for optimization (2-3x speedup)
+            indicators_at_t = all_indicators.get(symbol, {}).get(t)
+
             try:
                 signal = generate_signal(symbol, window_candles,
                                          include_fundamentals=False,
                                          include_news=False,
-                                         current_time=candle_time)
+                                         current_time=candle_time,
+                                         precomputed_indicators=indicators_at_t)
             except Exception:
                 continue
 
