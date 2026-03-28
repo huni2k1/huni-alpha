@@ -18,8 +18,8 @@ import sys
 import os
 import importlib.util
 
-# Load market-scanner.py
-scanner_path = os.path.join(os.path.dirname(__file__), '..', 'scanner', 'market-scanner.py')
+# Load scanner.py from src/trading_bot (canonical location)
+scanner_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'trading_bot', 'scanner.py')
 spec = importlib.util.spec_from_file_location("market_scanner", scanner_path)
 market_scanner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(market_scanner)
