@@ -1146,7 +1146,8 @@ def fetch_news_sentiment(symbol: str = "BTCUSDT") -> tuple:
 def generate_signal(symbol: str, candles_4h: list,
                     include_fundamentals: bool = True,
                     include_news: bool = True,
-                    state: dict = None) -> Optional[dict]:
+                    state: dict = None,
+                    current_time: Optional[datetime] = None) -> Optional[dict]:
     """
     Generate a complete trade signal from candle data.
 
@@ -1155,6 +1156,7 @@ def generate_signal(symbol: str, candles_4h: list,
         candles_4h: OHLCV candles [[open, high, low, close, volume], ...]
         include_fundamentals: False for backtesting (no historical data available)
         include_news: False for backtesting (no historical data available)
+        current_time: Time to use for session filter (defaults to now). Backtester passes candle timestamp
 
     Returns:
         Signal dict or None if no signal. Signal contains everything needed
@@ -1253,7 +1255,8 @@ def generate_signal(symbol: str, candles_4h: list,
     # ─────────────────────────────────────────────────────────────────
     rsi = tech["details"].get("rsi", {}).get("1h", 50)
     adx = tech["details"].get("adx", 25)
-    hour_utc = datetime.now(timezone.utc).hour
+    time_for_filter = current_time if current_time is not None else datetime.now(timezone.utc)
+    hour_utc = time_for_filter.hour
 
     # Filter 1: SHORT trend_pullback only at RSI 40-50 (market mid-range, room to run)
     if direction == "SHORT" and "trend_pullback" in strategy:
@@ -1273,8 +1276,8 @@ def generate_signal(symbol: str, candles_4h: list,
             return None
 
     # Filter 4: Asia session (0-8 UTC) — low liquidity, false signals
-    # NOTE: Backtester applies this filter separately using candle timestamps (not current time)
-    # Live scanner uses current time, which is correct for real-time alerts
+    # NOTE: current_time parameter allows backtester to pass candle timestamp
+    # Live scanner uses current time (via default), which is correct for real-time alerts
     if hour_utc >= 0 and hour_utc < 8:
         dbg.debug(f"[{symbol}] FILTERED: Asia session hour {hour_utc} UTC (low liquidity)")
         return None
