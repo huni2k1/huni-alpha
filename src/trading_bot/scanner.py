@@ -1471,8 +1471,9 @@ def scan_symbol(symbol: str, state: dict):
     # The last candle from Binance is always the CURRENT incomplete candle.
     # Its volume, high, low, and close are all partial — using it produces signals
     # that don't match the backtester which always works on fully closed candles.
-    # Use cached version for faster repeated fetches.
-    candles_1h = fetch_klines_cached(symbol, "1h", 4001, use_cache=True)
+    # NOTE: Live scanning uses FRESH data only (no cache) to avoid stale price data.
+    # Caching is for backtesting only where determinism matters. Live trading needs current prices.
+    candles_1h = fetch_klines_cached(symbol, "1h", 4001, use_cache=False)
     if not candles_1h:
         log.warning(f"  No 1h data for {symbol}, skipping.")
         return
