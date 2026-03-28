@@ -44,8 +44,16 @@ import requests
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-# Import candle caching module
-from . import candle_cache
+# Import candle caching module (handle both module and script contexts)
+try:
+    from . import candle_cache
+except ImportError:
+    # Fallback for direct script execution
+    _cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "candle_cache.py")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("candle_cache", _cache_path)
+    candle_cache = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(candle_cache)
 
 # ─────────────────────────────────────────────────────────────────
 # SCANNER IMPORT — Suppress side effects, get pure functions
@@ -1053,7 +1061,7 @@ def run_backtest(
     # Helper to calculate return from first N months (forward from start)
     def calc_rolling_return(n_months):
         if len(monthly_sorted) == 0:
-            return {"pnl_usd": 0, "return_pct": 0}
+            return {"pnl_usd": 0, "return_pct": 0, "months_available": 0, "months_requested": n_months}
 
         # Take first n_months from monthly_sorted (forward from start, not backward from end)
         months_slice = monthly_sorted[:n_months] if n_months <= len(monthly_sorted) else monthly_sorted

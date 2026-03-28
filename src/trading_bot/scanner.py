@@ -32,8 +32,16 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-# Import candle caching module
-from . import candle_cache
+# Import candle caching module (handle both module and script contexts)
+try:
+    from . import candle_cache
+except ImportError:
+    # Fallback for direct script execution
+    _cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "candle_cache.py")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("candle_cache", _cache_path)
+    candle_cache = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(candle_cache)
 
 # ─────────────────────────────────────────────────────────────────
 # CONFIG — Load sensitive data from environment or config file
