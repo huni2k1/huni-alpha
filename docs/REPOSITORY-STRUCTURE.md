@@ -180,10 +180,9 @@ trading-bot/
 - No parameter documentation
 - No changelog for API changes
 
-### 10. **Empty Legacy Directories**
-- scanner/ only has run-scanner.sh
-- examples/ only has 1 example
-- Clutter from past refactoring
+### 10. **Sparse Example Directory**
+- examples/ only has 1 example script
+- Could use more usage examples
 
 ---
 
