@@ -22,6 +22,9 @@ spec = importlib.util.spec_from_file_location("market_scanner", scanner_path)
 market_scanner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(market_scanner)
 
+# Register in sys.modules so @patch decorator can find it
+sys.modules['market_scanner'] = market_scanner
+
 # Import key functions to test
 generate_signal = market_scanner.generate_signal
 detect_regime = market_scanner.detect_regime
