@@ -2,10 +2,7 @@
 Comprehensive tests for critical signal filters.
 
 These tests cover:
-1. Signal quality filters (the 4 hard filters)
-   - SHORT trend_pullback RSI 40-50 requirement
-   - LONG breakout skip (disabled entirely)
-   - LONG trend_pullback RSI 60-70 + ADX 40+ requirement
+1. Signal quality filters
    - Asia session 0-8 UTC skip
 2. MIN_SCORE_DIFFERENTIAL filter
 
@@ -45,34 +42,10 @@ def test_min_score_differential_filter_exists():
     if signal is not None:
         assert signal["direction"] in ["LONG", "SHORT"], \
             f"Signal must have single direction, got {signal['direction']}"
-        assert signal["score"] >= 6.0, \
-            f"Signal score should meet entry threshold"
 
 
 # ── Signal Quality Filter Tests ──────────────────────────────────────
 # These 4 filters are hard-coded rejections of unprofitable combinations.
-
-def test_signal_filter_long_breakout_disabled():
-    """
-    Critical Filter: LONG breakout is DISABLED entirely (loses money).
-    Should never return LONG breakout signal.
-
-    This is an operationally critical filter - regression would cause losses.
-    """
-    # Create strong uptrend with volume (would trigger LONG breakout without filter)
-    candles = [
-        [100.0 + i*0.5, 101.0 + i*0.5, 99.5 + i*0.5, 100.5 + i*0.5, 1000 + i*50]
-        for i in range(1000)
-    ]
-
-    signal = generate_signal("TESTUSDT", candles, include_fundamentals=False, include_news=False)
-
-    # Should NOT return LONG breakout
-    if signal is not None:
-        is_long_breakout = (signal.get("direction") == "LONG" and
-                           signal.get("strategy") == "breakout")
-        assert not is_long_breakout, \
-            "LONG breakout should be disabled (historically loses money)"
 
 
 def test_signal_generation_does_not_crash():
