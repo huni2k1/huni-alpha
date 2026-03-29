@@ -52,3 +52,6 @@ config/telegram.json
 
 # Backtest results (generated locally, don't commit)
 src/trading_bot/backtest-results.json
+
+# Archive files
+*.zip
