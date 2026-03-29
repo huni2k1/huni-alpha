@@ -22,6 +22,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Tuple
 
 CACHE_DIR = os.path.expanduser("~/.trading_bot_cache")
+DEFAULT_CACHE_VARIANT = "ohlcv"
+SCHEMA_VERSION = 2
 
 
 def _ensure_cache_dir():
@@ -29,7 +31,8 @@ def _ensure_cache_dir():
     os.makedirs(CACHE_DIR, exist_ok=True)
 
 
-def _get_cache_path(symbol: str, interval: str, start_date: str, end_date: str) -> str:
+def _get_cache_path(symbol: str, interval: str, start_date: str, end_date: str,
+                   variant: str = DEFAULT_CACHE_VARIANT) -> str:
     """Get cache file path for symbol/interval/date range.
 
     Args:
@@ -44,7 +47,11 @@ def _get_cache_path(symbol: str, interval: str, start_date: str, end_date: str) 
     _ensure_cache_dir()
     symbol_dir = os.path.join(CACHE_DIR, symbol, interval)
     os.makedirs(symbol_dir, exist_ok=True)
-    filename = f"{start_date}_{end_date}.json"
+    if variant == DEFAULT_CACHE_VARIANT:
+        filename = f"{start_date}_{end_date}.json"
+    else:
+        safe_variant = variant.replace(os.sep, "_")
+        filename = f"{start_date}_{end_date}.{safe_variant}.json"
     return os.path.join(symbol_dir, filename)
 
 
@@ -78,7 +85,8 @@ def _candle_count_from_days(days: int, interval: str) -> int:
 
 
 def load_from_cache(symbol: str, interval: str, start_date: str,
-                   end_date: str, min_completeness: float = 0.95) -> Optional[List]:
+                   end_date: str, min_completeness: float = 0.95,
+                   variant: str = DEFAULT_CACHE_VARIANT) -> Optional[List]:
     """Load candles from cache if available and valid.
 
     Args:
@@ -91,7 +99,7 @@ def load_from_cache(symbol: str, interval: str, start_date: str,
     Returns:
         List of candles [[open, high, low, close, volume], ...] or None
     """
-    cache_path = _get_cache_path(symbol, interval, start_date, end_date)
+    cache_path = _get_cache_path(symbol, interval, start_date, end_date, variant=variant)
 
     if not os.path.exists(cache_path):
         return None
@@ -133,7 +141,8 @@ def load_from_cache(symbol: str, interval: str, start_date: str,
 
 
 def save_to_cache(symbol: str, interval: str, start_date: str,
-                 end_date: str, candles: List) -> bool:
+                 end_date: str, candles: List,
+                 variant: str = DEFAULT_CACHE_VARIANT) -> bool:
     """Save candles to cache.
 
     Args:
@@ -146,10 +155,12 @@ def save_to_cache(symbol: str, interval: str, start_date: str,
     Returns:
         True if saved successfully, False otherwise
     """
-    cache_path = _get_cache_path(symbol, interval, start_date, end_date)
+    cache_path = _get_cache_path(symbol, interval, start_date, end_date, variant=variant)
 
     try:
         cache_data = {
+            "schema_version": SCHEMA_VERSION,
+            "variant": variant,
             "symbol": symbol,
             "interval": interval,
             "start_date": start_date,

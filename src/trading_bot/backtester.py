@@ -144,6 +144,7 @@ log.info(f"✅ Strategy parameters loaded from scanner: risk={SCANNER_RISK_PCT}%
 # ─────────────────────────────────────────────────────────────────
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "CryptoBacktester/2.0"})
+BACKTESTER_CACHE_VARIANT = "backtester_v2"
 
 def fetch_klines_historical(symbol: str, interval: str, start_ms: int, end_ms: int, limit: int = 1000, max_retries: int = 3) -> list:
     """Fetch klines in batches (Binance max 1000 per request) with retry logic."""
@@ -258,38 +259,43 @@ def fetch_klines_historical_cached(symbol: str, interval: str, start_ms: int,
     start_str = start_dt.strftime("%Y-%m-%d")
     end_str = end_dt.strftime("%Y-%m-%d")
 
-    # Try to load from cache (simple format)
-    cached_candles = candle_cache.load_from_cache(symbol, interval, start_str, end_str)
+    # Try to load from the backtester cache variant, which preserves exchange timestamps.
+    cached_candles = candle_cache.load_from_cache(
+        symbol,
+        interval,
+        start_str,
+        end_str,
+        variant=BACKTESTER_CACHE_VARIANT,
+    )
     if cached_candles is not None:
-        # Reconstruct timestamps: candles are hourly, starting at the first hour >= start_ms
-        interval_ms = 3600000  # 1h in milliseconds
-        first_open_ms = (start_ms // interval_ms) * interval_ms  # round down to nearest hour
-        backtester_candles = []
-        for i, c in enumerate(cached_candles):
-            open_time_ms = first_open_ms + i * interval_ms
-            close_time_ms = open_time_ms + interval_ms - 1
-            backtester_candles.append({
-                "open_time": open_time_ms,
-                "open": c[0],
-                "high": c[1],
-                "low": c[2],
-                "close": c[3],
-                "volume": c[4],
-                "close_time": close_time_ms,
-            })
-        log.info(f"  {symbol}: Loaded {len(backtester_candles)} candles from cache ({start_str}–{end_str})")
-        return backtester_candles
+        if not cached_candles:
+            log.info(f"  {symbol}: Loaded 0 candles from cache ({start_str}–{end_str})")
+            return cached_candles
+
+        first_candle = cached_candles[0]
+        required_keys = {"open_time", "open", "high", "low", "close", "volume", "close_time"}
+        if isinstance(first_candle, dict) and required_keys.issubset(first_candle):
+            log.info(f"  {symbol}: Loaded {len(cached_candles)} candles from cache ({start_str}–{end_str})")
+            return cached_candles
+
+        log.warning(
+            f"  {symbol}: Ignoring legacy cache without timestamps for {start_str}–{end_str}; refetching"
+        )
 
     # Not in cache — fetch from API
     log.info(f"  {symbol}: Cache miss, fetching from Binance API ({start_str}–{end_str})...")
     candles = fetch_klines_historical(symbol, interval, start_ms, end_ms)
 
     if candles:
-        # Convert to simple format for caching
-        simple_format = [[c["open"], c["high"], c["low"], c["close"], c["volume"]]
-                        for c in candles]
-        # Save to cache
-        candle_cache.save_to_cache(symbol, interval, start_str, end_str, simple_format)
+        # Save the full candle dicts so cached backtests preserve exchange timestamps and gaps.
+        candle_cache.save_to_cache(
+            symbol,
+            interval,
+            start_str,
+            end_str,
+            candles,
+            variant=BACKTESTER_CACHE_VARIANT,
+        )
         log.info(f"  {symbol}: Cached {len(candles)} candles")
 
     return candles
@@ -903,7 +909,9 @@ def run_backtest(
 
             # Entry price: use next candle open (realistic) or signal close (legacy)
             if use_next_open:
-                entry_price = candles[t + 1]["open"]
+                entry_idx = t + 1
+                entry_candle = candles[entry_idx]
+                entry_price = entry_candle["open"]
                 # Re-anchor TP/SL from actual entry using same ATR distances
                 # Compute distances from signal and apply to new entry
                 if direction == "LONG":
@@ -917,6 +925,8 @@ def run_backtest(
                     tp_price = entry_price - tp_distance
                     sl_price = entry_price + sl_distance
             else:
+                entry_idx = t
+                entry_candle = candles[entry_idx]
                 entry_price = signal_entry
 
             # Apply slippage (adverse direction)
@@ -926,7 +936,10 @@ def run_backtest(
                 else:
                     entry_price *= (1 - slippage_pct / 100)
 
-            entry_time = datetime.fromtimestamp(candles[t]["close_time"] / 1000, tz=timezone.utc)
+            if use_next_open:
+                entry_time = datetime.fromtimestamp(entry_candle["open_time"] / 1000, tz=timezone.utc)
+            else:
+                entry_time = datetime.fromtimestamp(entry_candle["close_time"] / 1000, tz=timezone.utc)
 
             # Monthly tracking
             if reset_monthly:
@@ -992,7 +1005,7 @@ def run_backtest(
                 "score": score,
                 "entry_price": entry_price,
                 "entry_time": entry_time,
-                "entry_idx": t,
+                "entry_idx": entry_idx,
                 "tp_price": tp_price,
                 "sl_price": sl_price,
                 "current_sl": sl_price,
