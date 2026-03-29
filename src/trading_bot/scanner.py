@@ -1418,6 +1418,9 @@ def generate_signal(symbol: str, candles_4h: list,
         if tech_long > 1.0 or tech_short > 1.0:
             # Tech had a signal but fund/news killed it
             dbg.debug(f"[{symbol}] REJECTED: both totals < 1.0 | tech was L={tech_long:.1f} S={tech_short:.1f}")
+            _last_rejection_reason[symbol] = f"Weak (L={long_total:.1f} S={short_total:.1f})"
+        else:
+            _last_rejection_reason[symbol] = "No Signal"
         return None
 
     # Reject ambiguous signals: require minimum gap between long and short scores
@@ -1427,6 +1430,7 @@ def generate_signal(symbol: str, candles_4h: list,
     score_gap = abs(long_total - short_total)
     if score_gap < MIN_SCORE_DIFFERENTIAL:
         dbg.debug(f"[{symbol}] REJECTED: ambiguous signal | L={long_total:.2f} S={short_total:.2f} gap={score_gap:.2f} < {MIN_SCORE_DIFFERENTIAL}")
+        _last_rejection_reason[symbol] = f"Ambiguous (L={long_total:.1f} S={short_total:.1f})"
         return None
 
     if long_total >= short_total:
@@ -1445,6 +1449,7 @@ def generate_signal(symbol: str, candles_4h: list,
     # Whipsaw detection: reject if direction flipped within last 5 minutes
     if state and is_whipsaw(state, symbol, direction):
         dbg.debug(f"[{symbol}] REJECTED: whipsaw detected (direction change <5min)")
+        _last_rejection_reason[symbol] = "Whipsaw"
         return None
 
     # TP/SL from ATR — strategy-specific parameters
@@ -1473,17 +1478,20 @@ def generate_signal(symbol: str, candles_4h: list,
     if direction == "SHORT" and "trend_pullback" in strategy:
         if not (40 <= rsi < 50):
             dbg.debug(f"[{symbol}] FILTERED: SHORT trend_pullback at RSI {rsi:.0f} (only RSI 40-50 allowed)")
+            _last_rejection_reason[symbol] = f"RSI filter (RSI={rsi:.0f})"
             return None
 
     # Filter 2: LONG breakout — skip entirely (losing pattern)
     if direction == "LONG" and strategy == "breakout":
         dbg.debug(f"[{symbol}] FILTERED: LONG breakout (inherently unprofitable)")
+        _last_rejection_reason[symbol] = "LONG breakout"
         return None
 
     # Filter 3: LONG trend_pullback at RSI 60-70 — only if ADX 40+ (parabolic trend)
     if direction == "LONG" and "trend_pullback" in strategy:
         if 60 <= rsi < 70 and adx < 40:
             dbg.debug(f"[{symbol}] FILTERED: LONG trend_pullback RSI {rsi:.0f} ADX {adx:.1f} (need ADX 40+ at RSI 60-70)")
+            _last_rejection_reason[symbol] = f"ADX filter (ADX={adx:.0f})"
             return None
 
     # Filter 4: Asia session (0-8 UTC) — low liquidity, false signals
@@ -1491,6 +1499,7 @@ def generate_signal(symbol: str, candles_4h: list,
     # Live scanner uses current time (via default), which is correct for real-time alerts
     if hour_utc >= 0 and hour_utc < 8:
         dbg.debug(f"[{symbol}] FILTERED: Asia session hour {hour_utc} UTC (low liquidity)")
+        _last_rejection_reason[symbol] = f"Asia session (UTC {hour_utc})"
         return None
 
     return {
@@ -1613,6 +1622,7 @@ def format_alert(signal: dict) -> str:
 
 # Module-level cycle results (replaces fragile function attribute hack)
 _cycle_results = []
+_last_rejection_reason = {}  # Track rejection reasons for each symbol
 
 
 def scan_symbol(symbol: str, state: dict):
@@ -1647,10 +1657,12 @@ def scan_symbol(symbol: str, state: dict):
                              state=state)
 
     if signal is None:
-        log.info(f"  {symbol} | No signal (NEUTRAL or score=0)")
+        reason = _last_rejection_reason.get(symbol, "No signal")
+        log.info(f"  {symbol} | No signal ({reason})")
         _cycle_results.append({
             'coin': symbol.replace('USDT', ''), 'price': completed_candles[-1][3],
-            'dir': '-', 'tech': 0, 'fund': 0, 'news': 0, 'total': 0
+            'dir': '-', 'tech': 0, 'fund': 0, 'news': 0, 'total': 0,
+            'filter_reason': reason, 'tp': 0, 'sl': 0, 'rr_ratio': 0
         })
         return
 
@@ -1678,7 +1690,8 @@ def scan_symbol(symbol: str, state: dict):
         'tp_pct': signal['tp_pct'],
         'sl_pct': signal['sl_pct'],
         'atr': signal['atr'],
-        'rr_ratio': signal['rr_ratio']
+        'rr_ratio': signal['rr_ratio'],
+        'filter_reason': None  # None = signal passed all filters
     })
 
     # Alert dispatch — all tiers use the same signal (same TP/SL)
@@ -1742,6 +1755,7 @@ def main():
         log.info(f"\n{'─'*40}\nScan cycle @ {datetime.now(timezone.utc).strftime('%H:%M:%S')}")
 
         _cycle_results.clear()
+        _last_rejection_reason.clear()
 
         for symbol in SYMBOLS:
             try:
@@ -1753,11 +1767,12 @@ def main():
         elapsed = time.time() - cycle_start
         sleep_for = max(0, SCAN_INTERVAL - elapsed)
 
-        # Summary table
+        # Summary table - show ALL computed signals + rejected ones
+        log.info(f"\n{'─'*120}")
+        log.info(f"{'Coin':<6} {'Price':>10}  {'Dir':<5} {'Tech':>5} {'Fund':>5} {'News':>5} {'Total':>6} {'Entry':>10} {'TP':>10} {'SL':>10} {'R:R':>4} {'Status':<20}")
+        log.info(f"{'─'*120}")
+
         if _cycle_results:
-            log.info(f"\n{'─'*100}")
-            log.info(f"{'Coin':<6} {'Price':>10}  {'Dir':<5} {'Tech':>5} {'Fund':>5} {'News':>5} {'Total':>6} {'Entry':>10} {'TP':>10} {'SL':>10} {'R:R':>4}")
-            log.info(f"{'─'*100}")
             for r in sorted(_cycle_results, key=lambda x: x['total'], reverse=True):
                 # Format TP/SL with appropriate decimals (more for small-value coins)
                 if r['total'] > 0:
@@ -1767,12 +1782,16 @@ def main():
                     else:
                         tp_str = f"${r['tp']:,.2f}"
                         sl_str = f"${r['sl']:,.2f}"
+                    status = "✅ ACTIVE" if r.get('filter_reason') is None else f"⚠️  {r.get('filter_reason', 'SKIPPED')}"
                 else:
                     tp_str = "—"
                     sl_str = "—"
+                    status = f"⚠️  {r.get('filter_reason', 'NO SIGNAL')}"
                 rr_str = f"{r['rr_ratio']:.1f}:1" if r['total'] > 0 else "—"
-                log.info(f"{r['coin']:<6} ${r['price']:>9,.3f}  {r['dir']:<5} {r['tech']:>5.1f} {r['fund']:>5.1f} {r['news']:>5.1f} {r['total']:>6.1f}  {r['price']:>10,.2f}  {tp_str:>12}  {sl_str:>12}  {rr_str:>4}")
-            log.info(f"{'─'*100}")
+                log.info(f"{r['coin']:<6} ${r['price']:>9,.3f}  {r['dir']:<5} {r['tech']:>5.1f} {r['fund']:>5.1f} {r['news']:>5.1f} {r['total']:>6.1f}  {r['price']:>10,.2f}  {tp_str:>12}  {sl_str:>12}  {rr_str:>4} {status:<20}")
+        else:
+            log.info("(No signals computed this cycle)")
+        log.info(f"{'─'*120}")
 
         log.info(f"Cycle done in {elapsed:.0f}s. Next scan in {sleep_for:.0f}s.")
         time.sleep(sleep_for)
