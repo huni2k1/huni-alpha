@@ -840,15 +840,18 @@ def run_backtest(
                 candles[t]["close_time"] / 1000, tz=timezone.utc
             )
 
-            # Use pre-computed indicators for optimization (2-3x speedup)
-            indicators_at_t = all_indicators.get(symbol, {}).get(t)
+            # NOTE: Indicator caching is currently DISABLED because pre-computed indicators
+            # are based on full history, not sliding windows. This causes misalignment.
+            # Proper fix: either (1) pre-compute within window, or (2) use caching only for
+            # non-window-sensitive calculations. For now, just compute fresh for each window.
+            # indicators_at_t = all_indicators.get(symbol, {}).get(t)
 
             try:
                 signal = generate_signal(symbol, window_candles,
                                          include_fundamentals=False,
                                          include_news=False,
-                                         current_time=candle_time,
-                                         precomputed_indicators=indicators_at_t)
+                                         current_time=candle_time)
+                                         # precomputed_indicators=indicators_at_t)
             except Exception:
                 continue
 
