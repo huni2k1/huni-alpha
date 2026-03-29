@@ -430,9 +430,14 @@ def _close_position(pos: dict, exit_price: float, exit_reason: str, exit_candle:
         pnl_pct = (entry_price - exit_price) / entry_price * 100
     pnl_pct -= fee_pct  # Subtract round-trip fee
 
-    # Calculate position P&L in USD (for remaining position only)
-    # NOTE: partial TP P&L was already added to current_equity when partial close happened
+    # Calculate position P&L in USD
+    # For partial TP trades: pos["position_size"] is already halved; combine with the earlier partial close
     pnl_usd = pos["position_size"] * (pnl_pct / 100)
+    partial_pnl_usd = pos.get("partial_pnl_usd", 0.0)
+    total_pnl_usd = pnl_usd + partial_pnl_usd
+    # Blended pnl_pct uses the original full position size
+    original_position_size = pos["position_size"] * (2.0 if pos.get("partial_taken") else 1.0)
+    total_pnl_pct = total_pnl_usd / original_position_size * 100 if original_position_size > 0 else pnl_pct
 
     # EXIT: Release locked capital and add P&L
     current_equity += pos["position_size"]  # Release locked money
@@ -469,9 +474,9 @@ def _close_position(pos: dict, exit_price: float, exit_reason: str, exit_candle:
         "sl_pct": round(pos["sl_pct"], 2),
         "fee_pct": fee_pct,
         "atr": pos["atr"],
-        "pnl_pct": round(pnl_pct, 2),
-        "pnl_usd": round(pnl_usd, 2),
-        "position_size": round(pos["position_size"], 2),
+        "pnl_pct": round(total_pnl_pct, 2),
+        "pnl_usd": round(total_pnl_usd, 2),
+        "position_size": round(original_position_size, 2),
         "equity_after": round(current_equity, 2),
         "max_favorable_pct": round(pos["max_favorable"], 2),
         "max_adverse_pct": round(pos["max_adverse"], 2),
@@ -951,7 +956,11 @@ def run_backtest(
             # This prevents liquidation when positions are underwater
             unrealized_pnl = 0
             for pos in open_positions:
-                current_price = candles[t]["close"]  # Use current candle close
+                sym = pos["symbol"]
+                if t < len(all_candles[sym]):
+                    current_price = all_candles[sym][t]["close"]  # Use each position's own symbol price
+                else:
+                    current_price = pos["entry_price"]  # Fallback: assume no P&L if candle not available
                 if pos["direction"] == "LONG":
                     price_change_pct = (current_price - pos["entry_price"]) / pos["entry_price"]
                 else:  # SHORT
