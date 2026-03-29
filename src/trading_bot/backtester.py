@@ -1365,7 +1365,6 @@ if __name__ == "__main__":
     parser.add_argument("--symbols", nargs="+", default=None, help="Symbols to test")
     parser.add_argument("--account", type=float, default=1000.0, help="Starting account USD")
     parser.add_argument("--risk-pct", type=float, default=SCANNER_RISK_PCT, help="Risk per trade (from scanner)")
-    parser.add_argument("--entry-threshold", type=float, default=6.0, help="Global min score fallback (default: 6.0)")
     parser.add_argument("--fee-pct", type=float, default=0.10, help="Round-trip fee (default: 0.10)")
     parser.add_argument("--trailing-stop", action="store_true", help="Enable trailing stop (default: disabled)")
     parser.add_argument("--reset-monthly", action="store_true", help="Reset balance to starting account at beginning of each month")
@@ -1374,30 +1373,16 @@ if __name__ == "__main__":
     parser.add_argument("--trend-threshold", type=float, default=SCANNER_TREND_THRESH, help="Min score for trend_pullback signals (from scanner)")
     parser.add_argument("--breakout-threshold", type=float, default=SCANNER_BREAKOUT_THRESH, help="Min score for breakout signals (from scanner)")
     # Position management (from scanner)
-    parser.add_argument("--cooldown", type=int, default=SCANNER_COOLDOWN, help="Cooldown 4H-candles between signals per symbol (from scanner)")
+    parser.add_argument("--cooldown", type=int, default=SCANNER_COOLDOWN, help="Cooldown candles between signals per symbol (from scanner)")
     parser.add_argument("--max-positions", type=int, default=SCANNER_MAX_POSITIONS, help="Max concurrent open positions (from scanner)")
     parser.add_argument("--slippage-pct", type=float, default=0.05, help="Adverse slippage %% per side (default: 0.05)")
-    parser.add_argument("--lookahead", action="store_true", help="Use signal candle close as entry (default: use next candle open)")
     parser.add_argument("--fixed-size", type=float, default=0.0, help="Fixed $ per trade (0=use risk%% sizing)")
-    parser.add_argument("--partial-tp", action="store_true", help="Close 50%% at 1R, move SL to breakeven (DISABLED: degrades performance)")
-    parser.add_argument("--no-partial-tp", action="store_false", dest="partial_tp", default=True, help="Disable partial TP feature (default: disabled)")
-    parser.add_argument("--kelly-sizing", action="store_true", dest="kelly_sizing", default=True, help="Enable Kelly Criterion-based dynamic position sizing (default: enabled)")
-    parser.add_argument("--no-kelly-sizing", action="store_false", dest="kelly_sizing", help="Disable Kelly sizing, use fixed 1.5% risk instead")
+    parser.add_argument("--partial-tp", action="store_true", default=False, help="Close 50%% at 1R, move SL to breakeven (default: disabled)")
+    parser.add_argument("--no-kelly-sizing", action="store_false", dest="kelly_sizing", default=True, help="Disable Kelly sizing, use flat risk%% instead")
     # Circuit breaker
     parser.add_argument("--max-drawdown", type=float, default=25.0, help="Max drawdown %% before circuit breaker (default: 25)")
     parser.add_argument("--recovery-candles", type=int, default=168, help="Candles to pause after circuit breaker (default: 168)")
     args = parser.parse_args()
-
-    # If --entry-threshold is explicitly set, override strategy-specific thresholds
-    # unless they were also explicitly set by the user
-    _et_explicit = "--entry-threshold" in " ".join(sys.argv)
-    _tt_explicit = "--trend-threshold" in " ".join(sys.argv)
-    _bt_explicit = "--breakout-threshold" in " ".join(sys.argv)
-    if _et_explicit:
-        if not _tt_explicit:
-            args.trend_threshold = args.entry_threshold
-        if not _bt_explicit:
-            args.breakout_threshold = args.entry_threshold
 
     symbols = args.symbols or [
         "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT",
@@ -1406,9 +1391,9 @@ if __name__ == "__main__":
 
     log.info(f"Starting backtest: {args.months}mo, {len(symbols)} symbols, ${args.account} account")
     log.info(f"TP/SL: ATR-based, strategy-dependent R:R (multi-regime)")
-    log.info(f"Thresholds: trend={args.trend_threshold} breakout={args.breakout_threshold} (global fallback={args.entry_threshold})")
+    log.info(f"Thresholds: trend={args.trend_threshold} breakout={args.breakout_threshold}")
     log.info(f"Fees: {args.fee_pct}% RT | Slippage: {args.slippage_pct}% | Trailing Stop: {'ON' if args.trailing_stop else 'OFF'}")
-    log.info(f"Max positions: {args.max_positions} | Cooldown: {args.cooldown}h | Entry: {'candle close' if args.lookahead else 'next open'}")
+    log.info(f"Max positions: {args.max_positions} | Cooldown: {args.cooldown}h | Entry: next candle open")
     log.info(f"Circuit breaker: {args.max_drawdown}% DD → pause {args.recovery_candles} candles")
 
     results = run_backtest(
@@ -1416,7 +1401,7 @@ if __name__ == "__main__":
         months=args.months,
         account=args.account,
         risk_pct=args.risk_pct,
-        threshold_entry=args.entry_threshold,
+        threshold_entry=min(args.trend_threshold, args.breakout_threshold),
         fee_pct=args.fee_pct,
         trailing_stop=args.trailing_stop,
         reset_monthly=args.reset_monthly,
@@ -1425,7 +1410,7 @@ if __name__ == "__main__":
         breakout_threshold=args.breakout_threshold,
         max_positions=args.max_positions,
         slippage_pct=args.slippage_pct,
-        use_next_open=not args.lookahead,
+        use_next_open=True,
         fixed_size=args.fixed_size,
         max_drawdown_pct=args.max_drawdown,
         recovery_candles=args.recovery_candles,
