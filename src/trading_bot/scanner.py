@@ -1475,7 +1475,8 @@ def generate_signal(symbol: str, candles_4h: list,
     hour_utc = time_for_filter.hour
 
     # Filter 1: SHORT trend_pullback only at RSI 40-50 (market mid-range, room to run)
-    if direction == "SHORT" and "trend_pullback" in strategy:
+    # Note: exact match — does NOT apply to trend_pullback_weak (low-ADX regime)
+    if direction == "SHORT" and strategy == "trend_pullback":
         if not (40 <= rsi < 50):
             dbg.debug(f"[{symbol}] FILTERED: SHORT trend_pullback at RSI {rsi:.0f} (only RSI 40-50 allowed)")
             _last_rejection_reason[symbol] = f"RSI filter (RSI={rsi:.0f})"
@@ -1488,7 +1489,8 @@ def generate_signal(symbol: str, candles_4h: list,
         return None
 
     # Filter 3: LONG trend_pullback at RSI 60-70 — only if ADX 40+ (parabolic trend)
-    if direction == "LONG" and "trend_pullback" in strategy:
+    # Note: exact match — does NOT apply to trend_pullback_weak (low-ADX regime)
+    if direction == "LONG" and strategy == "trend_pullback":
         if 60 <= rsi < 70 and adx < 40:
             dbg.debug(f"[{symbol}] FILTERED: LONG trend_pullback RSI {rsi:.0f} ADX {adx:.1f} (need ADX 40+ at RSI 60-70)")
             _last_rejection_reason[symbol] = f"ADX filter (ADX={adx:.0f})"

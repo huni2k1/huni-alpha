@@ -261,18 +261,21 @@ def fetch_klines_historical_cached(symbol: str, interval: str, start_ms: int,
     # Try to load from cache (simple format)
     cached_candles = candle_cache.load_from_cache(symbol, interval, start_str, end_str)
     if cached_candles is not None:
-        # Convert from simple format to backtester format
+        # Reconstruct timestamps: candles are hourly, starting at the first hour >= start_ms
+        interval_ms = 3600000  # 1h in milliseconds
+        first_open_ms = (start_ms // interval_ms) * interval_ms  # round down to nearest hour
         backtester_candles = []
-        for c in cached_candles:
-            # c is [open, high, low, close, volume]
+        for i, c in enumerate(cached_candles):
+            open_time_ms = first_open_ms + i * interval_ms
+            close_time_ms = open_time_ms + interval_ms - 1
             backtester_candles.append({
-                "open_time": 0,  # Approximation (not ideal but acceptable for backtest)
+                "open_time": open_time_ms,
                 "open": c[0],
                 "high": c[1],
                 "low": c[2],
                 "close": c[3],
                 "volume": c[4],
-                "close_time": 0,
+                "close_time": close_time_ms,
             })
         log.info(f"  {symbol}: Loaded {len(backtester_candles)} candles from cache ({start_str}–{end_str})")
         return backtester_candles
@@ -679,6 +682,7 @@ def run_backtest(
     # Timing counters
     signal_count = 0
     position_close_count = 0
+    rejection_counts = {}  # Track rejection reasons for summary
     entry_count = 0
 
     for t in range(trade_start_idx, max_candles):
@@ -861,6 +865,9 @@ def run_backtest(
                 continue
 
             if signal is None:
+                reasons = getattr(scanner, '_last_rejection_reason', {})
+                reason = reasons.get(symbol, 'unknown')
+                rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
                 continue
 
             signal_count += 1
@@ -1010,6 +1017,10 @@ def run_backtest(
     log.info(f"  - Signals generated: {signal_count}")
     log.info(f"  - Entries created: {entry_count}")
     log.info(f"  - Positions closed: {position_close_count}")
+    if rejection_counts:
+        log.info(f"  - Rejection breakdown (total {sum(rejection_counts.values())}):")
+        for reason, count in sorted(rejection_counts.items(), key=lambda x: -x[1]):
+            log.info(f"      {count:5d}  {reason}")
 
     # ── STEP 3: Force-close remaining positions at end of data ─────
     step3_start = time.time()
