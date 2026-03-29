@@ -43,6 +43,7 @@ import time
 import random
 import logging
 import argparse
+from collections import defaultdict
 import numpy as np
 import requests
 from datetime import datetime, timezone, timedelta
@@ -145,6 +146,8 @@ log.info(f"✅ Strategy parameters loaded from scanner: risk={SCANNER_RISK_PCT}%
 SESSION = requests.Session()
 SESSION.headers.update({"User-Agent": "CryptoBacktester/2.0"})
 BACKTESTER_CACHE_VARIANT = "backtester_v2"
+EXIT_REASON_ORDER = ["TP", "SL", "TRAIL_SL", "TIMEOUT"]
+WEEKDAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 def fetch_klines_historical(symbol: str, interval: str, start_ms: int, end_ms: int, limit: int = 1000, max_retries: int = 3) -> list:
     """Fetch klines in batches (Binance max 1000 per request) with retry logic."""
@@ -550,6 +553,186 @@ def calculate_kelly_risk_multiplier(score: float, base_risk: float = 1.5) -> flo
         multiplier = 0.8 + (norm * 1.2)  # 0.8 + (0 to 1.2) = 0.8 to 2.0
 
     return multiplier
+
+
+def _calculate_streaks(trades: list) -> tuple:
+    max_wins = max_losses = 0
+    current_wins = current_losses = 0
+    for trade in trades:
+        if trade["pnl_pct"] > 0:
+            current_wins += 1
+            current_losses = 0
+        elif trade["pnl_pct"] < 0:
+            current_losses += 1
+            current_wins = 0
+        else:
+            current_wins = 0
+            current_losses = 0
+        max_wins = max(max_wins, current_wins)
+        max_losses = max(max_losses, current_losses)
+    return max_wins, max_losses
+
+
+def _annualize_return(total_return_pct: float, months_tested: int) -> float:
+    if months_tested <= 0:
+        return 0.0
+
+    period_return = total_return_pct / 100
+    if period_return <= -1.0:
+        return -100.0
+
+    annualized_return = ((1.0 + period_return) ** (12 / months_tested) - 1.0) * 100
+    return float(annualized_return)
+
+
+def _calculate_risk_metrics(monthly_sorted: list, total_return_pct: float,
+                            max_drawdown_pct: float, months_tested: int) -> dict:
+    monthly_returns = [m["monthly_return_pct"] for m in monthly_sorted]
+    if months_tested > len(monthly_returns):
+        monthly_returns = monthly_returns + [0.0] * (months_tested - len(monthly_returns))
+
+    positive_months = len([r for r in monthly_returns if r > 0])
+    negative_months = len([r for r in monthly_returns if r < 0])
+    monthly_vol = float(np.std(monthly_returns, ddof=0)) if monthly_returns else 0.0
+    downside = [r for r in monthly_returns if r < 0]
+    downside_vol = float(np.std(downside, ddof=0)) if downside else 0.0
+    avg_monthly = float(np.mean(monthly_returns)) if monthly_returns else 0.0
+    annualized_return_pct = _annualize_return(total_return_pct, months_tested)
+
+    sharpe = 0.0
+    if monthly_vol > 0:
+        sharpe = (avg_monthly / monthly_vol) * np.sqrt(12)
+
+    sortino = 0.0
+    if downside_vol > 0:
+        sortino = (avg_monthly / downside_vol) * np.sqrt(12)
+
+    calmar = (annualized_return_pct / max_drawdown_pct) if max_drawdown_pct > 0 else 0.0
+    recovery_factor = (total_return_pct / max_drawdown_pct) if max_drawdown_pct > 0 else 0.0
+    consistency_pct = (positive_months / months_tested * 100) if months_tested > 0 else 0.0
+
+    return {
+        "months_tested": months_tested,
+        "positive_months": positive_months,
+        "negative_months": negative_months,
+        "consistency_pct": round(consistency_pct, 1),
+        "avg_monthly_return_pct": round(avg_monthly, 2),
+        "monthly_volatility_pct": round(monthly_vol, 2),
+        "downside_volatility_pct": round(downside_vol, 2),
+        "best_month_return_pct": round(max(monthly_returns), 2) if monthly_returns else 0,
+        "worst_month_return_pct": round(min(monthly_returns), 2) if monthly_returns else 0,
+        "annualized_return_pct": round(float(annualized_return_pct), 2),
+        "sharpe_ratio": round(float(sharpe), 2),
+        "sortino_ratio": round(float(sortino), 2),
+        "calmar_ratio": round(float(calmar), 2),
+        "recovery_factor": round(float(recovery_factor), 2),
+    }
+
+
+def _aggregate_trade_stats(trades: list) -> dict:
+    if not trades:
+        return {
+            "trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "win_rate": 0,
+            "total_pnl_usd": 0,
+            "avg_pnl_usd": 0,
+            "avg_pnl_pct": 0,
+            "profit_factor": 0,
+            "avg_score": 0,
+            "avg_duration_hours": 0,
+            "avg_mfe_pct": 0,
+            "avg_mae_pct": 0,
+            "avg_r_multiple": 0,
+        }
+
+    wins = [t for t in trades if t["pnl_usd"] > 0]
+    losses = [t for t in trades if t["pnl_usd"] < 0]
+    gross_profit = sum(t["pnl_usd"] for t in wins)
+    gross_loss = abs(sum(t["pnl_usd"] for t in losses))
+    r_multiples = [t["pnl_pct"] / t["sl_pct"] for t in trades if t.get("sl_pct", 0) > 0]
+
+    return {
+        "trades": len(trades),
+        "wins": len(wins),
+        "losses": len(losses),
+        "win_rate": round(len(wins) / len(trades) * 100, 1) if trades else 0,
+        "total_pnl_usd": round(sum(t["pnl_usd"] for t in trades), 2),
+        "avg_pnl_usd": round(float(np.mean([t["pnl_usd"] for t in trades])), 2),
+        "avg_pnl_pct": round(float(np.mean([t["pnl_pct"] for t in trades])), 2),
+        "profit_factor": round(gross_profit / gross_loss, 2) if gross_loss > 0 else 0,
+        "avg_score": round(float(np.mean([t["score"] for t in trades])), 2),
+        "avg_duration_hours": round(float(np.mean([t.get("duration_hours", 0) for t in trades])), 1),
+        "avg_mfe_pct": round(float(np.mean([t.get("max_favorable_pct", 0) for t in trades])), 2),
+        "avg_mae_pct": round(float(np.mean([t.get("max_adverse_pct", 0) for t in trades])), 2),
+        "avg_r_multiple": round(float(np.mean(r_multiples)), 2) if r_multiples else 0,
+    }
+
+
+def _parse_trade_timestamp(timestamp_str: str) -> datetime:
+    normalized = timestamp_str.replace("Z", "+00:00") if timestamp_str.endswith("Z") else timestamp_str
+    return datetime.fromisoformat(normalized)
+
+
+def _build_trade_breakdowns(trades: list) -> dict:
+    buckets = {
+        "by_strategy": defaultdict(list),
+        "by_regime": defaultdict(list),
+        "by_exit_reason": defaultdict(list),
+        "by_entry_hour_utc": defaultdict(list),
+        "by_entry_weekday_utc": defaultdict(list),
+    }
+
+    for trade in trades:
+        strategy = trade.get("strategy") or trade.get("details", {}).get("strategy", "unknown")
+        regime = trade.get("regime") or trade.get("details", {}).get("regime", "unknown")
+        exit_reason = trade.get("exit_reason", "UNKNOWN")
+        entry_dt = _parse_trade_timestamp(trade["entry_time"])
+        hour_key = f"{entry_dt.hour:02d}"
+        weekday_key = entry_dt.strftime("%a")
+
+        buckets["by_strategy"][strategy].append(trade)
+        buckets["by_regime"][regime].append(trade)
+        buckets["by_exit_reason"][exit_reason].append(trade)
+        buckets["by_entry_hour_utc"][hour_key].append(trade)
+        buckets["by_entry_weekday_utc"][weekday_key].append(trade)
+
+    def build_sorted_dict(bucket_map: dict, sorter) -> dict:
+        items = []
+        for key, bucket_trades in bucket_map.items():
+            items.append((key, _aggregate_trade_stats(bucket_trades)))
+        items.sort(key=sorter)
+        return {key: value for key, value in items}
+
+    return {
+        "by_strategy": build_sorted_dict(
+            buckets["by_strategy"],
+            sorter=lambda item: (-item[1]["total_pnl_usd"], item[0]),
+        ),
+        "by_regime": build_sorted_dict(
+            buckets["by_regime"],
+            sorter=lambda item: (-item[1]["total_pnl_usd"], item[0]),
+        ),
+        "by_exit_reason": build_sorted_dict(
+            buckets["by_exit_reason"],
+            sorter=lambda item: (
+                EXIT_REASON_ORDER.index(item[0]) if item[0] in EXIT_REASON_ORDER else len(EXIT_REASON_ORDER),
+                item[0],
+            ),
+        ),
+        "by_entry_hour_utc": build_sorted_dict(
+            buckets["by_entry_hour_utc"],
+            sorter=lambda item: int(item[0]),
+        ),
+        "by_entry_weekday_utc": build_sorted_dict(
+            buckets["by_entry_weekday_utc"],
+            sorter=lambda item: (
+                WEEKDAY_ORDER.index(item[0]) if item[0] in WEEKDAY_ORDER else len(WEEKDAY_ORDER),
+                item[0],
+            ),
+        ),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -1172,10 +1355,36 @@ def run_backtest(
     # Direction breakdown
     long_trades = [t for t in all_trades if t["direction"] == "LONG"]
     short_trades = [t for t in all_trades if t["direction"] == "SHORT"]
+    avg_win_usd = float(np.mean([t["pnl_usd"] for t in wins])) if wins else 0.0
+    avg_loss_usd = float(np.mean([abs(t["pnl_usd"]) for t in losses])) if losses else 0.0
+    r_multiples = [t["pnl_pct"] / t["sl_pct"] for t in all_trades if t.get("sl_pct", 0) > 0]
+    win_r = [t["pnl_pct"] / t["sl_pct"] for t in wins if t.get("sl_pct", 0) > 0]
+    loss_r = [t["pnl_pct"] / t["sl_pct"] for t in losses if t.get("sl_pct", 0) > 0]
+    avg_mfe_pct = float(np.mean([t.get("max_favorable_pct", 0) for t in all_trades])) if all_trades else 0.0
+    avg_mae_pct = float(np.mean([t.get("max_adverse_pct", 0) for t in all_trades])) if all_trades else 0.0
+    max_consecutive_wins, max_consecutive_losses = _calculate_streaks(all_trades)
 
     # TP/SL distribution stats
     all_tp_pcts = [t["tp_pct"] for t in all_trades]
     all_sl_pcts = [t["sl_pct"] for t in all_trades]
+
+    by_strategy_direction = {}
+    strategy_direction_keys = sorted(
+        {(t["strategy"], t["direction"]) for t in all_trades},
+        key=lambda x: (x[0], x[1]),
+    )
+    for strategy, direction in strategy_direction_keys:
+        key = f"{strategy}_{direction}"
+        bucket_trades = [
+            t for t in all_trades
+            if t["strategy"] == strategy and t["direction"] == direction
+        ]
+        by_strategy_direction[key] = _aggregate_trade_stats(bucket_trades)
+
+    total_pnl_usd = round(sum(m["pnl_usd"] for m in monthly_sorted), 2) if reset_monthly else round(current_equity - account, 2)
+    total_return_pct = round((sum(m["pnl_usd"] for m in monthly_sorted) / account * 100), 2) if reset_monthly else round((current_equity - account) / account * 100, 2)
+    risk_metrics = _calculate_risk_metrics(monthly_sorted, total_return_pct, round(max_dd_pct, 2), months)
+    trade_breakdowns = _build_trade_breakdowns(all_trades)
 
     results = {
         "config": {
@@ -1208,17 +1417,27 @@ def run_backtest(
             "losses": len(losses),
             "win_rate": round(len(wins) / len(all_trades) * 100, 1) if all_trades else 0,
             "profit_factor": profit_factor,
-            "total_pnl_usd": round(sum(m["pnl_usd"] for m in monthly_sorted), 2) if reset_monthly else round(current_equity - account, 2),
-            "total_return_pct": round((sum(m["pnl_usd"] for m in monthly_sorted) / account * 100), 2) if reset_monthly else round((current_equity - account) / account * 100, 2),
+            "total_pnl_usd": total_pnl_usd,
+            "total_return_pct": total_return_pct,
             "final_equity": round(account + sum(m["pnl_usd"] for m in monthly_sorted), 2) if reset_monthly else round(current_equity, 2),
             "max_drawdown_usd": round(max_dd, 2),
             "max_drawdown_pct": round(max_dd_pct, 2),
             "avg_win_pct": round(np.mean([t["pnl_pct"] for t in wins]), 2) if wins else 0,
             "avg_loss_pct": round(np.mean([t["pnl_pct"] for t in losses]), 2) if losses else 0,
+            "avg_win_usd": round(avg_win_usd, 2),
+            "avg_loss_usd": round(avg_loss_usd, 2),
+            "payoff_ratio": round(avg_win_usd / avg_loss_usd, 2) if avg_loss_usd > 0 else 0,
             "avg_ev_per_trade_pct": round(np.mean([t["pnl_pct"] for t in all_trades]), 2) if all_trades else 0,
             "avg_ev_per_trade_usd": round(np.mean([t["pnl_usd"] for t in all_trades]), 2) if all_trades else 0,
             "best_trade_pct": round(max(t["pnl_pct"] for t in all_trades), 2) if all_trades else 0,
             "worst_trade_pct": round(min(t["pnl_pct"] for t in all_trades), 2) if all_trades else 0,
+            "avg_mfe_pct": round(avg_mfe_pct, 2),
+            "avg_mae_pct": round(avg_mae_pct, 2),
+            "avg_r_multiple": round(float(np.mean(r_multiples)), 2) if r_multiples else 0,
+            "avg_win_r": round(float(np.mean(win_r)), 2) if win_r else 0,
+            "avg_loss_r": round(float(np.mean(loss_r)), 2) if loss_r else 0,
+            "max_consecutive_wins": max_consecutive_wins,
+            "max_consecutive_losses": max_consecutive_losses,
             "avg_trades_per_month": round(len(all_trades) / max(months, 1), 1),
             "long_trades": len(long_trades),
             "short_trades": len(short_trades),
@@ -1229,17 +1448,24 @@ def run_backtest(
             "trail_sl_exits": len([t for t in all_trades if t["exit_reason"] == "TRAIL_SL"]),
             "timeout_exits": len([t for t in all_trades if t["exit_reason"] == "TIMEOUT"]),
             "total_fees_usd": round(sum(t["position_size"] * fee_pct / 100 for t in all_trades), 2),
-            # Position duration statistics
             "avg_duration_hours": round(np.mean([t.get("duration_hours", 0) for t in all_trades]), 1) if all_trades else 0,
             "avg_duration_tp_hours": round(np.mean([t.get("duration_hours", 0) for t in all_trades if t["exit_reason"] == "TP"]), 1) if [t for t in all_trades if t["exit_reason"] == "TP"] else 0,
             "avg_duration_sl_hours": round(np.mean([t.get("duration_hours", 0) for t in all_trades if t["exit_reason"] in ["SL", "TRAIL_SL"]]), 1) if [t for t in all_trades if t["exit_reason"] in ["SL", "TRAIL_SL"]] else 0,
             "avg_duration_long_hours": round(np.mean([t.get("duration_hours", 0) for t in long_trades]), 1) if long_trades else 0,
             "avg_duration_short_hours": round(np.mean([t.get("duration_hours", 0) for t in short_trades]), 1) if short_trades else 0,
+            **risk_metrics,
         },
         "monthly": monthly_sorted,
         "rolling_returns": rolling_returns,
         "by_symbol": symbol_stats,
+        "by_strategy": trade_breakdowns["by_strategy"],
+        "by_regime": trade_breakdowns["by_regime"],
+        "by_strategy_direction": by_strategy_direction,
+        "by_exit_reason": trade_breakdowns["by_exit_reason"],
+        "by_entry_hour_utc": trade_breakdowns["by_entry_hour_utc"],
+        "by_entry_weekday_utc": trade_breakdowns["by_entry_weekday_utc"],
         "by_score_band": score_bands,
+        "rejection_counts": dict(sorted(rejection_counts.items(), key=lambda x: -x[1])) if rejection_counts else {},
         "equity_curve": equity_curve,
         "trades": all_trades,
     }
@@ -1267,6 +1493,19 @@ def print_summary(results: dict):
     """Print a clean console summary."""
     s = results["summary"]
     c = results["config"]
+    by_symbol = results.get("by_symbol", {})
+    by_regime = results.get("by_regime", {})
+    by_strategy_direction = results.get("by_strategy_direction", {})
+    by_exit_reason = results.get("by_exit_reason", {})
+    by_score_band = results.get("by_score_band", {})
+    by_entry_hour = results.get("by_entry_hour_utc", {})
+    by_entry_weekday = results.get("by_entry_weekday_utc", {})
+    rejection_counts = results.get("rejection_counts", {})
+
+    def fmt_pf(value) -> str:
+        if value == float("inf"):
+            return "INF"
+        return f"{value:.2f}"
 
     print("\n" + "═" * 62)
     print(f"  BACKTEST RESULTS — Multi-Regime Scanner (ATR TP/SL)")
@@ -1286,16 +1525,30 @@ def print_summary(results: dict):
     print(f"\n  {'─'*50}")
     print(f"  Total Trades:       {s['total_trades']}")
     print(f"  Win Rate:           {s['win_rate']}%  ({s['wins']}W / {s['losses']}L)")
-    print(f"  Profit Factor:      {s['profit_factor']}")
+    print(f"  Profit Factor:      {fmt_pf(s['profit_factor'])}")
     print(f"  Avg EV/trade:       {s['avg_ev_per_trade_pct']:+.2f}%  (${s['avg_ev_per_trade_usd']:+.2f})")
-    print(f"  Avg Win:            {s['avg_win_pct']:+.2f}%")
-    print(f"  Avg Loss:           {s['avg_loss_pct']:.2f}%")
+    print(f"  Avg Win / Loss:     {s['avg_win_pct']:+.2f}% / {s['avg_loss_pct']:.2f}%")
+    print(f"  Avg Win / Loss $:   ${s['avg_win_usd']:+.2f} / ${-s['avg_loss_usd']:.2f}")
+    print(f"  Payoff Ratio:       {s['payoff_ratio']:.2f}")
+    print(f"  Avg R / Win R / L:  {s['avg_r_multiple']:+.2f} / {s['avg_win_r']:+.2f} / {s['avg_loss_r']:.2f}")
+    print(f"  Avg MFE / MAE:      {s['avg_mfe_pct']:.2f}% / {s['avg_mae_pct']:.2f}%")
     print(f"  Best Trade:         {s['best_trade_pct']:+.2f}%")
     print(f"  Worst Trade:        {s['worst_trade_pct']:.2f}%")
+    print(f"  Win / Loss Streak:  {s['max_consecutive_wins']} / {s['max_consecutive_losses']}")
 
     print(f"\n  Exit Reasons:       TP: {s['tp_exits']} | SL: {s['sl_exits']} | Trail SL: {s['trail_sl_exits']} | Timeout: {s['timeout_exits']}")
     print(f"  Direction:          LONG: {s['long_trades']} ({s['long_win_rate']}% WR) | SHORT: {s['short_trades']} ({s['short_win_rate']}% WR)")
     print(f"  Trades/Month:       {s['avg_trades_per_month']}")
+
+    print(f"\n  {'─'*50}")
+    print(f"  Risk Diagnostics")
+    print(f"  {'─'*50}")
+    print(f"  Annualized Return:  {s['annualized_return_pct']:+.2f}%")
+    print(f"  Positive Months:    {s['positive_months']} / {s['months_tested']} ({s['consistency_pct']:.1f}%)")
+    print(f"  Avg / Best / Worst: {s['avg_monthly_return_pct']:+.2f}% / {s['best_month_return_pct']:+.2f}% / {s['worst_month_return_pct']:+.2f}%")
+    print(f"  Vol / Downside Vol: {s['monthly_volatility_pct']:.2f}% / {s['downside_volatility_pct']:.2f}%")
+    print(f"  Sharpe / Sortino:   {s['sharpe_ratio']:.2f} / {s['sortino_ratio']:.2f}")
+    print(f"  Calmar / Recovery:  {s['calmar_ratio']:.2f} / {s['recovery_factor']:.2f}")
 
     # Position duration statistics
     if 'avg_duration_hours' in s:
@@ -1334,51 +1587,82 @@ def print_summary(results: dict):
         format_rolling_row("6-Month:", "6m")
         format_rolling_row("12-Month:", "12m")
 
-    # Per-symbol
-    print(f"\n  {'─'*50}")
-    print(f"  {'Symbol':<10} {'Trades':>6} {'WR':>6} {'P&L':>10} {'Best':>7} {'Worst':>7}")
-    print(f"  {'─'*50}")
-    for sym, st in sorted(results["by_symbol"].items(), key=lambda x: x[1]["total_pnl_usd"], reverse=True):
-        coin = sym.replace("USDT", "")
-        print(f"  {coin:<10} {st['total_trades']:>6} {st['win_rate']:>5.0f}% ${st['total_pnl_usd']:>9,.2f} {st['best_trade']:>+6.1f}% {st['worst_trade']:>6.1f}%")
-
-    # Per-strategy breakdown
-    strategy_stats = {}
-    for t in results.get("trades", []):
-        strat = t.get("details", {}).get("strategy", "unknown")
-        if strat not in strategy_stats:
-            strategy_stats[strat] = {"trades": 0, "wins": 0, "pnl": 0.0}
-        strategy_stats[strat]["trades"] += 1
-        strategy_stats[strat]["pnl"] += t["pnl_usd"]
-        if t["pnl_pct"] > 0:
-            strategy_stats[strat]["wins"] += 1
-
-    if strategy_stats:
+    if by_score_band:
         print(f"\n  {'─'*50}")
-        print(f"  {'Strategy':<22} {'Trades':>6} {'WR':>6} {'P&L':>10}")
+        print(f"  {'Score Band':<12} {'Trades':>6} {'WR':>6} {'Avg%':>8} {'P&L':>10}")
         print(f"  {'─'*50}")
-        for strat, ss in sorted(strategy_stats.items(), key=lambda x: x[1]["pnl"], reverse=True):
-            wr = round(ss["wins"] / ss["trades"] * 100, 0) if ss["trades"] > 0 else 0
-            print(f"  {strat:<22} {ss['trades']:>6} {wr:>5.0f}% ${ss['pnl']:>9,.2f}")
+        for band, stats in by_score_band.items():
+            print(f"  {band:<12} {stats['trades']:>6} {stats['win_rate']:>5.0f}% {stats['avg_pnl_pct']:>+7.2f}% ${stats['pnl_usd']:>9,.2f}")
 
-    # Per-regime breakdown
-    regime_stats = {}
-    for t in results.get("trades", []):
-        reg = t.get("details", {}).get("regime", "unknown")
-        if reg not in regime_stats:
-            regime_stats[reg] = {"trades": 0, "wins": 0, "pnl": 0.0}
-        regime_stats[reg]["trades"] += 1
-        regime_stats[reg]["pnl"] += t["pnl_usd"]
-        if t["pnl_pct"] > 0:
-            regime_stats[reg]["wins"] += 1
-
-    if regime_stats:
+    if by_strategy_direction:
         print(f"\n  {'─'*50}")
-        print(f"  {'Regime':<22} {'Trades':>6} {'WR':>6} {'P&L':>10}")
+        print(f"  {'Setup':<28} {'Trades':>6} {'WR':>6} {'PF':>6} {'Avg%':>8} {'P&L':>10}")
         print(f"  {'─'*50}")
-        for reg, rs in sorted(regime_stats.items(), key=lambda x: x[1]["pnl"], reverse=True):
-            wr = round(rs["wins"] / rs["trades"] * 100, 0) if rs["trades"] > 0 else 0
-            print(f"  {reg:<22} {rs['trades']:>6} {wr:>5.0f}% ${rs['pnl']:>9,.2f}")
+        sorted_setups = sorted(
+            by_strategy_direction.items(),
+            key=lambda item: item[1]["total_pnl_usd"],
+            reverse=True,
+        )
+        for setup, stats in sorted_setups:
+            print(
+                f"  {setup:<28} {stats['trades']:>6} {stats['win_rate']:>5.0f}% "
+                f"{fmt_pf(stats['profit_factor']):>6} {stats['avg_pnl_pct']:>+7.2f}% ${stats['total_pnl_usd']:>9,.2f}"
+            )
+
+    if by_exit_reason:
+        print(f"\n  {'─'*50}")
+        print(f"  {'Exit':<10} {'Trades':>6} {'WR':>6} {'Avg%':>8} {'AvgHrs':>8} {'P&L':>10}")
+        print(f"  {'─'*50}")
+        for reason, stats in by_exit_reason.items():
+            print(
+                f"  {reason:<10} {stats['trades']:>6} {stats['win_rate']:>5.0f}% "
+                f"{stats['avg_pnl_pct']:>+7.2f}% {stats['avg_duration_hours']:>7.1f}h ${stats['total_pnl_usd']:>9,.2f}"
+            )
+
+    if by_symbol:
+        print(f"\n  {'─'*50}")
+        print(f"  {'Symbol':<10} {'Trades':>6} {'WR':>6} {'P&L':>10} {'Best':>7} {'Worst':>7}")
+        print(f"  {'─'*50}")
+        for sym, st in sorted(by_symbol.items(), key=lambda x: x[1]["total_pnl_usd"], reverse=True):
+            coin = sym.replace("USDT", "")
+            print(f"  {coin:<10} {st['total_trades']:>6} {st['win_rate']:>5.0f}% ${st['total_pnl_usd']:>9,.2f} {st['best_trade']:>+6.1f}% {st['worst_trade']:>6.1f}%")
+
+    if by_regime:
+        print(f"\n  {'─'*50}")
+        print(f"  {'Regime':<22} {'Trades':>6} {'WR':>6} {'PF':>6} {'P&L':>10}")
+        print(f"  {'─'*50}")
+        for reg, stats in by_regime.items():
+            print(f"  {reg:<22} {stats['trades']:>6} {stats['win_rate']:>5.0f}% {fmt_pf(stats['profit_factor']):>6} ${stats['total_pnl_usd']:>9,.2f}")
+
+    if by_entry_weekday:
+        print(f"\n  {'─'*50}")
+        print(f"  {'Weekday (UTC)':<14} {'Trades':>6} {'WR':>6} {'Avg%':>8} {'P&L':>10}")
+        print(f"  {'─'*50}")
+        for weekday, stats in by_entry_weekday.items():
+            print(f"  {weekday:<14} {stats['trades']:>6} {stats['win_rate']:>5.0f}% {stats['avg_pnl_pct']:>+7.2f}% ${stats['total_pnl_usd']:>9,.2f}")
+
+    if by_entry_hour:
+        hour_rows = [(hour, stats) for hour, stats in by_entry_hour.items() if stats["trades"] >= 5]
+        if not hour_rows:
+            hour_rows = list(by_entry_hour.items())
+        hour_rows = sorted(
+            hour_rows,
+            key=lambda item: (item[1]["avg_pnl_pct"], item[1]["total_pnl_usd"]),
+            reverse=True,
+        )[:5]
+        print(f"\n  {'─'*50}")
+        print(f"  Best Entry Hours UTC (min 5 trades when available)")
+        print(f"  {'─'*50}")
+        print(f"  {'Hour':<8} {'Trades':>6} {'WR':>6} {'Avg%':>8} {'P&L':>10}")
+        for hour, stats in hour_rows:
+            print(f"  {hour}:00{'':<3} {stats['trades']:>6} {stats['win_rate']:>5.0f}% {stats['avg_pnl_pct']:>+7.2f}% ${stats['total_pnl_usd']:>9,.2f}")
+
+    if rejection_counts:
+        print(f"\n  {'─'*50}")
+        print(f"  Top Rejection Reasons")
+        print(f"  {'─'*50}")
+        for reason, count in list(rejection_counts.items())[:5]:
+            print(f"  {count:>6}  {reason}")
 
     print("\n" + "═" * 62)
 
