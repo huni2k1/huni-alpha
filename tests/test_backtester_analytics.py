@@ -55,11 +55,28 @@ def test_risk_metrics_annualize_partial_year_returns():
     )
 
     assert metrics["months_tested"] == 6
+    assert metrics["requested_months"] == 6
     assert metrics["positive_months"] == 6
     assert metrics["consistency_pct"] == 100.0
     assert metrics["annualized_return_pct"] == pytest.approx(69.0, abs=0.01)
     assert metrics["calmar_ratio"] == pytest.approx(6.9, abs=0.01)
     assert metrics["recovery_factor"] == pytest.approx(3.0, abs=0.01)
+
+
+def test_risk_metrics_use_actual_calendar_months_when_trade_buckets_exceed_requested_window():
+    monthly = [{"monthly_return_pct": 1.0} for _ in range(7)]
+
+    metrics = bt._calculate_risk_metrics(
+        monthly_sorted=monthly,
+        total_return_pct=7.0,
+        max_drawdown_pct=5.0,
+        months_tested=6,
+    )
+
+    assert metrics["requested_months"] == 6
+    assert metrics["months_tested"] == 7
+    assert metrics["positive_months"] == 7
+    assert metrics["consistency_pct"] == 100.0
 
 
 def test_trade_breakdowns_include_setup_exit_and_time_buckets():

@@ -4,6 +4,8 @@ import sys
 from datetime import datetime, timezone
 from unittest.mock import patch
 
+import pytest
+
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 backtester_path = os.path.join(os.path.dirname(__file__), "..", "src", "trading_bot", "backtester.py")
@@ -96,3 +98,50 @@ def test_next_open_entry_uses_actual_entry_candle_time_and_index():
     assert trade["entry_price"] == candles[entry_idx]["open"]
     assert trade["entry_time"] == expected_entry_time
     assert trade["duration_hours"] == 0
+
+
+def test_next_open_reanchors_tp_sl_and_allows_position_size_above_old_hard_cap():
+    candles = make_flat_candles_dict(4082, price=100.0)
+    entry_idx = 4081
+    candles[entry_idx]["open"] = 120.0
+    candles[entry_idx]["high"] = 120.5
+    candles[entry_idx]["low"] = 119.5
+    candles[entry_idx]["close"] = 120.0
+
+    signal = {
+        "score": 7.0,
+        "direction": "LONG",
+        "strategy": "trend_pullback",
+        "regime": "trending",
+        "entry_price": 100.0,
+        "tp": 110.0,
+        "sl": 99.0,
+        "tp_pct": 10.0,
+        "sl_pct": 1.0,
+        "atr": 1.0,
+        "details": {"strategy": "trend_pullback", "regime": "trending", "rsi": {}},
+    }
+
+    with patch.object(bt, "fetch_klines_historical_cached", return_value=candles), \
+         patch.object(bt, "validate_candle_completeness", return_value=(True, "ok")), \
+         patch.object(bt, "generate_signal", side_effect=[signal]):
+        results = bt.run_backtest(
+            symbols=["BTCUSDT"],
+            months=1,
+            account=5000.0,
+            fee_pct=0.0,
+            slippage_pct=0.0,
+            fixed_size=0.0,
+            max_positions=1,
+            cooldown_candles=1,
+            use_next_open=True,
+            kelly_sizing=False,
+        )
+
+    assert len(results["trades"]) == 1
+
+    trade = results["trades"][0]
+    assert trade["entry_price"] == 120.0
+    assert trade["tp_price"] == 130.0
+    assert trade["sl_price"] == 119.0
+    assert trade["position_size"] == pytest.approx(2500.0, abs=0.01)

@@ -43,6 +43,18 @@ except ImportError:
     candle_cache = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(candle_cache)
 
+try:
+    from .setup_conditions import ALL_CONDITIONS, matches_conditions, normalize_conditions
+except ImportError:
+    _setup_conditions_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "setup_conditions.py")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("setup_conditions", _setup_conditions_path)
+    setup_conditions = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(setup_conditions)
+    ALL_CONDITIONS = setup_conditions.ALL_CONDITIONS
+    matches_conditions = setup_conditions.matches_conditions
+    normalize_conditions = setup_conditions.normalize_conditions
+
 # ─────────────────────────────────────────────────────────────────
 # CONFIG — Load sensitive data from environment or config file
 # ─────────────────────────────────────────────────────────────────
@@ -77,6 +89,36 @@ SIGNAL_THRESHOLD_BREAKOUT = 6.0     # Min score for breakout signals
 MAX_OPEN_POSITIONS = 3              # Maximum concurrent trades
 SIGNAL_COOLDOWN_CANDLES = 48        # Min 1h-candles between signals per symbol (48h = 2 days, prevents re-entry after SL)
 RISK_PER_TRADE_PCT = 1.5            # Risk percentage of account per trade (1.5% historically optimal)
+DEFAULT_SIGNAL_MODEL = os.environ.get("SIGNAL_MODEL", "technical").strip().lower()
+VALID_SIGNAL_MODELS = {
+    "technical",
+    "statistical",
+    "statistical_curated",
+    "statistical_wide_short_rsi28",
+    "hybrid_technical_wide_short_rsi28",
+}
+VALIDATED_SETUPS_PATH = os.environ.get(
+    "VALIDATED_SETUPS_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "validated_setups.json"),
+)
+CURATED_VALIDATED_SETUPS_PATH = os.environ.get(
+    "CURATED_VALIDATED_SETUPS_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "curated_statistical_setups.json"),
+)
+DEDICATED_WIDE_SHORT_RSI28_SETUP = {
+    "name": "wide_short_rsi_below_28",
+    "template": "wide",
+    "direction": "SHORT",
+    "conditions": ["rsi_below_28"],
+    "tp_sl": {"sl_atr_mult": 2.0, "rr_ratio": 2.5},
+    "train_stats": {},
+    "test_stats": {"profit_factor": 0.0},
+    "by_symbol": {},
+    "scope_key": "pooled",
+    "scope_type": "pooled",
+    "scope_symbol": None,
+    "scope_regime": None,
+}
 
 LOG_FILE        = os.environ.get("SCANNER_LOG", "/tmp/scanner.log")
 DEBUG_LOG_FILE  = os.environ.get("SCANNER_DEBUG_LOG",
@@ -1306,8 +1348,8 @@ def fetch_news_sentiment(symbol: str = "BTCUSDT") -> tuple:
         score = 0.0
         sentiment = "neutral"
     else:
-        ratio = bull_count / total
-        dbg.debug(f"[{symbol}] Bull/Bear ratio: {bull_count}/{total} = {ratio:.2f}")
+        ratio = bull_score / total
+        dbg.debug(f"[{symbol}] Bull/Bear ratio: {bull_score:.1f}/{total:.1f} = {ratio:.2f}")
 
         if ratio >= 0.70:
             score = 2.5 + (ratio - 0.70) * 10
@@ -1346,6 +1388,573 @@ def fetch_news_sentiment(symbol: str = "BTCUSDT") -> tuple:
     return round(score, 2), details
 
 
+_validated_setups_cache = {"path": None, "mtime": None, "data": None}
+_validated_setups_missing_warned = set()
+
+
+def load_validated_setups(validated_setups_path: Optional[str] = None) -> dict:
+    """Load the deduped validated setups export, with basic caching."""
+    path = validated_setups_path or VALIDATED_SETUPS_PATH
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        if path not in _validated_setups_missing_warned:
+            dbg.debug(f"Validated setups file not found: {path}")
+            _validated_setups_missing_warned.add(path)
+        return {"long": [], "short": []}
+
+    cache_hit = (
+        _validated_setups_cache["path"] == path
+        and _validated_setups_cache["mtime"] == mtime
+        and _validated_setups_cache["data"] is not None
+    )
+    if cache_hit:
+        return _validated_setups_cache["data"]
+
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception as exc:
+        log.warning(f"Could not load validated setups from {path}: {exc}")
+        return {"long": [], "short": []}
+
+    validated = payload.get("validated_setups", payload)
+    normalized = {
+        "long": [],
+        "short": [],
+    }
+    for bucket in ("long", "short"):
+        for setup in validated.get(bucket, []):
+            template = setup.get("template", setup.get("profile", "standard"))
+            normalized_conditions = normalize_conditions(setup.get("conditions", []))
+            unknown = [name for name in normalized_conditions if name not in ALL_CONDITIONS]
+            if unknown:
+                raise ValueError(
+                    f"Validated setup '{setup.get('name', '')}' in {path} uses unknown condition(s): "
+                    + ", ".join(unknown)
+                )
+            normalized[bucket].append(
+                {
+                    "name": setup.get("name", ""),
+                    "template": "wide" if template == "breakout" else ("standard" if template == "trend" else template),
+                    "direction": setup.get("direction", bucket.upper()),
+                    "conditions": normalized_conditions,
+                    "tp_sl": dict(setup.get("tp_sl", {})),
+                    "train_stats": dict(setup.get("train_stats", {})),
+                    "test_stats": dict(setup.get("test_stats", {})),
+                    "by_symbol": dict(setup.get("by_symbol", {})),
+                    "scope_key": setup.get("scope_key", "pooled"),
+                    "scope_type": setup.get("scope_type", "pooled"),
+                    "scope_symbol": setup.get("scope_symbol"),
+                    "scope_regime": None,
+                }
+            )
+
+    _validated_setups_cache.update({"path": path, "mtime": mtime, "data": normalized})
+    return normalized
+
+
+def _statistical_match_sort_key(setup: dict) -> tuple:
+    """Rank validated setups using their real out-of-sample stats."""
+    test_stats = setup.get("test_stats", {})
+    return (
+        -_setup_scope_specificity(setup),
+        -float(test_stats.get("profit_factor", 0.0) or 0.0),
+        -float(test_stats.get("avg_pnl_pct", 0.0) or 0.0),
+        -float(test_stats.get("edge_win_rate", 0.0) or 0.0),
+        -int(test_stats.get("count", 0) or 0),
+        len(setup.get("conditions", [])),
+        setup.get("name", ""),
+    )
+
+
+def _statistical_signal_score(setup: dict) -> float:
+    """Expose a real setup metric instead of mapping into technical score bands."""
+    return round(float(setup.get("test_stats", {}).get("profit_factor", 0.0) or 0.0), 4)
+
+
+def _resolve_validated_setups_path(signal_model: str, validated_setups_path: Optional[str]) -> str:
+    """Choose the appropriate setup file for the requested signal mode."""
+    if validated_setups_path:
+        return validated_setups_path
+    if signal_model == "statistical_curated":
+        return CURATED_VALIDATED_SETUPS_PATH
+    return VALIDATED_SETUPS_PATH
+
+
+def _setup_scope_specificity(setup: dict) -> int:
+    """Rank setup specificity so curated/symbol-aware matches win ties."""
+    scope_type = setup.get("scope_type", "pooled")
+    if scope_type == "symbol":
+        return 2
+    return 0
+
+
+def _setup_matches_scope(setup: dict, symbol: str) -> bool:
+    """Check whether a setup applies to the current symbol scope."""
+    scope_symbol = setup.get("scope_symbol")
+    if scope_symbol and scope_symbol != symbol:
+        return False
+    return True
+
+
+def _build_statistical_snapshot(
+    symbol: str,
+    candles_4h: list,
+    current_time: Optional[datetime] = None,
+    precomputed_indicators: dict = None,
+) -> dict:
+    """Build the latest-candle feature snapshot used by validated setup matching."""
+    closes = [c[3] for c in candles_4h]
+    volumes = [c[4] for c in candles_4h]
+    highs = [c[1] for c in candles_4h]
+    lows = [c[2] for c in candles_4h]
+    if len(closes) < 50:
+        return {}
+
+    if precomputed_indicators:
+        rsi_val = precomputed_indicators.get("rsi", 50.0)
+        macd_line_val = precomputed_indicators.get("macd_line", 0.0)
+        macd_signal_val = precomputed_indicators.get("macd_signal", 0.0)
+        macd_hist_val = precomputed_indicators.get("macd_hist", 0.0)
+        macd_hist_prev = precomputed_indicators.get("macd_hist_prev", 0.0)
+        e9 = precomputed_indicators.get("e9")
+        e21 = precomputed_indicators.get("e21")
+        e50 = precomputed_indicators.get("e50")
+        e200 = precomputed_indicators.get("e200")
+        above_e200 = bool(precomputed_indicators.get("above_e200", False))
+        below_e200 = bool(precomputed_indicators.get("below_e200", False))
+    else:
+        rsi_val = rsi(closes)
+        macd_line_val, macd_signal_val, macd_hist_val = macd(closes)
+        macd_hist_prev = macd(closes[:-1])[2] if len(closes) > 27 else macd_hist_val
+        e9 = ema(closes, 9)[-1] if len(closes) >= 9 else closes[-1]
+        e21 = ema(closes, 21)[-1] if len(closes) >= 21 else closes[-1]
+        e50 = ema(closes, 50)[-1] if len(closes) >= 50 else closes[-1]
+        e200 = ema(closes, min(800, len(closes)))[-1]
+        above_e200 = closes[-1] > e200
+        below_e200 = closes[-1] < e200
+
+    if e9 is None:
+        e9 = ema(closes, 9)[-1] if len(closes) >= 9 else closes[-1]
+    if e21 is None:
+        e21 = ema(closes, 21)[-1] if len(closes) >= 21 else closes[-1]
+    if e50 is None:
+        e50 = ema(closes, 50)[-1] if len(closes) >= 50 else closes[-1]
+    if e200 is None:
+        e200 = ema(closes, min(800, len(closes)))[-1]
+        above_e200 = closes[-1] > e200
+        below_e200 = closes[-1] < e200
+
+    adx_val = adx(highs, lows, closes, period=14)
+    vol_r = volume_ratio(volumes)
+    bb_mid, bb_upper, bb_lower = bollinger(closes, 20, 2.0)
+    bb_bw, bb_squeeze = bollinger_bandwidth(closes)
+    higher_highs, lower_lows = market_structure(candles_4h)
+    time_for_filter = current_time if current_time is not None else datetime.now(timezone.utc)
+
+    return {
+        "close": closes[-1],
+        "rsi": float(rsi_val),
+        "e9": float(e9),
+        "e21": float(e21),
+        "e50": float(e50),
+        "above_ema200": bool(above_e200),
+        "below_ema200": bool(below_e200),
+        "macd_line": float(macd_line_val),
+        "macd_signal": float(macd_signal_val),
+        "macd_hist": float(macd_hist_val),
+        "macd_hist_prev": float(macd_hist_prev),
+        "adx": float(adx_val),
+        "vol_ratio": float(vol_r),
+        "bb_mid": float(bb_mid),
+        "bb_upper": float(bb_upper),
+        "bb_lower": float(bb_lower),
+        "bb_bandwidth": float(bb_bw),
+        "bb_squeeze": bool(bb_squeeze),
+        "higher_highs": bool(higher_highs),
+        "lower_lows": bool(lower_lows),
+        "hour_utc": time_for_filter.hour,
+        "symbol": symbol,
+    }
+
+
+def _find_matching_statistical_setups(
+    symbol: str,
+    snapshot: dict,
+    validated_setups: dict,
+) -> list[dict]:
+    """Return indicator-driven validated setups that match the latest snapshot."""
+    matches = []
+
+    for bucket, direction in (("long", "LONG"), ("short", "SHORT")):
+        for setup in validated_setups.get(bucket, []):
+            if setup.get("direction") != direction:
+                continue
+            if not _setup_matches_scope(setup, symbol):
+                continue
+            if not matches_conditions(snapshot, setup.get("conditions", [])):
+                continue
+            matches.append(dict(setup))
+
+    matches.sort(key=_statistical_match_sort_key)
+    return matches
+
+
+def _suggest_tp_sl_for_setup(candles_4h: list, direction: str, matched_setup: dict) -> dict:
+    """Use the validated setup's stored ATR/RR template directly."""
+    tp_sl = matched_setup.get("tp_sl", {})
+    return suggest_tp_sl(
+        candles_4h,
+        direction,
+        multiplier_sl=float(tp_sl.get("sl_atr_mult", 1.5) or 1.5),
+        rr_ratio=float(tp_sl.get("rr_ratio", 2.0) or 2.0),
+    )
+
+
+def _suggest_tp_sl_for_strategy(candles_4h: list, direction: str, strategy: str) -> dict:
+    """Return ATR TP/SL parameters for legacy technical strategies."""
+    if strategy == "mean_reversion":
+        return suggest_tp_sl(candles_4h, direction, multiplier_sl=1.0, rr_ratio=1.5)
+    if strategy == "breakout":
+        return suggest_tp_sl(candles_4h, direction, multiplier_sl=2.0, rr_ratio=2.5)
+    return suggest_tp_sl(candles_4h, direction, multiplier_sl=1.5, rr_ratio=2.0)
+
+
+def _generate_statistical_signal(
+    symbol: str,
+    candles_4h: list,
+    signal_model: str,
+    state: dict = None,
+    current_time: Optional[datetime] = None,
+    precomputed_indicators: dict = None,
+    validated_setups_path: Optional[str] = None,
+) -> Optional[dict]:
+    """Generate a signal by matching the latest candle against validated setups."""
+    snapshot = _build_statistical_snapshot(
+        symbol,
+        candles_4h,
+        current_time=current_time,
+        precomputed_indicators=precomputed_indicators,
+    )
+    resolved_setups_path = _resolve_validated_setups_path(signal_model, validated_setups_path)
+    validated_setups = load_validated_setups(resolved_setups_path)
+    matches = _find_matching_statistical_setups(symbol, snapshot, validated_setups)
+    if not matches:
+        _last_rejection_reason[symbol] = "No validated setup"
+        return None
+
+    matched_setup = matches[0]
+    direction = matched_setup["direction"]
+    template = matched_setup.get("template", "standard")
+    strategy = f"statistical_{template}"
+    regime = "statistical"
+    total_score = _statistical_signal_score(matched_setup)
+    long_total = total_score if direction == "LONG" else 0.0
+    short_total = total_score if direction == "SHORT" else 0.0
+
+    if state and is_whipsaw(state, symbol, direction):
+        dbg.debug(f"[{symbol}] REJECTED: whipsaw detected (direction change <5min)")
+        _last_rejection_reason[symbol] = "Whipsaw"
+        return None
+
+    tp_sl = _suggest_tp_sl_for_setup(candles_4h, direction, matched_setup)
+    statistical_details = {
+        "matched_setup": matched_setup["name"],
+        "conditions": matched_setup["conditions"],
+        "template": template,
+        "scope_type": matched_setup.get("scope_type", "pooled"),
+        "scope_symbol": matched_setup.get("scope_symbol"),
+        "scope_regime": matched_setup.get("scope_regime"),
+        "test_stats": matched_setup.get("test_stats", {}),
+        "train_stats": matched_setup.get("train_stats", {}),
+        "candidate_count": len(matches),
+        "validated_setups_path": resolved_setups_path,
+    }
+
+    return {
+        "symbol": symbol,
+        "direction": direction,
+        "score": total_score,
+        "entry_price": tp_sl["entry_price"],
+        "tp": tp_sl["suggested_tp"],
+        "sl": tp_sl["suggested_sl"],
+        "tp_pct": tp_sl["tp_pct"],
+        "sl_pct": tp_sl["sl_pct"],
+        "atr": tp_sl["atr"],
+        "rr_ratio": tp_sl["rr_ratio"],
+        "technical_score": 0.0,
+        "fundamental_score": 0.0,
+        "news_score": 0.0,
+        "long_score": long_total,
+        "short_score": short_total,
+        "regime": regime,
+        "strategy": strategy,
+        "details": {"regime": regime, "strategy": strategy, "template": template},
+        "fund_details": {},
+        "news_details": {},
+        "signal_model": signal_model,
+        "statistical_setup": matched_setup["name"],
+        "statistical_score": total_score,
+        "statistical_details": statistical_details,
+    }
+
+
+def _generate_dedicated_wide_short_rsi28_signal(
+    symbol: str,
+    candles_4h: list,
+    signal_model: str,
+    state: dict = None,
+    current_time: Optional[datetime] = None,
+    precomputed_indicators: dict = None,
+) -> Optional[dict]:
+    """Generate a dedicated short signal for the strongest recent statistical setup."""
+    snapshot = _build_statistical_snapshot(
+        symbol,
+        candles_4h,
+        current_time=current_time,
+        precomputed_indicators=precomputed_indicators,
+    )
+    if not snapshot or not matches_conditions(snapshot, DEDICATED_WIDE_SHORT_RSI28_SETUP["conditions"]):
+        _last_rejection_reason[symbol] = "No validated setup"
+        return None
+
+    direction = DEDICATED_WIDE_SHORT_RSI28_SETUP["direction"]
+    if state and is_whipsaw(state, symbol, direction):
+        dbg.debug(f"[{symbol}] REJECTED: whipsaw detected (direction change <5min)")
+        _last_rejection_reason[symbol] = "Whipsaw"
+        return None
+
+    tp_sl = _suggest_tp_sl_for_setup(candles_4h, direction, DEDICATED_WIDE_SHORT_RSI28_SETUP)
+    strategy = signal_model
+    regime = "statistical"
+    statistical_details = {
+        "matched_setup": DEDICATED_WIDE_SHORT_RSI28_SETUP["name"],
+        "conditions": list(DEDICATED_WIDE_SHORT_RSI28_SETUP["conditions"]),
+        "template": DEDICATED_WIDE_SHORT_RSI28_SETUP["template"],
+        "scope_type": "pooled",
+        "scope_symbol": None,
+        "scope_regime": None,
+        "candidate_count": 1,
+        "validated_setups_path": None,
+        "mode": signal_model,
+    }
+
+    return {
+        "symbol": symbol,
+        "direction": direction,
+        "score": 0.0,
+        "entry_price": tp_sl["entry_price"],
+        "tp": tp_sl["suggested_tp"],
+        "sl": tp_sl["suggested_sl"],
+        "tp_pct": tp_sl["tp_pct"],
+        "sl_pct": tp_sl["sl_pct"],
+        "atr": tp_sl["atr"],
+        "rr_ratio": tp_sl["rr_ratio"],
+        "technical_score": 0.0,
+        "fundamental_score": 0.0,
+        "news_score": 0.0,
+        "long_score": 0.0,
+        "short_score": 0.0,
+        "regime": regime,
+        "strategy": strategy,
+        "details": {"regime": regime, "strategy": strategy, "template": "wide"},
+        "fund_details": {},
+        "news_details": {},
+        "signal_model": signal_model,
+        "statistical_setup": DEDICATED_WIDE_SHORT_RSI28_SETUP["name"],
+        "statistical_score": 0.0,
+        "statistical_details": statistical_details,
+    }
+
+
+def _generate_technical_signal(
+    symbol: str,
+    candles_4h: list,
+    include_fundamentals: bool = True,
+    include_news: bool = True,
+    state: dict = None,
+    current_time: Optional[datetime] = None,
+    precomputed_indicators: dict = None,
+) -> Optional[dict]:
+    """Generate the legacy technical signal payload."""
+    tech = score_technical(symbol, candles_4h, precomputed_indicators=precomputed_indicators)
+    if tech["direction"] == "NEUTRAL":
+        return None
+
+    tech_long = tech["long_score"]
+    tech_short = tech["short_score"]
+
+    fund_long = fund_short = 0.0
+    fund_details = {}
+    if include_fundamentals:
+        fund_long, fund_short, fund_details = fundamental_score("LONG", symbol)
+
+    news_long = news_short = 0.0
+    news_details = {}
+    if include_news:
+        news_score_val, news_details = fetch_news_sentiment(symbol)
+        sentiment = news_details.get("sentiment", "neutral")
+        if "bullish" in sentiment:
+            news_long, news_short = news_score_val, 0.0
+        elif "bearish" in sentiment:
+            news_long, news_short = 0.0, news_score_val
+
+    long_total = round(tech_long + fund_long + news_long, 2)
+    short_total = round(tech_short + fund_short + news_short, 2)
+
+    dbg.debug(f"[{symbol}] Score breakdown | Tech L={tech_long:.2f} S={tech_short:.2f} | Fund L={fund_long:.2f} S={fund_short:.2f} | News L={news_long:.2f} S={news_short:.2f}")
+    dbg.debug(f"[{symbol}] Totals | LONG={long_total:.2f} SHORT={short_total:.2f}")
+
+    if long_total < 1.0 and short_total < 1.0:
+        if tech_long > 1.0 or tech_short > 1.0:
+            dbg.debug(f"[{symbol}] REJECTED: both totals < 1.0 | tech was L={tech_long:.1f} S={tech_short:.1f}")
+            _last_rejection_reason[symbol] = f"Weak (L={long_total:.1f} S={short_total:.1f})"
+        else:
+            _last_rejection_reason[symbol] = "No Signal"
+        return None
+
+    min_score_differential = 1.0
+    score_gap = abs(long_total - short_total)
+    if score_gap < min_score_differential:
+        dbg.debug(f"[{symbol}] REJECTED: ambiguous signal | L={long_total:.2f} S={short_total:.2f} gap={score_gap:.2f} < {min_score_differential}")
+        _last_rejection_reason[symbol] = f"Ambiguous (L={long_total:.1f} S={short_total:.1f})"
+        return None
+
+    if long_total >= short_total:
+        direction = "LONG"
+        total_score = long_total
+        tech_component = tech_long
+        fund_component = fund_long
+        news_component = news_long
+    else:
+        direction = "SHORT"
+        total_score = short_total
+        tech_component = tech_short
+        fund_component = fund_short
+        news_component = news_short
+
+    if state and is_whipsaw(state, symbol, direction):
+        dbg.debug(f"[{symbol}] REJECTED: whipsaw detected (direction change <5min)")
+        _last_rejection_reason[symbol] = "Whipsaw"
+        return None
+
+    strategy = tech["details"].get("strategy", "trend_pullback")
+    regime = tech["details"].get("regime", "trending")
+    tp_sl = _suggest_tp_sl_for_strategy(candles_4h, direction, strategy)
+
+    time_for_filter = current_time if current_time is not None else datetime.now(timezone.utc)
+    hour_utc = time_for_filter.hour
+    if hour_utc >= 0 and hour_utc < 8:
+        dbg.debug(f"[{symbol}] FILTERED: Asia session hour {hour_utc} UTC (low liquidity)")
+        _last_rejection_reason[symbol] = f"Asia session (UTC {hour_utc})"
+        return None
+
+    return {
+        "symbol": symbol,
+        "direction": direction,
+        "score": total_score,
+        "entry_price": tp_sl["entry_price"],
+        "tp": tp_sl["suggested_tp"],
+        "sl": tp_sl["suggested_sl"],
+        "tp_pct": tp_sl["tp_pct"],
+        "sl_pct": tp_sl["sl_pct"],
+        "atr": tp_sl["atr"],
+        "rr_ratio": tp_sl["rr_ratio"],
+        "technical_score": round(tech_component, 2),
+        "fundamental_score": round(fund_component, 2),
+        "news_score": round(news_component, 2),
+        "long_score": long_total,
+        "short_score": short_total,
+        "regime": regime,
+        "strategy": strategy,
+        "details": tech["details"],
+        "fund_details": fund_details,
+        "news_details": news_details,
+        "signal_model": "technical",
+    }
+
+
+def _generate_hybrid_technical_wide_short_rsi28_signal(
+    symbol: str,
+    candles_4h: list,
+    state: dict = None,
+    current_time: Optional[datetime] = None,
+    precomputed_indicators: dict = None,
+) -> Optional[dict]:
+    """Evaluate both technical and dedicated statistical short setup, then choose one."""
+    _last_rejection_reason.pop(symbol, None)
+    technical_signal = _generate_technical_signal(
+        symbol,
+        candles_4h,
+        include_fundamentals=True,
+        include_news=True,
+        state=state,
+        current_time=current_time,
+        precomputed_indicators=precomputed_indicators,
+    )
+    technical_reason = _last_rejection_reason.get(symbol)
+    statistical_signal = _generate_dedicated_wide_short_rsi28_signal(
+        symbol,
+        candles_4h,
+        "statistical_wide_short_rsi28",
+        state=state,
+        current_time=current_time,
+        precomputed_indicators=precomputed_indicators,
+    )
+    statistical_reason = _last_rejection_reason.get(symbol)
+
+    if not technical_signal and not statistical_signal:
+        _last_rejection_reason[symbol] = (
+            f"Hybrid rejected (technical: {technical_reason or 'no signal'}; "
+            f"statistical: {statistical_reason or 'no validated setup'})"
+        )
+        return None
+
+    selected_signal = technical_signal
+    selected_source = "technical" if technical_signal else "statistical"
+    selected_reason = "technical signal available" if technical_signal else "technical signal absent"
+
+    if statistical_signal and (not technical_signal or technical_signal["direction"] == "SHORT"):
+        selected_signal = statistical_signal
+        selected_source = "statistical"
+        selected_reason = (
+            "dedicated short setup matched with no technical signal"
+            if not technical_signal
+            else "dedicated short setup overrides technical short"
+        )
+
+    hybrid_details = {
+        "technical": None if technical_signal is None else {
+            "direction": technical_signal["direction"],
+            "score": technical_signal["score"],
+            "strategy": technical_signal["strategy"],
+            "long_score": technical_signal["long_score"],
+            "short_score": technical_signal["short_score"],
+        },
+        "statistical": None if statistical_signal is None else {
+            "direction": statistical_signal["direction"],
+            "setup": statistical_signal["statistical_setup"],
+            "conditions": statistical_signal["statistical_details"]["conditions"],
+            "template": statistical_signal["statistical_details"]["template"],
+        },
+        "selected": {
+            "source": selected_source,
+            "reason": selected_reason,
+        },
+    }
+
+    dbg.debug(
+        f"[{symbol}] Hybrid eval | technical="
+        f"{hybrid_details['technical']} | statistical={hybrid_details['statistical']} | selected={hybrid_details['selected']}"
+    )
+
+    result = dict(selected_signal)
+    result["signal_model"] = "hybrid_technical_wide_short_rsi28"
+    result["hybrid_details"] = hybrid_details
+    return result
+
+
 # ─────────────────────────────────────────────────────────────────
 # GENERATE SIGNAL — THE SINGLE SOURCE OF TRUTH
 #
@@ -1357,7 +1966,9 @@ def generate_signal(symbol: str, candles_4h: list,
                     include_news: bool = True,
                     state: dict = None,
                     current_time: Optional[datetime] = None,
-                    precomputed_indicators: dict = None) -> Optional[dict]:
+                    precomputed_indicators: dict = None,
+                    signal_model: Optional[str] = None,
+                    validated_setups_path: Optional[str] = None) -> Optional[dict]:
     """
     Generate a complete trade signal from candle data.
 
@@ -1374,136 +1985,47 @@ def generate_signal(symbol: str, candles_4h: list,
         to execute the trade — the backtester just simulates fills against
         the tp/sl this function returns.
     """
-    tech = score_technical(symbol, candles_4h, precomputed_indicators=precomputed_indicators)
-    if tech["direction"] == "NEUTRAL":
-        return None
+    resolved_signal_model = (signal_model or DEFAULT_SIGNAL_MODEL).strip().lower()
+    if resolved_signal_model not in VALID_SIGNAL_MODELS:
+        resolved_signal_model = "technical"
 
-    tech_long  = tech["long_score"]
-    tech_short = tech["short_score"]
+    if resolved_signal_model in {"statistical", "statistical_curated"}:
+        return _generate_statistical_signal(
+            symbol,
+            candles_4h,
+            resolved_signal_model,
+            state=state,
+            current_time=current_time,
+            precomputed_indicators=precomputed_indicators,
+            validated_setups_path=validated_setups_path,
+        )
+    if resolved_signal_model == "statistical_wide_short_rsi28":
+        return _generate_dedicated_wide_short_rsi28_signal(
+            symbol,
+            candles_4h,
+            resolved_signal_model,
+            state=state,
+            current_time=current_time,
+            precomputed_indicators=precomputed_indicators,
+        )
+    if resolved_signal_model == "hybrid_technical_wide_short_rsi28":
+        return _generate_hybrid_technical_wide_short_rsi28_signal(
+            symbol,
+            candles_4h,
+            state=state,
+            current_time=current_time,
+            precomputed_indicators=precomputed_indicators,
+        )
 
-    # Fundamentals (skip in backtest — historical data unavailable)
-    fund_long = fund_short = 0.0
-    fund_details = {}
-    if include_fundamentals:
-        fund_long, fund_short, fund_details = fundamental_score("LONG", symbol)
-
-    # News (skip in backtest — historical headlines unavailable)
-    news_long = news_short = 0.0
-    news_details = {}
-    if include_news:
-        news_score_val, news_details = fetch_news_sentiment(symbol)
-        sentiment = news_details.get("sentiment", "neutral")
-
-        # Handle all bullish sentiments: slightly_bullish, bullish, strong_bullish
-        if "bullish" in sentiment:
-            news_long, news_short = news_score_val, 0.0
-        # Handle all bearish sentiments: slightly_bearish, bearish, strong_bearish
-        elif "bearish" in sentiment:
-            news_long, news_short = 0.0, news_score_val
-        # Neutral sentiment: no score contribution
-        else:
-            news_long, news_short = 0.0, 0.0
-
-    # Total scores per direction
-    long_total  = round(tech_long  + fund_long  + news_long,  2)
-    short_total = round(tech_short + fund_short + news_short, 2)
-
-    # Debug: Log score breakdown
-    dbg.debug(f"[{symbol}] Score breakdown | Tech L={tech_long:.2f} S={tech_short:.2f} | Fund L={fund_long:.2f} S={fund_short:.2f} | News L={news_long:.2f} S={news_short:.2f}")
-    dbg.debug(f"[{symbol}] Totals | LONG={long_total:.2f} SHORT={short_total:.2f}")
-
-    # Reject weak signals (both sides too weak)
-    if long_total < 1.0 and short_total < 1.0:
-        # Debug: Log why signal was rejected (helps detect fund/news issues)
-        if tech_long > 1.0 or tech_short > 1.0:
-            # Tech had a signal but fund/news killed it
-            dbg.debug(f"[{symbol}] REJECTED: both totals < 1.0 | tech was L={tech_long:.1f} S={tech_short:.1f}")
-            _last_rejection_reason[symbol] = f"Weak (L={long_total:.1f} S={short_total:.1f})"
-        else:
-            _last_rejection_reason[symbol] = "No Signal"
-        return None
-
-    # Reject ambiguous signals: require minimum gap between long and short scores
-    # If both directions score similarly, the signal has no clear conviction
-    # Lowered from 1.5 to 1.0: testing shows more low-conviction trades are profitable
-    MIN_SCORE_DIFFERENTIAL = 1.0
-    score_gap = abs(long_total - short_total)
-    if score_gap < MIN_SCORE_DIFFERENTIAL:
-        dbg.debug(f"[{symbol}] REJECTED: ambiguous signal | L={long_total:.2f} S={short_total:.2f} gap={score_gap:.2f} < {MIN_SCORE_DIFFERENTIAL}")
-        _last_rejection_reason[symbol] = f"Ambiguous (L={long_total:.1f} S={short_total:.1f})"
-        return None
-
-    if long_total >= short_total:
-        direction      = "LONG"
-        total_score    = long_total
-        tech_component = tech_long
-        fund_component = fund_long
-        news_component = news_long
-    else:
-        direction      = "SHORT"
-        total_score    = short_total
-        tech_component = tech_short
-        fund_component = fund_short
-        news_component = news_short
-
-    # Whipsaw detection: reject if direction flipped within last 5 minutes
-    if state and is_whipsaw(state, symbol, direction):
-        dbg.debug(f"[{symbol}] REJECTED: whipsaw detected (direction change <5min)")
-        _last_rejection_reason[symbol] = "Whipsaw"
-        return None
-
-    # TP/SL from ATR — strategy-specific parameters
-    strategy = tech["details"].get("strategy", "trend_pullback")
-    regime   = tech["details"].get("regime", "trending")
-
-    if strategy == "mean_reversion":
-        # Tighter stops, smaller targets — trading back to the mean
-        tp_sl = suggest_tp_sl(candles_4h, direction, multiplier_sl=1.0, rr_ratio=1.5)
-    elif strategy == "breakout":
-        # Wider stops, bigger targets — catching the expansion move
-        tp_sl = suggest_tp_sl(candles_4h, direction, multiplier_sl=2.0, rr_ratio=2.5)
-    else:
-        # Trend pullback (default): balanced
-        tp_sl = suggest_tp_sl(candles_4h, direction, multiplier_sl=1.5, rr_ratio=2.0)
-
-    # ─────────────────────────────────────────────────────────────────
-    # SIGNAL QUALITY FILTERS — Skip low-conviction combos
-    # ─────────────────────────────────────────────────────────────────
-    rsi = tech["details"].get("rsi", {}).get("1h", 50)
-    adx = tech["details"].get("adx", 25)
-    time_for_filter = current_time if current_time is not None else datetime.now(timezone.utc)
-    hour_utc = time_for_filter.hour
-
-    # Filter 4: Asia session (0-8 UTC) — low liquidity, false signals
-    # NOTE: current_time parameter allows backtester to pass candle timestamp
-    # Live scanner uses current time (via default), which is correct for real-time alerts
-    if hour_utc >= 0 and hour_utc < 8:
-        dbg.debug(f"[{symbol}] FILTERED: Asia session hour {hour_utc} UTC (low liquidity)")
-        _last_rejection_reason[symbol] = f"Asia session (UTC {hour_utc})"
-        return None
-
-    return {
-        "symbol":             symbol,
-        "direction":          direction,
-        "score":              total_score,
-        "entry_price":        tp_sl["entry_price"],
-        "tp":                 tp_sl["suggested_tp"],
-        "sl":                 tp_sl["suggested_sl"],
-        "tp_pct":             tp_sl["tp_pct"],
-        "sl_pct":             tp_sl["sl_pct"],
-        "atr":                tp_sl["atr"],
-        "rr_ratio":           tp_sl["rr_ratio"],
-        "technical_score":    round(tech_component, 2),
-        "fundamental_score":  round(fund_component, 2),
-        "news_score":         round(news_component, 2),
-        "long_score":         long_total,
-        "short_score":        short_total,
-        "regime":             regime,
-        "strategy":           strategy,
-        "details":            tech["details"],
-        "fund_details":       fund_details,
-        "news_details":       news_details,
-    }
+    return _generate_technical_signal(
+        symbol,
+        candles_4h,
+        include_fundamentals=include_fundamentals,
+        include_news=include_news,
+        state=state,
+        current_time=current_time,
+        precomputed_indicators=precomputed_indicators,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -1605,6 +2127,17 @@ _cycle_results = []
 _last_rejection_reason = {}  # Track rejection reasons for each symbol
 
 
+def _signal_model_banner(model: str) -> str:
+    labels = {
+        "technical": "Technical scoring",
+        "statistical": "Validated setup bundle",
+        "statistical_curated": "Curated validated setups",
+        "statistical_wide_short_rsi28": "Dedicated statistical short: wide_short_rsi_below_28",
+        "hybrid_technical_wide_short_rsi28": "Hybrid: technical + wide_short_rsi_below_28",
+    }
+    return labels.get(model, model)
+
+
 def scan_symbol(symbol: str, state: dict):
     """Scan a single symbol using generate_signal() as single source of truth."""
     dbg.debug(f"[{symbol}] Scanning…")
@@ -1642,7 +2175,10 @@ def scan_symbol(symbol: str, state: dict):
         _cycle_results.append({
             'coin': symbol.replace('USDT', ''), 'price': completed_candles[-1][3],
             'dir': '-', 'tech': 0, 'fund': 0, 'news': 0, 'total': 0,
-            'filter_reason': reason, 'tp': 0, 'sl': 0, 'rr_ratio': 0
+            'filter_reason': reason, 'tp': 0, 'sl': 0, 'rr_ratio': 0,
+            'signal_model': DEFAULT_SIGNAL_MODEL if DEFAULT_SIGNAL_MODEL in VALID_SIGNAL_MODELS else "technical",
+            'strategy': '-',
+            'selected_source': 'rejected',
         })
         return
 
@@ -1651,10 +2187,23 @@ def scan_symbol(symbol: str, state: dict):
     tech_pts  = signal["technical_score"]
     fund_pts  = signal["fundamental_score"]
     news_pts  = signal["news_score"]
+    signal_model = signal.get("signal_model", DEFAULT_SIGNAL_MODEL)
+    selected_strategy = signal.get("strategy", "?")
+    selected_source = signal.get("hybrid_details", {}).get("selected", {}).get("source")
+    uses_dedicated_setup = (
+        signal_model == "statistical_wide_short_rsi28"
+        or selected_strategy == "statistical_wide_short_rsi28"
+    )
+    display_total = total
+    if uses_dedicated_setup and total <= 0:
+        display_total = ALERT_THRESHOLD_OPTB
+    model_suffix = f" | model={signal_model}"
+    if selected_source:
+        model_suffix += f" | selected={selected_source}"
 
-    dbg.debug(f"[{symbol}] Total={total:.2f} threshold={ALERT_THRESHOLD_OPTB} cooldown={not can_alert(state, symbol, direction)}")
+    dbg.debug(f"[{symbol}] Total={display_total:.2f} threshold={ALERT_THRESHOLD_OPTB} cooldown={not can_alert(state, symbol, direction)}")
     log.info(f"  {symbol} | LONG={signal['long_score']:.1f} SHORT={signal['short_score']:.1f} "
-             f"| Winner={direction} TOTAL={total:.1f} | {signal.get('regime','?')}/{signal.get('strategy','?')}")
+             f"| Winner={direction} TOTAL={display_total:.1f} | {signal.get('regime','?')}/{selected_strategy}{model_suffix}")
 
     # Store for summary table (with position suggestions)
     _cycle_results.append({
@@ -1664,36 +2213,39 @@ def scan_symbol(symbol: str, state: dict):
         'tech': tech_pts,
         'fund': fund_pts,
         'news': news_pts,
-        'total': total,
+        'total': display_total,
         'tp': signal['tp'],
         'sl': signal['sl'],
         'tp_pct': signal['tp_pct'],
         'sl_pct': signal['sl_pct'],
         'atr': signal['atr'],
         'rr_ratio': signal['rr_ratio'],
+        'signal_model': signal_model,
+        'strategy': selected_strategy,
+        'selected_source': selected_source,
         'filter_reason': None  # None = signal passed all filters
     })
 
     # Alert dispatch — all tiers use the same signal (same TP/SL)
-    if total >= ALERT_THRESHOLD_HARD and can_alert(state, symbol, direction, tier="HIGH"):
+    if display_total >= ALERT_THRESHOLD_HARD and can_alert(state, symbol, direction, tier="HIGH"):
         msg = format_alert(signal)
         send_telegram(msg)
         mark_alert(state, symbol, direction, tier="HIGH")
         save_state(state)
-        log.info(f"  🚀 HIGH CONF sent for {symbol} {direction} ({total:.1f})")
+        log.info(f"  🚀 HIGH CONF sent for {symbol} {direction} ({display_total:.1f})")
 
-    elif total >= ALERT_THRESHOLD_OPTB and can_alert(state, symbol, direction, tier="ENTRY"):
+    elif display_total >= ALERT_THRESHOLD_OPTB and can_alert(state, symbol, direction, tier="ENTRY"):
         msg = format_alert(signal)
         send_telegram(msg)
         mark_alert(state, symbol, direction, tier="ENTRY")
         save_state(state)
-        log.info(f"  ✅ ENTRY sent for {symbol} {direction} ({total:.1f})")
+        log.info(f"  ✅ ENTRY sent for {symbol} {direction} ({display_total:.1f})")
 
-    elif total >= ALERT_THRESHOLD_SOFT and can_alert(state, symbol, direction, tier="WATCH"):
+    elif display_total >= ALERT_THRESHOLD_SOFT and can_alert(state, symbol, direction, tier="WATCH"):
         coin = symbol.replace("USDT", "")
         rsi_val = signal['details'].get('rsi', {}).get('1h', 'N/A')
         soft_msg = (
-            f"🟡 <b>WATCH [{total:.1f}/20]</b>\n"
+            f"🟡 <b>WATCH [{display_total:.1f}/20]</b>\n"
             f"{'🟢 LONG' if direction == 'LONG' else '🔴 SHORT'} <b>{coin}</b> "
             f"@ <code>${signal['entry_price']:,.4f}</code>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -1706,15 +2258,18 @@ def scan_symbol(symbol: str, state: dict):
         send_telegram(soft_msg)
         mark_alert(state, symbol, direction, tier="WATCH")
         save_state(state)
-        log.info(f"  👀 WATCH sent for {symbol} {direction} ({total:.1f})")
+        log.info(f"  👀 WATCH sent for {symbol} {direction} ({display_total:.1f})")
     else:
         log.info(f"  ⏭  Below threshold or in cooldown.")
 
 
 def main():
+    active_model = DEFAULT_SIGNAL_MODEL if DEFAULT_SIGNAL_MODEL in VALID_SIGNAL_MODELS else "technical"
+    active_banner = _signal_model_banner(active_model)
     log.info("=" * 50)
     log.info(f"Market Scanner Multi-Regime Starting… (PID: {os.getpid()})")
-    log.info(f"Strategies: Trend Pullback | Breakout")
+    log.info(f"Signal model: {active_model}")
+    log.info(f"Mode detail: {active_banner}")
     log.info(f"Symbols: {', '.join(SYMBOLS)}")
     log.info(f"Scan interval: {SCAN_INTERVAL}s")
     log.info(f"Watch: {ALERT_THRESHOLD_SOFT}+ | Entry: {ALERT_THRESHOLD_OPTB}+ | High Conf: {ALERT_THRESHOLD_HARD}+")
@@ -1724,15 +2279,19 @@ def main():
 
     send_telegram(
         f"🤖 <b>Market Scanner Multi-Regime Online</b> (PID: {os.getpid()})\n"
+        f"🧠 Signal model: <b>{active_model}</b>\n"
+        f"📌 Mode: {active_banner}\n"
         f"📋 Scanning: {', '.join(s.replace('USDT','') for s in SYMBOLS)}\n"
-        f"🔀 Strategies: Trend Pullback | Breakout\n"
         f"⏱ Interval: every 5 minutes\n"
         f"👀 Watch: {ALERT_THRESHOLD_SOFT}+ | ✅ Entry: {ALERT_THRESHOLD_OPTB}+ | 🚀 High: {ALERT_THRESHOLD_HARD}+"
     )
 
     while True:
         cycle_start = time.time()
-        log.info(f"\n{'─'*40}\nScan cycle @ {datetime.now(timezone.utc).strftime('%H:%M:%S')}")
+        log.info(
+            f"\n{'─'*40}\nScan cycle @ {datetime.now(timezone.utc).strftime('%H:%M:%S')} "
+            f"| model={active_model} | {active_banner}"
+        )
 
         _cycle_results.clear()
         _last_rejection_reason.clear()
@@ -1749,26 +2308,22 @@ def main():
 
         # Summary table - show ALL computed signals + rejected ones
         log.info(f"\n{'─'*120}")
-        log.info(f"{'Coin':<6} {'Price':>10}  {'Dir':<5} {'Tech':>5} {'Fund':>5} {'News':>5} {'Total':>6} {'Entry':>10} {'TP':>10} {'SL':>10} {'R:R':>4} {'Status':<20}")
+        log.info(f"Scanner mode summary: model={active_model} | {active_banner}")
+        log.info(f"{'Coin':<6} {'Price':>10}  {'Dir':<5} {'Tech':>5} {'Fund':>5} {'News':>5} {'Total':>6} {'Source':<11} {'Strategy':<30} {'Status':<20}")
         log.info(f"{'─'*120}")
 
         if _cycle_results:
             for r in sorted(_cycle_results, key=lambda x: x['total'], reverse=True):
-                # Format TP/SL with appropriate decimals (more for small-value coins)
                 if r['total'] > 0:
-                    if r['price'] < 1.0:  # Small coins (DOGE, etc.)
-                        tp_str = f"${r['tp']:.6f}"
-                        sl_str = f"${r['sl']:.6f}"
-                    else:
-                        tp_str = f"${r['tp']:,.2f}"
-                        sl_str = f"${r['sl']:,.2f}"
                     status = "✅ ACTIVE" if r.get('filter_reason') is None else f"⚠️  {r.get('filter_reason', 'SKIPPED')}"
                 else:
-                    tp_str = "—"
-                    sl_str = "—"
                     status = f"⚠️  {r.get('filter_reason', 'NO SIGNAL')}"
-                rr_str = f"{r['rr_ratio']:.1f}:1" if r['total'] > 0 else "—"
-                log.info(f"{r['coin']:<6} ${r['price']:>9,.3f}  {r['dir']:<5} {r['tech']:>5.1f} {r['fund']:>5.1f} {r['news']:>5.1f} {r['total']:>6.1f}  {r['price']:>10,.2f}  {tp_str:>12}  {sl_str:>12}  {rr_str:>4} {status:<20}")
+                selected_source = r.get('selected_source') or r.get('signal_model', active_model)
+                log.info(
+                    f"{r['coin']:<6} ${r['price']:>9,.3f}  {r['dir']:<5} "
+                    f"{r['tech']:>5.1f} {r['fund']:>5.1f} {r['news']:>5.1f} {r['total']:>6.1f} "
+                    f"{selected_source:<11} {r.get('strategy', '-'): <30} {status:<20}"
+                )
         else:
             log.info("(No signals computed this cycle)")
         log.info(f"{'─'*120}")

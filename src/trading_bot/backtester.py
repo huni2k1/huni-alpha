@@ -519,40 +519,26 @@ def _close_position(pos: dict, exit_price: float, exit_reason: str, exit_candle:
 # ─────────────────────────────────────────────────────────────────
 # KELLY CRITERION — Dynamic Position Sizing
 # ─────────────────────────────────────────────────────────────────
-def calculate_kelly_risk_multiplier(score: float, base_risk: float = 1.5) -> float:
+def calculate_kelly_risk_multiplier(score: float) -> float:
     """
-    Calculate dynamic risk multiplier based on signal score using Kelly Criterion.
+    Calculate dynamic risk multiplier based on technical signal score.
 
-    Historical metrics:
-    - Win Rate: 37.5%
-    - Loss Rate: 62.5%
-    - Reward/Risk Ratio: ~2:1
-    - Kelly-optimal: ~6.25%, Half-Kelly: ~3.13%
+    Only applies to technical signal modes where score varies per candle (6.0–9.5).
+    Statistical mode bypasses this entirely and uses flat risk_pct.
 
     Scaling:
-    - Score 6.0 (min entry): 0.8x multiplier = 1.2% risk
-    - Score 6.5: 1.0x multiplier = 1.5% risk (baseline)
-    - Score 7.0: 1.3x multiplier = 1.95% risk
-    - Score 8.0: 1.7x multiplier = 2.55% risk
-    - Score 9.0+: 2.0x multiplier = 3.0% risk (half-Kelly equivalent)
-
-    Curve: Linear scaling from score 6.0 to 9.0+
+    - Score 6.0 (min entry): 0.8x multiplier
+    - Score 6.5: 1.0x multiplier (baseline)
+    - Score 7.0: 1.3x multiplier
+    - Score 8.0: 1.7x multiplier
+    - Score 9.0+: 2.0x multiplier (half-Kelly equivalent)
     """
-    # Clamp score to valid range
-    score = max(6.0, min(9.5, score))
-
-    # Linear interpolation: 6.0 → 0.8x, 9.0+ → 2.0x
-    if score < 6.0:
-        multiplier = 0.8
-    elif score >= 9.0:
-        multiplier = 2.0
-    else:
-        # Linear: (score - 6.0) / 3.0 gives 0.0 to 1.0 over range 6.0-9.0
-        # Map 0.0-1.0 range to 0.8x-2.0x multiplier
-        norm = (score - 6.0) / 3.0
-        multiplier = 0.8 + (norm * 1.2)  # 0.8 + (0 to 1.2) = 0.8 to 2.0
-
-    return multiplier
+    if score >= 9.0:
+        return 2.0
+    if score <= 6.0:
+        return 0.8
+    norm = (score - 6.0) / 3.0
+    return 0.8 + (norm * 1.2)
 
 
 def _calculate_streaks(trades: list) -> tuple:
@@ -588,8 +574,11 @@ def _annualize_return(total_return_pct: float, months_tested: int) -> float:
 def _calculate_risk_metrics(monthly_sorted: list, total_return_pct: float,
                             max_drawdown_pct: float, months_tested: int) -> dict:
     monthly_returns = [m["monthly_return_pct"] for m in monthly_sorted]
-    if months_tested > len(monthly_returns):
-        monthly_returns = monthly_returns + [0.0] * (months_tested - len(monthly_returns))
+    calendar_months = len(monthly_returns)
+    effective_months = max(months_tested, calendar_months)
+
+    if effective_months > calendar_months:
+        monthly_returns = monthly_returns + [0.0] * (effective_months - calendar_months)
 
     positive_months = len([r for r in monthly_returns if r > 0])
     negative_months = len([r for r in monthly_returns if r < 0])
@@ -597,7 +586,7 @@ def _calculate_risk_metrics(monthly_sorted: list, total_return_pct: float,
     downside = [r for r in monthly_returns if r < 0]
     downside_vol = float(np.std(downside, ddof=0)) if downside else 0.0
     avg_monthly = float(np.mean(monthly_returns)) if monthly_returns else 0.0
-    annualized_return_pct = _annualize_return(total_return_pct, months_tested)
+    annualized_return_pct = _annualize_return(total_return_pct, effective_months)
 
     sharpe = 0.0
     if monthly_vol > 0:
@@ -609,10 +598,11 @@ def _calculate_risk_metrics(monthly_sorted: list, total_return_pct: float,
 
     calmar = (annualized_return_pct / max_drawdown_pct) if max_drawdown_pct > 0 else 0.0
     recovery_factor = (total_return_pct / max_drawdown_pct) if max_drawdown_pct > 0 else 0.0
-    consistency_pct = (positive_months / months_tested * 100) if months_tested > 0 else 0.0
+    consistency_pct = (positive_months / effective_months * 100) if effective_months > 0 else 0.0
 
     return {
-        "months_tested": months_tested,
+        "months_tested": effective_months,
+        "requested_months": months_tested,
         "positive_months": positive_months,
         "negative_months": negative_months,
         "consistency_pct": round(consistency_pct, 1),
@@ -760,13 +750,15 @@ def run_backtest(
     recovery_candles: int = 168,        # Circuit breaker: candles to wait before resuming
     partial_tp: bool = False,           # Close 50% at 1R, move SL to breakeven (disabled: degrades performance)
     kelly_sizing: bool = False,         # Kelly Criterion-based dynamic position sizing
+    signal_model: str = "technical",    # Signal engine mode: technical (default) or statistical
+    validated_setups_path: Optional[str] = None,  # Deduped validated_setups export for statistical mode
 ) -> dict:
     """
-    Walk-forward backtest using the scanner's generate_signal() (tech-only).
+    Walk-forward backtest using the scanner's generate_signal() contract.
 
     For each 1h candle:
     1. Take the last 1000 candles as the window (accurate EMA200)
-    2. Call generate_signal(tech_only=True) — identical scoring + ATR TP/SL
+    2. Call generate_signal() in the selected signal model
     3. If score >= threshold, simulate a trade using the signal's TP/SL
     4. Walk forward with trailing stop: once +1.5 ATR, trail at breakeven then 1x ATR
     5. Subtract round-trip fees from each trade
@@ -784,15 +776,14 @@ def run_backtest(
     all_trades = []
     equity_curve = [{"time": start_dt.isoformat(), "equity": account}]
     current_equity = account
-    monthly_start_equity = {}  # Track starting equity for each month (for monthly reset calculation)
-    current_month = None
+    monthly_start_equity = {}
+    current_calendar_month = None
     symbol_stats = {}
 
     # ── STEP 1: Pre-fetch all candles ──────────────────────────────
     step1_start = time.time()
     log.info(f"STEP 1: Fetching candles for {len(symbols)} symbols ({months}mo + warmup)...")
     all_candles = {}
-    all_indicators = {}  # Cache pre-computed indicators (optimization)
     warmup_hours = warmup_days * 24
     window_size = 1000
     trade_start_idx = max(window_size, warmup_hours)
@@ -823,13 +814,6 @@ def run_backtest(
         log.info(f"    {symbol}: ✅ {msg} ({validate_time:.2f}s)")
 
         all_candles[symbol] = candles
-
-        # Pre-compute indicators for optimization (2-3x speedup on backtest signal generation)
-        sym_ind_start = time.time()
-        candles_ohlcv = [[c["open"], c["high"], c["low"], c["close"], c["volume"]] for c in candles]
-        all_indicators[symbol] = scanner.precompute_indicators_for_all_candles(candles_ohlcv)
-        ind_time = time.time() - sym_ind_start
-        log.info(f"    {symbol}: Pre-computed {len(all_indicators[symbol])} indicator snapshots in {ind_time:.2f}s")
 
     step1_time = time.time() - step1_start
     log.info(f"STEP 1 completed in {step1_time:.2f}s")
@@ -979,6 +963,16 @@ def run_backtest(
             peak_equity = total_equity
         current_dd_pct = (peak_equity - total_equity) / peak_equity * 100 if peak_equity > 0 else 0
 
+        candle_month = None
+        for _sym in all_candles:
+            if t < len(all_candles[_sym]):
+                candle_dt = datetime.fromtimestamp(all_candles[_sym][t]["close_time"] / 1000, tz=timezone.utc)
+                candle_month = candle_dt.strftime("%Y-%m")
+                break
+        if candle_month is not None and candle_month != current_calendar_month:
+            current_calendar_month = candle_month
+            monthly_start_equity.setdefault(candle_month, round(total_equity, 2))
+
         if current_dd_pct >= max_drawdown_pct and max_drawdown_pct < 100:
             if t >= circuit_breaker_until:  # Not already paused
                 circuit_breaker_until = t + recovery_candles
@@ -1048,10 +1042,15 @@ def run_backtest(
                 signal = generate_signal(symbol, window_candles,
                                          include_fundamentals=False,
                                          include_news=False,
-                                         current_time=candle_time)
+                                         current_time=candle_time,
+                                         signal_model=signal_model,
+                                         validated_setups_path=validated_setups_path)
                                          # precomputed_indicators=indicators_at_t)
-            except Exception:
-                continue
+            except Exception as exc:
+                raise RuntimeError(
+                    f"generate_signal failed for {symbol} at {candle_time.isoformat()} "
+                    f"using signal_model={signal_model}"
+                ) from exc
 
             if signal is None:
                 reasons = getattr(scanner, '_last_rejection_reason', {})
@@ -1066,18 +1065,31 @@ def run_backtest(
             if direction == "NEUTRAL":
                 continue
 
-            # Strategy-specific threshold filtering
+            # Strategy-specific threshold filtering.
+            # Statistical mode uses validated setup membership as the primary gate.
             strategy = signal.get("strategy", "trend_pullback")
-            if "breakout" in strategy:
+            if signal_model in {"statistical", "statistical_curated", "statistical_wide_short_rsi28"}:
+                required_threshold = None
+            elif signal_model == "hybrid_technical_wide_short_rsi28":
+                required_threshold = None if signal.get("strategy") == "statistical_wide_short_rsi28" else (
+                    _breakout_thresh if "breakout" in strategy else _trend_thresh
+                )
+            elif "breakout" in strategy:
                 required_threshold = _breakout_thresh
             else:
                 required_threshold = _trend_thresh
 
-            if score < required_threshold:
+            if required_threshold is not None and score < required_threshold:
                 continue
 
             # Determine tier
-            if score >= threshold_high:
+            if signal_model in {"statistical", "statistical_curated", "statistical_wide_short_rsi28"}:
+                tier = "ENTRY"
+            elif signal_model == "hybrid_technical_wide_short_rsi28":
+                tier = "ENTRY" if signal.get("strategy") == "statistical_wide_short_rsi28" else (
+                    "HIGH_CONF" if score >= threshold_high else "ENTRY"
+                )
+            elif score >= threshold_high:
                 tier = "HIGH_CONF"
             else:
                 tier = "ENTRY"
@@ -1124,16 +1136,6 @@ def run_backtest(
             else:
                 entry_time = datetime.fromtimestamp(entry_candle["close_time"] / 1000, tz=timezone.utc)
 
-            # Monthly tracking
-            if reset_monthly:
-                entry_month = entry_time.strftime("%Y-%m")
-                if current_month is None:
-                    current_month = entry_month
-                    monthly_start_equity[entry_month] = account
-                elif entry_month != current_month:
-                    current_month = entry_month
-                    monthly_start_equity[entry_month] = account
-
             # Position sizing
             if fixed_size > 0:
                 position_size = fixed_size
@@ -1143,17 +1145,17 @@ def run_backtest(
                 else:
                     equity_for_sizing = current_equity
 
-                # Dynamic risk based on Kelly Criterion (optional)
+                # Dynamic risk based on Kelly Criterion (technical mode only).
+                # Statistical mode uses flat risk_pct — setup validation is the quality gate.
                 effective_risk_pct = risk_pct
-                if kelly_sizing:
-                    kelly_multiplier = calculate_kelly_risk_multiplier(score, risk_pct)
+                is_statistical = signal_model in {"statistical", "statistical_curated", "statistical_wide_short_rsi28"}
+                if kelly_sizing and not is_statistical:
+                    kelly_multiplier = calculate_kelly_risk_multiplier(score)
                     effective_risk_pct = risk_pct * kelly_multiplier
 
                 risk_amount = equity_for_sizing * (effective_risk_pct / 100)
                 position_size = risk_amount / (sl_pct_sig / 100) if sl_pct_sig > 0 else risk_amount
                 position_size = min(position_size, equity_for_sizing * 0.5)
-
-            position_size = min(position_size, 1000.0)
 
             # Capital constraint: check if we have enough total equity (free + locked + unrealized P&L)
             # This prevents liquidation when positions are underwater
@@ -1305,22 +1307,18 @@ def run_backtest(
         if t["pnl_pct"] > 0:
             monthly[month_key]["wins"] += 1
 
-    # NOTE: When reset_monthly=True, monthly P&L is the sum of individual trades in that month.
-    # This is accurate because each trade's P&L is calculated correctly regardless of when
-    # the equity reset happens. Position sizing resets monthly, but trade outcomes are independent.
-
     monthly_sorted = []
     for k in sorted(monthly.keys()):
         m = monthly[k]
-        # Calculate monthly return as: P&L / starting account per month
-        # When reset_monthly=True, each month starts fresh at `account` value
-        monthly_return_pct = (m["pnl_usd"] / account * 100) if account > 0 else 0
+        month_start_equity = monthly_start_equity.get(k, account)
+        monthly_return_pct = (m["pnl_usd"] / month_start_equity * 100) if month_start_equity > 0 else 0
         monthly_sorted.append({
             "month": k,
             "trades": m["trades"],
             "wins": m["wins"],
             "win_rate": round(m["wins"] / m["trades"] * 100, 1) if m["trades"] > 0 else 0,
             "pnl_usd": round(m["pnl_usd"], 2),
+            "month_start_equity": round(month_start_equity, 2),
             "monthly_return_pct": round(monthly_return_pct, 2),
             "avg_pnl_pct": round(m["pnl_pct_sum"] / m["trades"], 2) if m["trades"] > 0 else 0,
         })
@@ -1403,12 +1401,14 @@ def run_backtest(
             "trend_threshold": _trend_thresh,
             "breakout_threshold": _breakout_thresh,
             "threshold_high": threshold_high,
+            "signal_model": signal_model,
+            "validated_setups_path": validated_setups_path,
             "cooldown_candles": cooldown_candles,
             "max_positions": max_positions,
             "use_next_open": use_next_open,
             "fixed_size": fixed_size,
             "max_drawdown_pct": max_drawdown_pct,
-            "scoring": "multi_regime (trend_pullback | breakout, tech-only)",
+            "scoring": f"multi_regime ({signal_model})",
             "run_time": datetime.now(timezone.utc).isoformat(),
         },
         "summary": {
@@ -1687,6 +1687,8 @@ if __name__ == "__main__":
     parser.add_argument("--fixed-size", type=float, default=0.0, help="Fixed $ per trade (0=use risk%% sizing)")
     parser.add_argument("--partial-tp", action="store_true", default=False, help="Close 50%% at 1R, move SL to breakeven (default: disabled)")
     parser.add_argument("--no-kelly-sizing", action="store_false", dest="kelly_sizing", default=True, help="Disable Kelly sizing, use flat risk%% instead")
+    parser.add_argument("--signal-model", choices=["technical", "statistical", "statistical_curated", "statistical_wide_short_rsi28", "hybrid_technical_wide_short_rsi28"], default="technical", help="Signal engine to use inside generate_signal()")
+    parser.add_argument("--validated-setups", type=str, default=None, help="Path to validated_setups.json for statistical mode")
     # Circuit breaker
     parser.add_argument("--max-drawdown", type=float, default=25.0, help="Max drawdown %% before circuit breaker (default: 25)")
     parser.add_argument("--recovery-candles", type=int, default=168, help="Candles to pause after circuit breaker (default: 168)")
@@ -1702,6 +1704,9 @@ if __name__ == "__main__":
     log.info(f"Thresholds: trend={args.trend_threshold} breakout={args.breakout_threshold}")
     log.info(f"Fees: {args.fee_pct}% RT | Slippage: {args.slippage_pct}% | Trailing Stop: {'ON' if args.trailing_stop else 'OFF'}")
     log.info(f"Max positions: {args.max_positions} | Cooldown: {args.cooldown}h | Entry: next candle open")
+    log.info(f"Signal model: {args.signal_model}")
+    if args.signal_model == "statistical" and args.validated_setups:
+        log.info(f"Validated setups: {args.validated_setups}")
     log.info(f"Circuit breaker: {args.max_drawdown}% DD → pause {args.recovery_candles} candles")
 
     results = run_backtest(
@@ -1724,6 +1729,8 @@ if __name__ == "__main__":
         recovery_candles=args.recovery_candles,
         partial_tp=args.partial_tp,
         kelly_sizing=args.kelly_sizing,
+        signal_model=args.signal_model,
+        validated_setups_path=args.validated_setups,
     )
 
     print_summary(results)

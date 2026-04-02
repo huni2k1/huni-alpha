@@ -18,6 +18,7 @@ import sys
 import os
 import importlib.util
 from unittest.mock import patch, MagicMock
+from datetime import datetime, timezone
 
 # Load backtester module
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -53,7 +54,7 @@ def make_position_dict(direction="LONG", entry_price=100.0, tp_price=110.0, sl_p
         "tier": "ENTRY",
         "score": score,
         "entry_price": entry_price,
-        "entry_time": "2025-01-01T00:00:00Z",
+        "entry_time": datetime(2025, 1, 1, tzinfo=timezone.utc),
         "entry_idx": entry_idx,
         "tp_price": tp_price,
         "sl_price": sl_price,
@@ -66,7 +67,16 @@ def make_position_dict(direction="LONG", entry_price=100.0, tp_price=110.0, sl_p
         "atr": atr,
         "tp_pct": abs((tp_price - entry_price) / entry_price * 100),
         "sl_pct": abs((entry_price - sl_price) / entry_price * 100),
-        "signal": {"symbol": symbol, "direction": direction, "score": score},
+        "signal": {
+            "symbol": symbol,
+            "direction": direction,
+            "score": score,
+            "details": {
+                "strategy": "trend_pullback",
+                "regime": "trending",
+                "rsi": {},
+            },
+        },
         "partial_taken": False,
         "partial_pnl_usd": 0.0,
     }
@@ -167,6 +177,37 @@ class TestPnLCalculation:
         assert slippaged_exit > base_exit, "SHORT slippage should increase exit price (worse for short)"
         assert abs(slippaged_exit - 90.045) < 0.01, f"SHORT slippage calc incorrect: {slippaged_exit}"
 
+    def test_close_position_updates_equity_and_trade_record(self):
+        """Directly exercise _close_position() instead of recomputing its math inline."""
+        pos = make_position_dict(direction="LONG", entry_price=100.0, position_size=100.0, tp_price=110.0, sl_price=95.0)
+        exit_candle = make_candle_dict(open_=109.0, high=110.0, low=108.0, close=110.0)
+        equity_curve = []
+        all_trades = []
+        sym_trades_map = {}
+
+        updated_equity = bt._close_position(
+            pos,
+            exit_price=110.0,
+            exit_reason="TP",
+            exit_candle=exit_candle,
+            current_equity=900.0,
+            equity_curve=equity_curve,
+            all_trades=all_trades,
+            sym_trades_map=sym_trades_map,
+            fee_pct=0.1,
+            t=3,
+            slippage_pct=0.0,
+        )
+
+        assert updated_equity == pytest.approx(1009.9, abs=0.01)
+        assert len(all_trades) == 1
+        trade = all_trades[0]
+        assert trade["pnl_pct"] == pytest.approx(9.9, abs=0.01)
+        assert trade["pnl_usd"] == pytest.approx(9.9, abs=0.01)
+        assert trade["duration_hours"] == 3
+        assert trade["strategy"] == "trend_pullback"
+        assert sym_trades_map["BTCUSDT"][0]["equity_after"] == pytest.approx(1009.9, abs=0.01)
+
 
 # ─────────────────────────────────────────────────────────────
 # B. resolve_same_candle_hit() tests
@@ -244,33 +285,33 @@ class TestKellyMultiplier:
 
     def test_kelly_score_below_floor(self):
         """score < 6.0 → multiplier = 0.8."""
-        result = bt.calculate_kelly_risk_multiplier(score=5.0, base_risk=1.5)
+        result = bt.calculate_kelly_risk_multiplier(score=5.0)
         assert abs(result - 0.8) < 0.01, f"Score 5.0 should give 0.8x, got {result}"
 
     def test_kelly_score_at_floor(self):
         """score = 6.0 → multiplier = 0.8."""
-        result = bt.calculate_kelly_risk_multiplier(score=6.0, base_risk=1.5)
+        result = bt.calculate_kelly_risk_multiplier(score=6.0)
         assert abs(result - 0.8) < 0.01, f"Score 6.0 should give 0.8x, got {result}"
 
     def test_kelly_score_midpoint(self):
         """score = 7.5 (midpoint) → multiplier ≈ 1.4."""
-        result = bt.calculate_kelly_risk_multiplier(score=7.5, base_risk=1.5)
+        result = bt.calculate_kelly_risk_multiplier(score=7.5)
         assert 1.3 < result < 1.5, f"Score 7.5 should give ~1.4x, got {result}"
 
     def test_kelly_score_at_ceiling(self):
         """score = 9.0 → multiplier = 2.0."""
-        result = bt.calculate_kelly_risk_multiplier(score=9.0, base_risk=1.5)
+        result = bt.calculate_kelly_risk_multiplier(score=9.0)
         assert abs(result - 2.0) < 0.01, f"Score 9.0 should give 2.0x, got {result}"
 
     def test_kelly_score_above_ceiling_clamped(self):
         """score > 9.0 → clamped to 2.0x."""
-        result = bt.calculate_kelly_risk_multiplier(score=10.0, base_risk=1.5)
+        result = bt.calculate_kelly_risk_multiplier(score=10.0)
         assert abs(result - 2.0) < 0.01, f"Score 10.0 (clamped) should give 2.0x, got {result}"
 
     def test_kelly_multiplier_in_valid_range(self):
         """For all scores, multiplier ∈ [0.8, 2.0]."""
         for score in [5.0, 6.0, 7.0, 7.5, 8.0, 9.0, 9.5, 10.0]:
-            result = bt.calculate_kelly_risk_multiplier(score=score, base_risk=1.5)
+            result = bt.calculate_kelly_risk_multiplier(score=score)
             assert 0.79 < result < 2.01, f"Score {score} gave {result}, outside [0.8, 2.0]"
 
 

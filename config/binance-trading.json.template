@@ -1,0 +1,6 @@
+{
+  "_comment": "Copy to binance-trading.json and fill in your FUTURES API key with trading permissions.",
+  "_note": "This is SEPARATE from binance-real.json which is read-only.",
+  "api_key": "YOUR_FUTURES_API_KEY_HERE",
+  "api_secret": "YOUR_FUTURES_API_SECRET_HERE"
+}
