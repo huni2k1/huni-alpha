@@ -519,40 +519,26 @@ def _close_position(pos: dict, exit_price: float, exit_reason: str, exit_candle:
 # ─────────────────────────────────────────────────────────────────
 # KELLY CRITERION — Dynamic Position Sizing
 # ─────────────────────────────────────────────────────────────────
-def calculate_kelly_risk_multiplier(score: float, base_risk: float = 1.5) -> float:
+def calculate_kelly_risk_multiplier(score: float) -> float:
     """
-    Calculate dynamic risk multiplier based on signal score using Kelly Criterion.
+    Calculate dynamic risk multiplier based on technical signal score.
 
-    Historical metrics:
-    - Win Rate: 37.5%
-    - Loss Rate: 62.5%
-    - Reward/Risk Ratio: ~2:1
-    - Kelly-optimal: ~6.25%, Half-Kelly: ~3.13%
+    Only applies to technical signal modes where score varies per candle (6.0–9.5).
+    Statistical mode bypasses this entirely and uses flat risk_pct.
 
     Scaling:
-    - Score 6.0 (min entry): 0.8x multiplier = 1.2% risk
-    - Score 6.5: 1.0x multiplier = 1.5% risk (baseline)
-    - Score 7.0: 1.3x multiplier = 1.95% risk
-    - Score 8.0: 1.7x multiplier = 2.55% risk
-    - Score 9.0+: 2.0x multiplier = 3.0% risk (half-Kelly equivalent)
-
-    Curve: Linear scaling from score 6.0 to 9.0+
+    - Score 6.0 (min entry): 0.8x multiplier
+    - Score 6.5: 1.0x multiplier (baseline)
+    - Score 7.0: 1.3x multiplier
+    - Score 8.0: 1.7x multiplier
+    - Score 9.0+: 2.0x multiplier (half-Kelly equivalent)
     """
-    # Clamp score to valid range
-    score = max(6.0, min(9.5, score))
-
-    # Linear interpolation: 6.0 → 0.8x, 9.0+ → 2.0x
-    if score < 6.0:
-        multiplier = 0.8
-    elif score >= 9.0:
-        multiplier = 2.0
-    else:
-        # Linear: (score - 6.0) / 3.0 gives 0.0 to 1.0 over range 6.0-9.0
-        # Map 0.0-1.0 range to 0.8x-2.0x multiplier
-        norm = (score - 6.0) / 3.0
-        multiplier = 0.8 + (norm * 1.2)  # 0.8 + (0 to 1.2) = 0.8 to 2.0
-
-    return multiplier
+    if score >= 9.0:
+        return 2.0
+    if score <= 6.0:
+        return 0.8
+    norm = (score - 6.0) / 3.0
+    return 0.8 + (norm * 1.2)
 
 
 def _calculate_streaks(trades: list) -> tuple:
@@ -1159,10 +1145,12 @@ def run_backtest(
                 else:
                     equity_for_sizing = current_equity
 
-                # Dynamic risk based on Kelly Criterion (optional)
+                # Dynamic risk based on Kelly Criterion (technical mode only).
+                # Statistical mode uses flat risk_pct — setup validation is the quality gate.
                 effective_risk_pct = risk_pct
-                if kelly_sizing:
-                    kelly_multiplier = calculate_kelly_risk_multiplier(score, risk_pct)
+                is_statistical = signal_model in {"statistical", "statistical_curated", "statistical_wide_short_rsi28"}
+                if kelly_sizing and not is_statistical:
+                    kelly_multiplier = calculate_kelly_risk_multiplier(score)
                     effective_risk_pct = risk_pct * kelly_multiplier
 
                 risk_amount = equity_for_sizing * (effective_risk_pct / 100)

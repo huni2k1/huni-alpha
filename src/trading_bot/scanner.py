@@ -1883,6 +1883,7 @@ def _generate_hybrid_technical_wide_short_rsi28_signal(
     precomputed_indicators: dict = None,
 ) -> Optional[dict]:
     """Evaluate both technical and dedicated statistical short setup, then choose one."""
+    _last_rejection_reason.pop(symbol, None)
     technical_signal = _generate_technical_signal(
         symbol,
         candles_4h,
@@ -1892,6 +1893,7 @@ def _generate_hybrid_technical_wide_short_rsi28_signal(
         current_time=current_time,
         precomputed_indicators=precomputed_indicators,
     )
+    technical_reason = _last_rejection_reason.get(symbol)
     statistical_signal = _generate_dedicated_wide_short_rsi28_signal(
         symbol,
         candles_4h,
@@ -1900,8 +1902,13 @@ def _generate_hybrid_technical_wide_short_rsi28_signal(
         current_time=current_time,
         precomputed_indicators=precomputed_indicators,
     )
+    statistical_reason = _last_rejection_reason.get(symbol)
 
     if not technical_signal and not statistical_signal:
+        _last_rejection_reason[symbol] = (
+            f"Hybrid rejected (technical: {technical_reason or 'no signal'}; "
+            f"statistical: {statistical_reason or 'no validated setup'})"
+        )
         return None
 
     selected_signal = technical_signal
@@ -2120,6 +2127,17 @@ _cycle_results = []
 _last_rejection_reason = {}  # Track rejection reasons for each symbol
 
 
+def _signal_model_banner(model: str) -> str:
+    labels = {
+        "technical": "Technical scoring",
+        "statistical": "Validated setup bundle",
+        "statistical_curated": "Curated validated setups",
+        "statistical_wide_short_rsi28": "Dedicated statistical short: wide_short_rsi_below_28",
+        "hybrid_technical_wide_short_rsi28": "Hybrid: technical + wide_short_rsi_below_28",
+    }
+    return labels.get(model, model)
+
+
 def scan_symbol(symbol: str, state: dict):
     """Scan a single symbol using generate_signal() as single source of truth."""
     dbg.debug(f"[{symbol}] Scanning…")
@@ -2157,7 +2175,10 @@ def scan_symbol(symbol: str, state: dict):
         _cycle_results.append({
             'coin': symbol.replace('USDT', ''), 'price': completed_candles[-1][3],
             'dir': '-', 'tech': 0, 'fund': 0, 'news': 0, 'total': 0,
-            'filter_reason': reason, 'tp': 0, 'sl': 0, 'rr_ratio': 0
+            'filter_reason': reason, 'tp': 0, 'sl': 0, 'rr_ratio': 0,
+            'signal_model': DEFAULT_SIGNAL_MODEL if DEFAULT_SIGNAL_MODEL in VALID_SIGNAL_MODELS else "technical",
+            'strategy': '-',
+            'selected_source': 'rejected',
         })
         return
 
@@ -2166,10 +2187,23 @@ def scan_symbol(symbol: str, state: dict):
     tech_pts  = signal["technical_score"]
     fund_pts  = signal["fundamental_score"]
     news_pts  = signal["news_score"]
+    signal_model = signal.get("signal_model", DEFAULT_SIGNAL_MODEL)
+    selected_strategy = signal.get("strategy", "?")
+    selected_source = signal.get("hybrid_details", {}).get("selected", {}).get("source")
+    uses_dedicated_setup = (
+        signal_model == "statistical_wide_short_rsi28"
+        or selected_strategy == "statistical_wide_short_rsi28"
+    )
+    display_total = total
+    if uses_dedicated_setup and total <= 0:
+        display_total = ALERT_THRESHOLD_OPTB
+    model_suffix = f" | model={signal_model}"
+    if selected_source:
+        model_suffix += f" | selected={selected_source}"
 
-    dbg.debug(f"[{symbol}] Total={total:.2f} threshold={ALERT_THRESHOLD_OPTB} cooldown={not can_alert(state, symbol, direction)}")
+    dbg.debug(f"[{symbol}] Total={display_total:.2f} threshold={ALERT_THRESHOLD_OPTB} cooldown={not can_alert(state, symbol, direction)}")
     log.info(f"  {symbol} | LONG={signal['long_score']:.1f} SHORT={signal['short_score']:.1f} "
-             f"| Winner={direction} TOTAL={total:.1f} | {signal.get('regime','?')}/{signal.get('strategy','?')}")
+             f"| Winner={direction} TOTAL={display_total:.1f} | {signal.get('regime','?')}/{selected_strategy}{model_suffix}")
 
     # Store for summary table (with position suggestions)
     _cycle_results.append({
@@ -2179,36 +2213,39 @@ def scan_symbol(symbol: str, state: dict):
         'tech': tech_pts,
         'fund': fund_pts,
         'news': news_pts,
-        'total': total,
+        'total': display_total,
         'tp': signal['tp'],
         'sl': signal['sl'],
         'tp_pct': signal['tp_pct'],
         'sl_pct': signal['sl_pct'],
         'atr': signal['atr'],
         'rr_ratio': signal['rr_ratio'],
+        'signal_model': signal_model,
+        'strategy': selected_strategy,
+        'selected_source': selected_source,
         'filter_reason': None  # None = signal passed all filters
     })
 
     # Alert dispatch — all tiers use the same signal (same TP/SL)
-    if total >= ALERT_THRESHOLD_HARD and can_alert(state, symbol, direction, tier="HIGH"):
+    if display_total >= ALERT_THRESHOLD_HARD and can_alert(state, symbol, direction, tier="HIGH"):
         msg = format_alert(signal)
         send_telegram(msg)
         mark_alert(state, symbol, direction, tier="HIGH")
         save_state(state)
-        log.info(f"  🚀 HIGH CONF sent for {symbol} {direction} ({total:.1f})")
+        log.info(f"  🚀 HIGH CONF sent for {symbol} {direction} ({display_total:.1f})")
 
-    elif total >= ALERT_THRESHOLD_OPTB and can_alert(state, symbol, direction, tier="ENTRY"):
+    elif display_total >= ALERT_THRESHOLD_OPTB and can_alert(state, symbol, direction, tier="ENTRY"):
         msg = format_alert(signal)
         send_telegram(msg)
         mark_alert(state, symbol, direction, tier="ENTRY")
         save_state(state)
-        log.info(f"  ✅ ENTRY sent for {symbol} {direction} ({total:.1f})")
+        log.info(f"  ✅ ENTRY sent for {symbol} {direction} ({display_total:.1f})")
 
-    elif total >= ALERT_THRESHOLD_SOFT and can_alert(state, symbol, direction, tier="WATCH"):
+    elif display_total >= ALERT_THRESHOLD_SOFT and can_alert(state, symbol, direction, tier="WATCH"):
         coin = symbol.replace("USDT", "")
         rsi_val = signal['details'].get('rsi', {}).get('1h', 'N/A')
         soft_msg = (
-            f"🟡 <b>WATCH [{total:.1f}/20]</b>\n"
+            f"🟡 <b>WATCH [{display_total:.1f}/20]</b>\n"
             f"{'🟢 LONG' if direction == 'LONG' else '🔴 SHORT'} <b>{coin}</b> "
             f"@ <code>${signal['entry_price']:,.4f}</code>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -2221,15 +2258,18 @@ def scan_symbol(symbol: str, state: dict):
         send_telegram(soft_msg)
         mark_alert(state, symbol, direction, tier="WATCH")
         save_state(state)
-        log.info(f"  👀 WATCH sent for {symbol} {direction} ({total:.1f})")
+        log.info(f"  👀 WATCH sent for {symbol} {direction} ({display_total:.1f})")
     else:
         log.info(f"  ⏭  Below threshold or in cooldown.")
 
 
 def main():
+    active_model = DEFAULT_SIGNAL_MODEL if DEFAULT_SIGNAL_MODEL in VALID_SIGNAL_MODELS else "technical"
+    active_banner = _signal_model_banner(active_model)
     log.info("=" * 50)
     log.info(f"Market Scanner Multi-Regime Starting… (PID: {os.getpid()})")
-    log.info(f"Strategies: Trend Pullback | Breakout")
+    log.info(f"Signal model: {active_model}")
+    log.info(f"Mode detail: {active_banner}")
     log.info(f"Symbols: {', '.join(SYMBOLS)}")
     log.info(f"Scan interval: {SCAN_INTERVAL}s")
     log.info(f"Watch: {ALERT_THRESHOLD_SOFT}+ | Entry: {ALERT_THRESHOLD_OPTB}+ | High Conf: {ALERT_THRESHOLD_HARD}+")
@@ -2239,15 +2279,19 @@ def main():
 
     send_telegram(
         f"🤖 <b>Market Scanner Multi-Regime Online</b> (PID: {os.getpid()})\n"
+        f"🧠 Signal model: <b>{active_model}</b>\n"
+        f"📌 Mode: {active_banner}\n"
         f"📋 Scanning: {', '.join(s.replace('USDT','') for s in SYMBOLS)}\n"
-        f"🔀 Strategies: Trend Pullback | Breakout\n"
         f"⏱ Interval: every 5 minutes\n"
         f"👀 Watch: {ALERT_THRESHOLD_SOFT}+ | ✅ Entry: {ALERT_THRESHOLD_OPTB}+ | 🚀 High: {ALERT_THRESHOLD_HARD}+"
     )
 
     while True:
         cycle_start = time.time()
-        log.info(f"\n{'─'*40}\nScan cycle @ {datetime.now(timezone.utc).strftime('%H:%M:%S')}")
+        log.info(
+            f"\n{'─'*40}\nScan cycle @ {datetime.now(timezone.utc).strftime('%H:%M:%S')} "
+            f"| model={active_model} | {active_banner}"
+        )
 
         _cycle_results.clear()
         _last_rejection_reason.clear()
@@ -2264,26 +2308,22 @@ def main():
 
         # Summary table - show ALL computed signals + rejected ones
         log.info(f"\n{'─'*120}")
-        log.info(f"{'Coin':<6} {'Price':>10}  {'Dir':<5} {'Tech':>5} {'Fund':>5} {'News':>5} {'Total':>6} {'Entry':>10} {'TP':>10} {'SL':>10} {'R:R':>4} {'Status':<20}")
+        log.info(f"Scanner mode summary: model={active_model} | {active_banner}")
+        log.info(f"{'Coin':<6} {'Price':>10}  {'Dir':<5} {'Tech':>5} {'Fund':>5} {'News':>5} {'Total':>6} {'Source':<11} {'Strategy':<30} {'Status':<20}")
         log.info(f"{'─'*120}")
 
         if _cycle_results:
             for r in sorted(_cycle_results, key=lambda x: x['total'], reverse=True):
-                # Format TP/SL with appropriate decimals (more for small-value coins)
                 if r['total'] > 0:
-                    if r['price'] < 1.0:  # Small coins (DOGE, etc.)
-                        tp_str = f"${r['tp']:.6f}"
-                        sl_str = f"${r['sl']:.6f}"
-                    else:
-                        tp_str = f"${r['tp']:,.2f}"
-                        sl_str = f"${r['sl']:,.2f}"
                     status = "✅ ACTIVE" if r.get('filter_reason') is None else f"⚠️  {r.get('filter_reason', 'SKIPPED')}"
                 else:
-                    tp_str = "—"
-                    sl_str = "—"
                     status = f"⚠️  {r.get('filter_reason', 'NO SIGNAL')}"
-                rr_str = f"{r['rr_ratio']:.1f}:1" if r['total'] > 0 else "—"
-                log.info(f"{r['coin']:<6} ${r['price']:>9,.3f}  {r['dir']:<5} {r['tech']:>5.1f} {r['fund']:>5.1f} {r['news']:>5.1f} {r['total']:>6.1f}  {r['price']:>10,.2f}  {tp_str:>12}  {sl_str:>12}  {rr_str:>4} {status:<20}")
+                selected_source = r.get('selected_source') or r.get('signal_model', active_model)
+                log.info(
+                    f"{r['coin']:<6} ${r['price']:>9,.3f}  {r['dir']:<5} "
+                    f"{r['tech']:>5.1f} {r['fund']:>5.1f} {r['news']:>5.1f} {r['total']:>6.1f} "
+                    f"{selected_source:<11} {r.get('strategy', '-'): <30} {status:<20}"
+                )
         else:
             log.info("(No signals computed this cycle)")
         log.info(f"{'─'*120}")

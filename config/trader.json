@@ -1,0 +1,14 @@
+{
+  "_comment": "Trader config. All fields can also be set via env vars (env vars take precedence).",
+
+  "DRY_RUN": false,
+  "SIGNAL_MODEL": "hybrid_technical_wide_short_rsi28",
+  "RISK_PER_TRADE_PCT": 1.5,
+  "MAX_POSITIONS": 3,
+  "SCAN_INTERVAL_SEC": 300,
+  "COOLDOWN_HOURS": 48,
+  "TIMEOUT_HOURS": 180,
+  "MAX_DRAWDOWN_PCT": 25.0,
+  "CIRCUIT_BREAK_HOURS": 168,
+  "WINDOW_SIZE": 1000
+}

@@ -285,33 +285,33 @@ class TestKellyMultiplier:
 
     def test_kelly_score_below_floor(self):
         """score < 6.0 → multiplier = 0.8."""
-        result = bt.calculate_kelly_risk_multiplier(score=5.0, base_risk=1.5)
+        result = bt.calculate_kelly_risk_multiplier(score=5.0)
         assert abs(result - 0.8) < 0.01, f"Score 5.0 should give 0.8x, got {result}"
 
     def test_kelly_score_at_floor(self):
         """score = 6.0 → multiplier = 0.8."""
-        result = bt.calculate_kelly_risk_multiplier(score=6.0, base_risk=1.5)
+        result = bt.calculate_kelly_risk_multiplier(score=6.0)
         assert abs(result - 0.8) < 0.01, f"Score 6.0 should give 0.8x, got {result}"
 
     def test_kelly_score_midpoint(self):
         """score = 7.5 (midpoint) → multiplier ≈ 1.4."""
-        result = bt.calculate_kelly_risk_multiplier(score=7.5, base_risk=1.5)
+        result = bt.calculate_kelly_risk_multiplier(score=7.5)
         assert 1.3 < result < 1.5, f"Score 7.5 should give ~1.4x, got {result}"
 
     def test_kelly_score_at_ceiling(self):
         """score = 9.0 → multiplier = 2.0."""
-        result = bt.calculate_kelly_risk_multiplier(score=9.0, base_risk=1.5)
+        result = bt.calculate_kelly_risk_multiplier(score=9.0)
         assert abs(result - 2.0) < 0.01, f"Score 9.0 should give 2.0x, got {result}"
 
     def test_kelly_score_above_ceiling_clamped(self):
         """score > 9.0 → clamped to 2.0x."""
-        result = bt.calculate_kelly_risk_multiplier(score=10.0, base_risk=1.5)
+        result = bt.calculate_kelly_risk_multiplier(score=10.0)
         assert abs(result - 2.0) < 0.01, f"Score 10.0 (clamped) should give 2.0x, got {result}"
 
     def test_kelly_multiplier_in_valid_range(self):
         """For all scores, multiplier ∈ [0.8, 2.0]."""
         for score in [5.0, 6.0, 7.0, 7.5, 8.0, 9.0, 9.5, 10.0]:
-            result = bt.calculate_kelly_risk_multiplier(score=score, base_risk=1.5)
+            result = bt.calculate_kelly_risk_multiplier(score=score)
             assert 0.79 < result < 2.01, f"Score {score} gave {result}, outside [0.8, 2.0]"
 
 

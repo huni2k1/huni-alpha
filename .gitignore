@@ -48,6 +48,7 @@ logs/
 
 # Config (credentials - keep out of git)
 config/binance-real.json
+config/binance-trading.json
 config/telegram.json
 
 # Backtest results (generated locally, don't commit)

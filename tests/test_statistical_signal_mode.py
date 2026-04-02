@@ -352,6 +352,25 @@ def test_generate_signal_hybrid_keeps_technical_long_when_statistical_short_conf
     assert signal["hybrid_details"]["selected"]["source"] == "technical"
 
 
+def test_generate_signal_hybrid_reports_both_rejection_reasons_when_no_signal():
+    candles = make_trending_candles(120, "up")
+
+    with patch.object(scanner, "_generate_technical_signal", return_value=None), \
+         patch.object(scanner, "_generate_dedicated_wide_short_rsi28_signal", return_value=None):
+        scanner._last_rejection_reason["BTCUSDT"] = "No validated setup"
+        signal = scanner.generate_signal(
+            "BTCUSDT",
+            candles,
+            include_fundamentals=False,
+            include_news=False,
+            current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+            signal_model="hybrid_technical_wide_short_rsi28",
+        )
+
+    assert signal is None
+    assert "Hybrid rejected" in scanner._last_rejection_reason["BTCUSDT"]
+
+
 def test_generate_signal_statistical_curated_prefers_scoped_setup(tmp_path):
     validated_path = tmp_path / "curated_setups.json"
     write_curated_scope_export(validated_path)
