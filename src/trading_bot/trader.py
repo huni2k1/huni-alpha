@@ -681,13 +681,28 @@ def main():
                 strategy = signal.get("strategy", "trend_pullback")
                 threshold = _required_threshold(signal_model, strategy)
 
+                # Build indicator summary from signal details
+                d = signal.get("details", {})
+                rsi_val  = d.get("rsi", {}).get("1h", d.get("rsi", "?")) if isinstance(d.get("rsi"), dict) else d.get("rsi", "?")
+                adx_val  = d.get("adx", "?")
+                regime   = signal.get("regime") or d.get("regime", "?")
+                vol_r    = d.get("vol_ratio", "?")
+                e200_str = "↑" if d.get("above_e200") else "↓"
+                bb_sq    = "SQ" if d.get("bb_squeeze") else ""
+                l_score  = signal.get("long_score", 0)
+                s_score  = signal.get("short_score", 0)
+                indicator_line = (
+                    f"RSI={rsi_val} ADX={adx_val} vol={vol_r} {e200_str}EMA200 {bb_sq} "
+                    f"regime={regime} L={l_score:.1f} S={s_score:.1f}"
+                ).strip()
+
                 if threshold is not None and score < threshold:
-                    log.info(f"  {symbol}: score {score:.2f} below threshold {threshold:.2f}, skip")
+                    log.info(f"  {symbol}: score {score:.2f} < {threshold:.0f} | {indicator_line}")
                     continue
 
                 log.info(
                     f"  {symbol}: SIGNAL {signal['direction']} score={score:.2f} "
-                    f"strategy={strategy} TP={signal['tp_pct']:.2f}% SL={signal['sl_pct']:.2f}%"
+                    f"strategy={strategy} TP={signal['tp_pct']:.2f}% SL={signal['sl_pct']:.2f}% | {indicator_line}"
                 )
 
                 # Execute
