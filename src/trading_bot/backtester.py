@@ -970,6 +970,11 @@ def run_backtest(
                 candle_month = candle_dt.strftime("%Y-%m")
                 break
         if candle_month is not None and candle_month != current_calendar_month:
+            if reset_monthly and current_calendar_month is not None:
+                # Monthly reset: circuit breaker from last month doesn't carry over.
+                # Sizing already uses flat `account` value (not current_equity), so
+                # a bad month doesn't shrink position sizes in the next month.
+                circuit_breaker_until = -1
             current_calendar_month = candle_month
             monthly_start_equity.setdefault(candle_month, round(total_equity, 2))
 
