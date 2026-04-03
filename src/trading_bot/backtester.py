@@ -22,6 +22,7 @@ Key features:
 Usage:
   python3 backtester.py                          # Default: 6mo, 10 symbols, trend_threshold=7.0, breakout_threshold=6.0
   python3 backtester.py --months 12              # 12 months
+  python3 backtester.py --start-date 2022-01-01 --end-date 2023-12-31  # Custom date range
   python3 backtester.py --symbols BTCUSDT ETHUSDT
   python3 backtester.py --account 1000           # $1000 starting account
   python3 backtester.py --entry-threshold 7.0    # Stricter threshold
@@ -752,6 +753,8 @@ def run_backtest(
     kelly_sizing: bool = False,         # Kelly Criterion-based dynamic position sizing
     signal_model: str = "technical",    # Signal engine mode: technical (default) or statistical
     validated_setups_path: Optional[str] = None,  # Deduped validated_setups export for statistical mode
+    start_date: Optional[datetime] = None,  # Custom start date (overrides months parameter)
+    end_date: Optional[datetime] = None,    # Custom end date (overrides months parameter)
 ) -> dict:
     """
     Walk-forward backtest using the scanner's generate_signal() contract.
@@ -766,9 +769,15 @@ def run_backtest(
     TP/SL come from the signal (ATR-based), NOT from CLI args.
     """
 
-    end_dt = datetime.now(timezone.utc)
     warmup_days = 170  # Extra days so 1000-candle window has full EMA200 warmup
-    start_dt = end_dt - timedelta(days=30 * months + warmup_days)
+
+    # Use custom date range if provided, otherwise calculate from months
+    if start_date and end_date:
+        start_dt = start_date - timedelta(days=warmup_days)
+        end_dt = end_date
+    else:
+        end_dt = datetime.now(timezone.utc)
+        start_dt = end_dt - timedelta(days=30 * months + warmup_days)
 
     start_ms = int(start_dt.timestamp() * 1000)
     end_ms = int(end_dt.timestamp() * 1000)
@@ -1674,7 +1683,9 @@ def print_summary(results: dict):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Backtest Market Scanner V3")
-    parser.add_argument("--months", type=int, default=6, help="Months of history (default: 6)")
+    parser.add_argument("--months", type=int, default=6, help="Months of history (default: 6). Ignored if --start-date and --end-date are provided")
+    parser.add_argument("--start-date", type=str, default=None, help="Start date in YYYY-MM-DD format (optional, overrides --months)")
+    parser.add_argument("--end-date", type=str, default=None, help="End date in YYYY-MM-DD format (optional, overrides --months)")
     parser.add_argument("--symbols", nargs="+", default=None, help="Symbols to test")
     parser.add_argument("--account", type=float, default=1000.0, help="Starting account USD")
     parser.add_argument("--risk-pct", type=float, default=SCANNER_RISK_PCT, help="Risk per trade (from scanner)")
@@ -1704,7 +1715,24 @@ if __name__ == "__main__":
         "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT",
     ]
 
-    log.info(f"Starting backtest: {args.months}mo, {len(symbols)} symbols, ${args.account} account")
+    # Parse custom date range if provided
+    start_date = None
+    end_date = None
+    if args.start_date and args.end_date:
+        try:
+            start_date = datetime.strptime(args.start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            end_date = datetime.strptime(args.end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            if start_date >= end_date:
+                log.error("--start-date must be before --end-date")
+                sys.exit(1)
+            date_range_str = f"{args.start_date} to {args.end_date}"
+        except ValueError as e:
+            log.error(f"Invalid date format: {e}. Use YYYY-MM-DD")
+            sys.exit(1)
+    else:
+        date_range_str = f"{args.months}mo"
+
+    log.info(f"Starting backtest: {date_range_str}, {len(symbols)} symbols, ${args.account} account")
     log.info(f"TP/SL: ATR-based, strategy-dependent R:R (multi-regime)")
     log.info(f"Thresholds: trend={args.trend_threshold} breakout={args.breakout_threshold}")
     log.info(f"Fees: {args.fee_pct}% RT | Slippage: {args.slippage_pct}% | Trailing Stop: {'ON' if args.trailing_stop else 'OFF'}")
@@ -1736,6 +1764,8 @@ if __name__ == "__main__":
         kelly_sizing=args.kelly_sizing,
         signal_model=args.signal_model,
         validated_setups_path=args.validated_setups,
+        start_date=start_date,
+        end_date=end_date,
     )
 
     print_summary(results)
