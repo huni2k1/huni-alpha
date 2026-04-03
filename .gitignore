@@ -51,8 +51,12 @@ config/binance-real.json
 config/binance-trading.json
 config/telegram.json
 
-# Backtest results (generated locally, don't commit)
+# Generated output files (don't commit)
 src/trading_bot/backtest-results.json
+src/trading_bot/setup_analysis_report.json
+
+# Playwright MCP artifacts
+.playwright-mcp/
 
 # Archive files
 *.zip
