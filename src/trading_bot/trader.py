@@ -133,7 +133,9 @@ if sys.stdout.isatty():
 # ─────────────────────────────────────────────────────────────────
 # STATE  (persisted to disk)
 # ─────────────────────────────────────────────────────────────────
-_STATE_FILE = os.environ.get("TRADER_STATE", "/tmp/trader-state.json")
+_DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data")
+os.makedirs(_DATA_DIR, exist_ok=True)
+_STATE_FILE = os.environ.get("TRADER_STATE", os.path.join(_DATA_DIR, "trader-state.json"))
 
 _EMPTY_STATE = {
     "positions": {},        # symbol → position dict
@@ -210,8 +212,16 @@ _STATISTICAL_MODELS = {"statistical", "statistical_curated", "statistical_wide_s
 
 
 def _required_threshold(signal_model: str, strategy: str) -> Optional[float]:
+    """Return minimum score threshold, or None to bypass (setup membership is the gate)."""
     if signal_model in _STATISTICAL_MODELS:
-        return None   # Setup membership is the gate
+        return None
+    # Hybrid model: statistical signals bypass threshold, technical signals need score gate
+    if signal_model == "hybrid_technical_wide_short_rsi28":
+        if "statistical" in strategy or "rsi28" in strategy:
+            return None  # Statistical side: setup membership is the gate
+        if "breakout" in strategy:
+            return SIGNAL_THRESHOLD_BREAKOUT
+        return SIGNAL_THRESHOLD_TREND
     if "breakout" in strategy:
         return SIGNAL_THRESHOLD_BREAKOUT
     return SIGNAL_THRESHOLD_TREND
@@ -297,14 +307,19 @@ def monitor_positions(state: dict, client: BinanceClient, cfg: dict, dry_run: bo
 
         # Timeout (180h = 7.5 days)
         if exit_reason is None and age_hours >= cfg["timeout_hours"]:
-            exit_reason = "TIMEOUT"
             if not dry_run:
                 close_side = "SELL" if pos["direction"] == "LONG" else "BUY"
                 result = client.place_market_close(symbol, close_side, pos["quantity"])
                 if result:
+                    exit_reason = "TIMEOUT"
                     exit_price = result["filled_price"]
                     client.cancel_all_orders(symbol)
+                else:
+                    # Close failed — keep position in state, retry next cycle
+                    log.error(f"  {symbol}: TIMEOUT close failed, will retry next cycle")
+                    send_telegram(f"⚠️ {symbol} TIMEOUT close FAILED — retrying next cycle")
             else:
+                exit_reason = "TIMEOUT"
                 exit_price = pos["entry_price"]  # dry-run placeholder
 
         if exit_reason is not None:
@@ -461,7 +476,10 @@ def execute_entry(
         tp_order_id = client.place_tp_order(symbol, close_side, tp_p, price_prec)
         if not tp_order_id:
             log.error(f"  {symbol}: TP order failed — emergency closing position")
-            client.place_market_close(symbol, close_side, quantity)
+            result = client.place_market_close(symbol, close_side, quantity)
+            if not result:
+                log.error(f"  {symbol}: EMERGENCY CLOSE ALSO FAILED — position open without TP/SL!")
+                send_telegram(f"🚨 {symbol} EMERGENCY CLOSE FAILED — manual intervention needed!")
             return False
 
         # 5. Place SL order
@@ -469,7 +487,10 @@ def execute_entry(
         if not sl_order_id:
             log.error(f"  {symbol}: SL order failed — emergency closing position")
             client.cancel_order(symbol, tp_order_id)
-            client.place_market_close(symbol, close_side, quantity)
+            result = client.place_market_close(symbol, close_side, quantity)
+            if not result:
+                log.error(f"  {symbol}: EMERGENCY CLOSE ALSO FAILED — position has TP but no SL!")
+                send_telegram(f"🚨 {symbol} EMERGENCY CLOSE FAILED — has TP but no SL! Manual intervention needed!")
             return False
 
     # Save position to state
@@ -547,7 +568,39 @@ def reconcile_with_binance(state: dict, client: BinanceClient):
 # ─────────────────────────────────────────────────────────────────
 # MAIN LOOP
 # ─────────────────────────────────────────────────────────────────
+_PID_FILE = os.path.join(_DATA_DIR, "trader.pid")
+
+
+def _acquire_pid_lock():
+    """Prevent duplicate trader instances. Returns True if lock acquired."""
+    if os.path.exists(_PID_FILE):
+        try:
+            with open(_PID_FILE) as f:
+                old_pid = int(f.read().strip())
+            # Check if process is still running
+            os.kill(old_pid, 0)
+            # Process exists — another instance is running
+            return False
+        except (ValueError, ProcessLookupError, PermissionError):
+            # PID file stale — process no longer running
+            pass
+    with open(_PID_FILE, "w") as f:
+        f.write(str(os.getpid()))
+    return True
+
+
+def _release_pid_lock():
+    try:
+        os.remove(_PID_FILE)
+    except OSError:
+        pass
+
+
 def main():
+    if not _acquire_pid_lock():
+        print(f"Another trader instance is already running (PID file: {_PID_FILE})")
+        sys.exit(1)
+
     cfg = _load_config()
     dry_run = cfg["dry_run"]
 
@@ -608,18 +661,21 @@ def main():
         # ── 2. Get current balance ─────────────────────────────────
         if not dry_run:
             balance = client.get_usdt_balance()
+            equity = client.get_usdt_equity()  # Total equity for circuit breaker
             if balance is None:
                 log.error("Failed to get balance from Binance, skipping entry scan")
                 time.sleep(cfg["scan_interval"])
                 continue
+            if equity is None:
+                equity = balance  # Fallback to available balance
         else:
-            # Dry run: use a simulated balance (or read from config)
             balance = float(os.environ.get("DRY_RUN_BALANCE", "1000"))
+            equity = balance
 
-        log.info(f"Balance: ${balance:.2f} USDT")
+        log.info(f"Balance: ${balance:.2f} USDT (equity: ${equity:.2f})")
 
-        # ── 3. Circuit breaker ─────────────────────────────────────
-        _check_circuit_breaker(state, balance, cfg)
+        # ── 3. Circuit breaker (uses total equity, not available balance) ──
+        _check_circuit_breaker(state, equity, cfg)
         if _circuit_breaker_active(state):
             until = state["circuit_breaker_until"]
             log.warning(f"Circuit breaker active until {until}, skipping entries")

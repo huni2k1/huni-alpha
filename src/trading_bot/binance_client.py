@@ -118,7 +118,7 @@ class BinanceClient:
     # ── Account ─────────────────────────────────────────────────────
 
     def get_usdt_balance(self) -> Optional[float]:
-        """Free USDT in the futures wallet."""
+        """Free USDT in the futures wallet (for position sizing)."""
         data = self._request("GET", "/fapi/v2/balance", signed=True)
         if not data:
             return None
@@ -126,6 +126,13 @@ class BinanceClient:
             if asset.get("asset") == "USDT":
                 return float(asset["availableBalance"])
         return None
+
+    def get_usdt_equity(self) -> Optional[float]:
+        """Total USDT equity = wallet balance + unrealized PnL (for circuit breaker)."""
+        data = self._request("GET", "/fapi/v2/account", signed=True)
+        if not data:
+            return None
+        return float(data.get("totalWalletBalance", 0)) + float(data.get("totalUnrealizedProfit", 0))
 
     def get_open_positions(self) -> list:
         """All futures positions with non-zero size."""
