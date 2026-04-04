@@ -979,10 +979,11 @@ def score_technical(symbol: str, candles_4h: list, precomputed_indicators: dict 
         above_e200 = precomputed_indicators.get('above_e200', True)
         below_e200 = precomputed_indicators.get('below_e200', False)
 
-        # Compute expensive indicators on-demand (ADX, Bollinger only computed here)
-        adx_val = adx(highs, lows, closes, period=14)
-        vol_r = volume_ratio(volumes)
-        bb_bw, bb_squeeze = bollinger_bandwidth(closes)
+        # Use pre-computed expensive indicators if available, else compute on-demand
+        adx_val = precomputed_indicators.get('adx') if 'adx' in precomputed_indicators else adx(highs, lows, closes, period=14)
+        vol_r = precomputed_indicators.get('vol_ratio') if 'vol_ratio' in precomputed_indicators else volume_ratio(volumes)
+        bb_bw = precomputed_indicators.get('bb_bandwidth') if 'bb_bandwidth' in precomputed_indicators else bollinger_bandwidth(closes)[0]
+        bb_squeeze = precomputed_indicators.get('bb_squeeze') if 'bb_squeeze' in precomputed_indicators else bollinger_bandwidth(closes)[1]
     else:
         # Compute all indicators once (slower path, for live scanner)
         rsi_val = rsi(closes)
@@ -1546,10 +1547,19 @@ def _build_statistical_snapshot(
         above_e200 = closes[-1] > e200
         below_e200 = closes[-1] < e200
 
-    adx_val = adx(highs, lows, closes, period=14)
-    vol_r = volume_ratio(volumes)
-    bb_mid, bb_upper, bb_lower = bollinger(closes, 20, 2.0)
-    bb_bw, bb_squeeze = bollinger_bandwidth(closes)
+    if precomputed_indicators and 'adx' in precomputed_indicators:
+        adx_val = precomputed_indicators['adx']
+        vol_r = precomputed_indicators.get('vol_ratio', volume_ratio(volumes))
+        bb_mid = precomputed_indicators.get('bb_mid', bollinger(closes, 20, 2.0)[0])
+        bb_upper = precomputed_indicators.get('bb_upper', bollinger(closes, 20, 2.0)[1])
+        bb_lower = precomputed_indicators.get('bb_lower', bollinger(closes, 20, 2.0)[2])
+        bb_bw = precomputed_indicators.get('bb_bandwidth', bollinger_bandwidth(closes)[0])
+        bb_squeeze = precomputed_indicators.get('bb_squeeze', bollinger_bandwidth(closes)[1])
+    else:
+        adx_val = adx(highs, lows, closes, period=14)
+        vol_r = volume_ratio(volumes)
+        bb_mid, bb_upper, bb_lower = bollinger(closes, 20, 2.0)
+        bb_bw, bb_squeeze = bollinger_bandwidth(closes)
     higher_highs, lower_lows = market_structure(candles_4h)
     time_for_filter = current_time if current_time is not None else datetime.now(timezone.utc)
 

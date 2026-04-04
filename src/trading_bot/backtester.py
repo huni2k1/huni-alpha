@@ -832,6 +832,105 @@ def run_backtest(
         for sym, reason in skipped_symbols:
             log.warning(f"  - {sym}: {reason}")
 
+    # ── STEP 1b: Pre-compute indicators for all symbols (once) ────
+    precompute_start = time.time()
+    all_indicators = {}
+    all_ohlcv = {}
+    for symbol, candles in all_candles.items():
+        ohlcv = [[c["open"], c["high"], c["low"], c["close"], c["volume"]] for c in candles]
+        all_ohlcv[symbol] = ohlcv
+        indicators = scanner.precompute_indicators_for_all_candles(ohlcv)
+
+        closes = [c[3] for c in ohlcv]
+        highs = [c[1] for c in ohlcv]
+        lows = [c[2] for c in ohlcv]
+        volumes = [c[4] for c in ohlcv]
+        n = len(closes)
+
+        # Pre-compute ADX series
+        adx_series = [0.0] * n
+        if n >= 28:
+            plus_dm, minus_dm, trs = [], [], []
+            for i in range(1, n):
+                h_diff = highs[i] - highs[i - 1]
+                l_diff = lows[i - 1] - lows[i]
+                plus_dm.append(h_diff if h_diff > l_diff and h_diff > 0 else 0)
+                minus_dm.append(l_diff if l_diff > h_diff and l_diff > 0 else 0)
+                trs.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])))
+            def _wilder(vals, p):
+                result = [sum(vals[:p])]
+                for v in vals[p:]:
+                    result.append(result[-1] - result[-1] / p + v)
+                return result
+            atr_s = _wilder(trs, 14)
+            pdm_s = _wilder(plus_dm, 14)
+            mdm_s = _wilder(minus_dm, 14)
+            dx_vals = []
+            for a, p, m in zip(atr_s, pdm_s, mdm_s):
+                if a == 0:
+                    dx_vals.append(0.0)
+                    continue
+                pdi = 100 * p / a
+                mdi = 100 * m / a
+                dx_vals.append(100 * abs(pdi - mdi) / (pdi + mdi) if (pdi + mdi) > 0 else 0)
+            for idx in range(28, n):
+                dx_offset = idx - 1
+                window = dx_vals[max(0, dx_offset - 13):dx_offset + 1]
+                adx_series[idx] = float(np.mean(window)) if window else 0.0
+
+        # Pre-compute Bollinger series
+        closes_arr = np.array(closes)
+        bb_mid_s = [0.0] * n
+        bb_upper_s = [0.0] * n
+        bb_lower_s = [0.0] * n
+        bb_bw_s = [5.0] * n
+        bb_squeeze_s = [False] * n
+        bb_period = 20
+        if n >= bb_period:
+            cs = np.cumsum(closes_arr)
+            cs2 = np.cumsum(closes_arr ** 2)
+            for idx in range(bb_period - 1, n):
+                start = idx - bb_period + 1
+                s = cs[idx] - (cs[start - 1] if start > 0 else 0)
+                s2 = cs2[idx] - (cs2[start - 1] if start > 0 else 0)
+                mid = s / bb_period
+                var = s2 / bb_period - mid * mid
+                std = float(np.sqrt(max(var, 0)))
+                upper = mid + 2.0 * std
+                lower = mid - 2.0 * std
+                bw = (upper - lower) / mid * 100.0 if mid > 0 else 5.0
+                bb_mid_s[idx] = float(mid)
+                bb_upper_s[idx] = float(upper)
+                bb_lower_s[idx] = float(lower)
+                bb_bw_s[idx] = float(bw)
+            for idx in range(bb_period - 1, n):
+                lookback = bb_bw_s[max(bb_period - 1, idx - 100):idx]
+                if lookback:
+                    sorted_bw = sorted(lookback)
+                    p20_idx = max(0, int(len(sorted_bw) * 0.2) - 1)
+                    bb_squeeze_s[idx] = bb_bw_s[idx] < sorted_bw[p20_idx]
+
+        # Pre-compute volume ratio series
+        vol_ratio_s = [1.0] * n
+        vol_period = 20
+        for idx in range(vol_period, n):
+            avg = float(np.mean(volumes[idx - vol_period:idx]))
+            vol_ratio_s[idx] = volumes[idx] / avg if avg > 0 else 1.0
+
+        # Merge into indicators cache
+        for t_idx in indicators:
+            indicators[t_idx]['adx'] = adx_series[t_idx]
+            indicators[t_idx]['bb_mid'] = bb_mid_s[t_idx]
+            indicators[t_idx]['bb_upper'] = bb_upper_s[t_idx]
+            indicators[t_idx]['bb_lower'] = bb_lower_s[t_idx]
+            indicators[t_idx]['bb_bandwidth'] = bb_bw_s[t_idx]
+            indicators[t_idx]['bb_squeeze'] = bb_squeeze_s[t_idx]
+            indicators[t_idx]['vol_ratio'] = vol_ratio_s[t_idx]
+
+        all_indicators[symbol] = indicators
+    precompute_time = time.time() - precompute_start
+    log.info(f"STEP 1b: Pre-computed indicators for {len(all_indicators)} symbols in {precompute_time:.2f}s")
+
     if not all_candles:
         log.error("No symbols with sufficient data, exiting.")
         return {
@@ -1034,23 +1133,18 @@ def run_backtest(
             if use_next_open and (t + 1) >= len(candles):
                 continue
 
-            # Build candle window (up to and including candle t)
-            window_candles = []
-            for j in range(max(0, t - window_size), t + 1):
-                c = candles[j]
-                window_candles.append([c["open"], c["high"], c["low"], c["close"], c["volume"]])
+            # Use pre-computed OHLCV window (slice, no per-element copy)
+            ohlcv = all_ohlcv[symbol]
+            window_start = max(0, t - window_size)
+            window_candles = ohlcv[window_start:t + 1]
 
             # ── Generate signal ──
-            # Pass candle's timestamp so generate_signal applies Asia filter correctly
             candle_time = datetime.fromtimestamp(
                 candles[t]["close_time"] / 1000, tz=timezone.utc
             )
 
-            # NOTE: Indicator caching is currently DISABLED because pre-computed indicators
-            # are based on full history, not sliding windows. This causes misalignment.
-            # Proper fix: either (1) pre-compute within window, or (2) use caching only for
-            # non-window-sensitive calculations. For now, just compute fresh for each window.
-            # indicators_at_t = all_indicators.get(symbol, {}).get(t)
+            # Use pre-computed indicators (RSI, EMA, MACD, ADX, Bollinger, volume ratio)
+            indicators_at_t = all_indicators.get(symbol, {}).get(t)
 
             try:
                 signal = generate_signal(symbol, window_candles,
@@ -1058,8 +1152,8 @@ def run_backtest(
                                          include_news=False,
                                          current_time=candle_time,
                                          signal_model=signal_model,
-                                         validated_setups_path=validated_setups_path)
-                                         # precomputed_indicators=indicators_at_t)
+                                         validated_setups_path=validated_setups_path,
+                                         precomputed_indicators=indicators_at_t)
             except Exception as exc:
                 raise RuntimeError(
                     f"generate_signal failed for {symbol} at {candle_time.isoformat()} "
@@ -1488,14 +1582,15 @@ def run_backtest(
     log.info(f"STEP 4 (stats aggregation) completed in {step4_time:.2f}s")
 
     # Print overall timing summary
-    total_time = step1_time + step2_time + step3_time + step4_time
+    total_time = step1_time + precompute_time + step2_time + step3_time + step4_time
     log.info(f"\n{'═'*70}")
     log.info(f"  BACKTEST TIMING SUMMARY")
     log.info(f"{'═'*70}")
-    log.info(f"  Step 1 (Fetch + validate):     {step1_time:>8.2f}s ({step1_time/total_time*100:>5.1f}%)")
-    log.info(f"  Step 2 (Main loop):            {step2_time:>8.2f}s ({step2_time/total_time*100:>5.1f}%)")
-    log.info(f"  Step 3 (Force-close):          {step3_time:>8.2f}s ({step3_time/total_time*100:>5.1f}%)")
-    log.info(f"  Step 4 (Stats):                {step4_time:>8.2f}s ({step4_time/total_time*100:>5.1f}%)")
+    log.info(f"  Step 1  (Fetch + validate):    {step1_time:>8.2f}s ({step1_time/total_time*100:>5.1f}%)")
+    log.info(f"  Step 1b (Pre-compute indicators):{precompute_time:>5.2f}s ({precompute_time/total_time*100:>5.1f}%)")
+    log.info(f"  Step 2  (Main loop):           {step2_time:>8.2f}s ({step2_time/total_time*100:>5.1f}%)")
+    log.info(f"  Step 3  (Force-close):         {step3_time:>8.2f}s ({step3_time/total_time*100:>5.1f}%)")
+    log.info(f"  Step 4  (Stats):               {step4_time:>8.2f}s ({step4_time/total_time*100:>5.1f}%)")
     log.info(f"  {'-'*70}")
     log.info(f"  TOTAL TIME:                    {total_time:>8.2f}s")
     log.info(f"{'═'*70}\n")
