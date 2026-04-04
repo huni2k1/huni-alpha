@@ -990,7 +990,7 @@ def score_technical(symbol: str, candles_4h: list, precomputed_indicators: dict 
         # Compute all indicators once (slower path, for live scanner)
         rsi_val = rsi(closes)
         macd_line_val, sig_line_val, hist_curr = macd(closes)
-        hist_prev = macd(closes[:-1])[2] if len(closes) > 27 else hist_curr
+        hist_prev = macd(closes[:-1])[2] if len(closes) > 35 else hist_curr
         vol_r = volume_ratio(volumes)
         e9, e21, e50, bull_align, bear_align = ema_alignment(closes)
         adx_val = adx(highs, lows, closes, period=14)
@@ -1906,6 +1906,7 @@ def _generate_hybrid_technical_wide_short_rsi28_signal(
         precomputed_indicators=precomputed_indicators,
     )
     technical_reason = _last_rejection_reason.get(symbol)
+    _last_rejection_reason.pop(symbol, None)  # Clear before statistical to avoid inheriting technical's reason
     statistical_signal = _generate_dedicated_wide_short_rsi28_signal(
         symbol,
         candles_4h,

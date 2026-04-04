@@ -769,6 +769,7 @@ def run_backtest(
     TP/SL come from the signal (ATR-based), NOT from CLI args.
     """
 
+    random.seed(42)  # Deterministic results for same-candle TP/SL coin flips
     warmup_days = 170  # Extra days so 1000-candle window has full EMA200 warmup
 
     # Use custom date range if provided, otherwise calculate from months
