@@ -64,7 +64,7 @@ _tg_chat = os.environ.get("TELEGRAM_CHAT", "")
 # Fall back to config/telegram.json if env vars not set
 if not _tg_token or not _tg_chat:
     try:
-        _config_path = os.path.join(os.path.dirname(__file__), "..", "config", "telegram.json")
+        _config_path = os.path.join(os.path.dirname(__file__), "..", "..", "config", "telegram.json")
         with open(_config_path) as f:
             _tg_config = json.load(f)
             _tg_token = _tg_token or _tg_config.get("token", "")
@@ -497,7 +497,12 @@ def adx(highs: list, lows: list, closes: list, period: int = 14) -> float:
         mdi = 100 * m / a
         dx_vals.append(100 * abs(pdi - mdi) / (pdi + mdi) if (pdi + mdi) > 0 else 0)
 
-    return float(np.mean(dx_vals[-period:]))
+    if len(dx_vals) < period:
+        return 0.0
+    adx_val = float(np.mean(dx_vals[:period]))
+    for dx in dx_vals[period:]:
+        adx_val = (adx_val * (period - 1) + dx) / period
+    return adx_val
 
 
 # ─────────────────────────────────────────────────────────────────
