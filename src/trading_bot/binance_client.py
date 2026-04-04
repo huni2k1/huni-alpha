@@ -75,12 +75,12 @@ class BinanceClient:
 
     # ── Internal ────────────────────────────────────────────────────
 
-    def _sign(self, params: dict) -> dict:
+    def _sign(self, params: dict) -> str:
+        """Sign params and return the full query string (params + signature)."""
         params["timestamp"] = int(time.time() * 1000)
-        query = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
+        query = "&".join(f"{k}={v}" for k, v in params.items())
         sig = hmac.new(self._api_secret, query.encode(), hashlib.sha256).hexdigest()
-        params["signature"] = sig
-        return params
+        return f"{query}&signature={sig}"
 
     def _request(
         self,
@@ -90,16 +90,20 @@ class BinanceClient:
         signed: bool = False,
     ) -> Optional[dict]:
         params = dict(params or {})
-        if signed:
-            params = self._sign(params)
-
         headers = {"X-MBX-APIKEY": self._api_key}
         url = self.base_url + endpoint
 
         try:
-            r = getattr(requests, method.lower())(
-                url, params=params, headers=headers, timeout=10
-            )
+            if signed:
+                # Build query string ourselves to guarantee param order matches signature
+                qs = self._sign(params)
+                r = getattr(requests, method.lower())(
+                    f"{url}?{qs}", headers=headers, timeout=10
+                )
+            else:
+                r = getattr(requests, method.lower())(
+                    url, params=params, headers=headers, timeout=10
+                )
             if not r.ok:
                 try:
                     err = r.json()

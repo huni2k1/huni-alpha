@@ -737,105 +737,90 @@ def main():
                 strategy = signal.get("strategy", "trend_pullback")
                 threshold = _required_threshold(signal_model, strategy)
 
-                # ── Log all indicator details per strategy type ──
+                # ── Log signal details ──
                 d = signal.get("details", {})
-                entry_p  = signal.get("entry_price", 0)
-                l_score  = signal.get("long_score", 0)
-                s_score  = signal.get("short_score", 0)
-                regime   = signal.get("regime") or d.get("regime", "?")
+                entry_p   = signal.get("entry_price", 0)
+                l_score   = signal.get("long_score", 0)
+                s_score   = signal.get("short_score", 0)
+                regime    = signal.get("regime") or d.get("regime", "?")
                 sig_model = signal.get("signal_model", signal_model)
+                hybrid_d  = signal.get("hybrid_details")
 
                 log.info(
-                    f"  {symbol}: price=${entry_p:,.2f} | {signal['direction']} "
-                    f"score={score:.2f} | model={sig_model} strategy={strategy} regime={regime}"
+                    f"  {symbol}: ${entry_p:,.2f} | {signal['direction']} "
+                    f"score={score:.2f} | model={sig_model} strategy={strategy}"
                 )
 
-                # Technical indicators (present on technical and hybrid signals)
-                if d.get("rsi") is not None or d.get("adx") is not None:
+                # ── Technical side ──
+                if hybrid_d and hybrid_d.get("technical"):
+                    tech_h = hybrid_d["technical"]
                     rsi_val  = d.get("rsi", {}).get("1h", d.get("rsi", "?")) if isinstance(d.get("rsi"), dict) else d.get("rsi", "?")
                     adx_val  = d.get("adx", "?")
                     vol_r    = d.get("vol_ratio", "?")
                     above200 = d.get("above_e200")
-                    ema200   = d.get("ema200", "?")
-                    bb_bw    = d.get("bb_bandwidth", "?")
-                    bb_sq    = d.get("bb_squeeze", False)
-                    macd_l   = d.get("macd_line", "?")
-                    macd_s   = d.get("signal_line", "?")
-                    hist_c   = d.get("hist_curr", "?")
-                    hist_p   = d.get("hist_prev", "?")
                     ema_bull = d.get("ema_bull", False)
                     ema_bear = d.get("ema_bear", False)
+                    bb_sq    = d.get("bb_squeeze", False)
                     log.info(
-                        f"    technical: RSI={rsi_val} ADX={adx_val} | "
-                        f"MACD={macd_l} sig={macd_s} hist={hist_c}/{hist_p} | "
-                        f"vol={vol_r} EMA200={ema200} {'above' if above200 else 'below'} | "
-                        f"EMA bull={ema_bull} bear={ema_bear} | "
-                        f"BB bw={bb_bw} squeeze={bb_sq} | "
+                        f"    [TECHNICAL] {tech_h['direction']} score={tech_h['score']:.2f} "
+                        f"L={tech_h['long_score']:.2f} S={tech_h['short_score']:.2f} | "
+                        f"RSI={rsi_val} ADX={adx_val} vol={vol_r} "
+                        f"EMA200={'above' if above200 else 'below'} "
+                        f"bull={ema_bull} bear={ema_bear} squeeze={bb_sq} regime={regime}"
+                    )
+                elif hybrid_d and hybrid_d.get("technical_reject_reason"):
+                    log.info(f"    [TECHNICAL] no signal — {hybrid_d['technical_reject_reason']}")
+                elif not hybrid_d and (d.get("rsi") is not None or d.get("adx") is not None):
+                    # Pure technical model (not hybrid)
+                    rsi_val  = d.get("rsi", {}).get("1h", d.get("rsi", "?")) if isinstance(d.get("rsi"), dict) else d.get("rsi", "?")
+                    adx_val  = d.get("adx", "?")
+                    vol_r    = d.get("vol_ratio", "?")
+                    above200 = d.get("above_e200")
+                    ema_bull = d.get("ema_bull", False)
+                    ema_bear = d.get("ema_bear", False)
+                    bb_sq    = d.get("bb_squeeze", False)
+                    log.info(
+                        f"    [TECHNICAL] RSI={rsi_val} ADX={adx_val} vol={vol_r} "
+                        f"EMA200={'above' if above200 else 'below'} "
+                        f"bull={ema_bull} bear={ema_bear} squeeze={bb_sq} regime={regime} | "
                         f"L={l_score:.2f} S={s_score:.2f}"
                     )
 
-                # Statistical details (present on statistical and hybrid signals)
+                # ── Statistical side ──
+                if hybrid_d and hybrid_d.get("statistical"):
+                    stat_h = hybrid_d["statistical"]
+                    log.info(
+                        f"    [STATISTICAL] MATCH {stat_h['direction']} "
+                        f"setup={stat_h.get('setup', '?')} template={stat_h.get('template', '?')} "
+                        f"conditions={stat_h.get('conditions', [])}"
+                    )
+                elif hybrid_d and hybrid_d.get("statistical_reject_reason"):
+                    log.info(f"    [STATISTICAL] no match — {hybrid_d['statistical_reject_reason']}")
+                elif hybrid_d:
+                    log.info(f"    [STATISTICAL] no match")
+
                 stat_d = signal.get("statistical_details")
                 if stat_d:
-                    setup_name = signal.get("statistical_setup", "?")
-                    conditions = stat_d.get("conditions", [])
-                    template   = stat_d.get("template", "?")
-                    scope_type = stat_d.get("scope_type", "?")
-                    scope_sym  = stat_d.get("scope_symbol")
-                    scope_reg  = stat_d.get("scope_regime")
-                    candidates = stat_d.get("candidate_count", 0)
                     test_stats = stat_d.get("test_stats", {})
                     train_stats = stat_d.get("train_stats", {})
-                    # Stats files use "count" for trade count, not "n_trades"
-                    test_wr  = test_stats.get("win_rate", "-")
-                    test_pf  = test_stats.get("profit_factor", "-")
-                    test_n   = test_stats.get("count", "-")
-                    test_avg = test_stats.get("avg_pnl_pct", "-")
-                    test_edge = test_stats.get("edge_win_rate", "-")
-                    train_wr = train_stats.get("win_rate", "-")
-                    train_pf = train_stats.get("profit_factor", "-")
-                    train_n  = train_stats.get("count", "-")
-                    train_avg = train_stats.get("avg_pnl_pct", "-")
-                    scope_str = scope_type
-                    if scope_sym:
-                        scope_str += f"/{scope_sym}"
-                    if scope_reg:
-                        scope_str += f"/{scope_reg}"
                     log.info(
-                        f"    statistical: setup={setup_name} template={template} | "
-                        f"conditions={conditions} | scope={scope_str} candidates={candidates}"
-                    )
-                    log.info(
-                        f"    stats: train(wr={train_wr}% pf={train_pf} n={train_n} avg={train_avg}%) "
-                        f"test(wr={test_wr}% pf={test_pf} n={test_n} avg={test_avg}% edge={test_edge}%)"
+                        f"    [STATS] train(wr={train_stats.get('win_rate', '-')}% "
+                        f"pf={train_stats.get('profit_factor', '-')} n={train_stats.get('count', '-')}) "
+                        f"test(wr={test_stats.get('win_rate', '-')}% "
+                        f"pf={test_stats.get('profit_factor', '-')} n={test_stats.get('count', '-')})"
                     )
 
-                # Hybrid details (present on hybrid signals)
-                hybrid_d = signal.get("hybrid_details")
+                # ── Hybrid decision ──
                 if hybrid_d:
                     sel = hybrid_d.get("selected", {})
-                    tech_h = hybrid_d.get("technical")
-                    stat_h = hybrid_d.get("statistical")
-                    log.info(
-                        f"    hybrid: selected={sel.get('source', '?')} reason={sel.get('reason', '?')}"
-                    )
-                    if tech_h:
-                        log.info(
-                            f"    hybrid-technical: {tech_h['direction']} score={tech_h['score']:.2f} "
-                            f"strategy={tech_h['strategy']} L={tech_h['long_score']:.2f} S={tech_h['short_score']:.2f}"
-                        )
-                    if stat_h:
-                        log.info(
-                            f"    hybrid-statistical: {stat_h['direction']} setup={stat_h.get('setup', '?')} "
-                            f"template={stat_h.get('template', '?')} conditions={stat_h.get('conditions', [])}"
-                        )
+                    log.info(f"    [HYBRID] => {sel.get('source', '?')} ({sel.get('reason', '?')})")
 
                 if threshold is not None and score < threshold:
                     log.info(f"  {symbol}: REJECTED score {score:.2f} < {threshold:.0f}")
                     continue
 
                 log.info(
-                    f"  {symbol}: >>> SIGNAL {signal['direction']} "
+                    f"  {symbol}: >>> ENTRY {signal['direction']} "
                     f"TP={signal['tp_pct']:.2f}% SL={signal['sl_pct']:.2f}% "
                     f"R:R={signal.get('rr_ratio', '?')} ATR={signal.get('atr', '?')}"
                 )

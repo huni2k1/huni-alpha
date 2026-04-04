@@ -1732,8 +1732,13 @@ def _generate_dedicated_wide_short_rsi28_signal(
         current_time=current_time,
         precomputed_indicators=precomputed_indicators,
     )
-    if not snapshot or not matches_conditions(snapshot, DEDICATED_WIDE_SHORT_RSI28_SETUP["conditions"]):
-        _last_rejection_reason[symbol] = "No validated setup"
+    if not snapshot:
+        _last_rejection_reason[symbol] = "No snapshot (insufficient data)"
+        return None
+    if not matches_conditions(snapshot, DEDICATED_WIDE_SHORT_RSI28_SETUP["conditions"]):
+        _last_rejection_reason[symbol] = (
+            f"RSI={snapshot.get('rsi', '?'):.1f} (need <28)"
+        )
         return None
 
     direction = DEDICATED_WIDE_SHORT_RSI28_SETUP["direction"]
@@ -1950,12 +1955,14 @@ def _generate_hybrid_technical_wide_short_rsi28_signal(
             "long_score": technical_signal["long_score"],
             "short_score": technical_signal["short_score"],
         },
+        "technical_reject_reason": technical_reason if technical_signal is None else None,
         "statistical": None if statistical_signal is None else {
             "direction": statistical_signal["direction"],
             "setup": statistical_signal["statistical_setup"],
             "conditions": statistical_signal["statistical_details"]["conditions"],
             "template": statistical_signal["statistical_details"]["template"],
         },
+        "statistical_reject_reason": statistical_reason if statistical_signal is None else None,
         "selected": {
             "source": selected_source,
             "reason": selected_reason,
