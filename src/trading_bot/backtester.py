@@ -873,9 +873,12 @@ def run_backtest(
                 pdi = 100 * p / a
                 mdi = 100 * m / a
                 dx_vals.append(100 * abs(pdi - mdi) / (pdi + mdi) if (pdi + mdi) > 0 else 0)
+            # dx_vals[j] uses data through candle j+14, so for candle idx
+            # we can only use dx_vals[j] where j <= idx-14
             for idx in range(28, n):
-                dx_offset = idx - 1
-                window = dx_vals[max(0, dx_offset - 13):dx_offset + 1]
+                end_dx = idx - 13  # exclusive end: last valid is dx_vals[idx-14]
+                start_dx = max(0, end_dx - 14)
+                window = dx_vals[start_dx:end_dx]
                 adx_series[idx] = float(np.mean(window)) if window else 0.0
 
         # Pre-compute Bollinger series

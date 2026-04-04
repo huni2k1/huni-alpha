@@ -639,7 +639,9 @@ def precompute_indicators_for_all_candles(candles: list) -> dict:
     # Build cache using pre-computed series (no expensive per-position calculations)
     for t in range(50, len(candles)):
         # Index into pre-computed series
-        idx_rsi = min(t, len(rsi_series) - 1)
+        # rsi_series[k] uses gains[k] = closes[k+1]-closes[k], so rsi_series[k]
+        # incorporates data through candle k+1. Use t-1 to avoid 1-candle look-ahead.
+        idx_rsi = min(t - 1, len(rsi_series) - 1)
         rsi_val = rsi_series[idx_rsi] if idx_rsi >= 0 else 50.0
 
         # MACD: align to current position
