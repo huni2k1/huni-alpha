@@ -120,9 +120,8 @@ DEDICATED_WIDE_SHORT_RSI28_SETUP = {
     "scope_regime": None,
 }
 
-LOG_FILE        = os.environ.get("SCANNER_LOG", "/tmp/scanner.log")
-DEBUG_LOG_FILE  = os.environ.get("SCANNER_DEBUG_LOG",
-    LOG_FILE.replace(".log", "-debug.log"))
+LOG_FILE        = os.environ.get("TRADING_BOT_LOG", "/tmp/trading-bot.log")
+DEBUG_LOG_FILE  = os.environ.get("TRADING_BOT_DEBUG_LOG", "/tmp/trading-bot-debug.log")
 PID_FILE        = "/tmp/scanner.pid"
 STATE_FILE      = "/tmp/scanner-state.json"
 
@@ -137,26 +136,29 @@ SYMBOLS = [
 from logging.handlers import RotatingFileHandler
 
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-log = logging.getLogger("scanner")
-log.setLevel(logging.INFO)
+log = logging.getLogger("trading-bot")
+log.setLevel(logging.DEBUG)  # Capture everything, filter by handler level
 log.propagate = False
 _fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-# RotatingFileHandler: keep last ~50MB (typical 50-100 scan cycles)
+
+# INFO handler — monitoring log (shared with trader)
 _fh = RotatingFileHandler(LOG_FILE, maxBytes=50*1024*1024, backupCount=10)
+_fh.setLevel(logging.INFO)
 _fh.setFormatter(_fmt)
 log.addHandler(_fh)
+
 if sys.stdout.isatty():
     _sh = logging.StreamHandler(sys.stdout)
+    _sh.setLevel(logging.INFO)
     _sh.setFormatter(_fmt)
     log.addHandler(_sh)
 
-# Debug logger — detailed reasoning and scores (with rotation)
-dbg = logging.getLogger("scanner.debug")
-dbg.setLevel(logging.DEBUG)
-dbg.propagate = False
+# DEBUG handler — verbose debug log (shared with trader)
+dbg = log
 _dfh = RotatingFileHandler(DEBUG_LOG_FILE, maxBytes=50*1024*1024, backupCount=10)
+_dfh.setLevel(logging.DEBUG)
 _dfh.setFormatter(_fmt)
-dbg.addHandler(_dfh)
+log.addHandler(_dfh)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -1675,6 +1677,13 @@ def _generate_statistical_signal(
         _last_rejection_reason[symbol] = "Whipsaw"
         return None
 
+    time_for_filter = current_time if current_time is not None else datetime.now(timezone.utc)
+    hour_utc = time_for_filter.hour
+    if hour_utc >= 0 and hour_utc < 8:
+        dbg.debug(f"[{symbol}] FILTERED: Asia session hour {hour_utc} UTC (low liquidity)")
+        _last_rejection_reason[symbol] = f"Asia session (UTC {hour_utc})"
+        return None
+
     tp_sl = _suggest_tp_sl_for_setup(candles_4h, direction, matched_setup)
     statistical_details = {
         "matched_setup": matched_setup["name"],
@@ -1745,6 +1754,13 @@ def _generate_dedicated_wide_short_rsi28_signal(
     if state and is_whipsaw(state, symbol, direction):
         dbg.debug(f"[{symbol}] REJECTED: whipsaw detected (direction change <5min)")
         _last_rejection_reason[symbol] = "Whipsaw"
+        return None
+
+    time_for_filter = current_time if current_time is not None else datetime.now(timezone.utc)
+    hour_utc = time_for_filter.hour
+    if hour_utc >= 0 and hour_utc < 8:
+        dbg.debug(f"[{symbol}] FILTERED: Asia session hour {hour_utc} UTC (low liquidity)")
+        _last_rejection_reason[symbol] = f"Asia session (UTC {hour_utc})"
         return None
 
     tp_sl = _suggest_tp_sl_for_setup(candles_4h, direction, DEDICATED_WIDE_SHORT_RSI28_SETUP)
