@@ -210,6 +210,13 @@ def mark_signal(state: dict, symbol: str, direction: str):
     state["signal_history"][symbol] = {"direction": direction, "ts": time.time()}
 
 
+def _is_asia_session(current_time: Optional[datetime] = None) -> bool:
+    """Check if current time is in Asia session (UTC 0-7, low liquidity)."""
+    time_for_filter = current_time if current_time is not None else datetime.now(timezone.utc)
+    hour_utc = time_for_filter.hour
+    return hour_utc >= 0 and hour_utc < 8
+
+
 # ─────────────────────────────────────────────────────────────────
 # HTTP HELPERS
 # ─────────────────────────────────────────────────────────────────
@@ -1677,9 +1684,8 @@ def _generate_statistical_signal(
         _last_rejection_reason[symbol] = "Whipsaw"
         return None
 
-    time_for_filter = current_time if current_time is not None else datetime.now(timezone.utc)
-    hour_utc = time_for_filter.hour
-    if hour_utc >= 0 and hour_utc < 8:
+    if _is_asia_session(current_time):
+        hour_utc = (current_time if current_time is not None else datetime.now(timezone.utc)).hour
         dbg.debug(f"[{symbol}] FILTERED: Asia session hour {hour_utc} UTC (low liquidity)")
         _last_rejection_reason[symbol] = f"Asia session (UTC {hour_utc})"
         return None
@@ -1756,9 +1762,8 @@ def _generate_dedicated_wide_short_rsi28_signal(
         _last_rejection_reason[symbol] = "Whipsaw"
         return None
 
-    time_for_filter = current_time if current_time is not None else datetime.now(timezone.utc)
-    hour_utc = time_for_filter.hour
-    if hour_utc >= 0 and hour_utc < 8:
+    if _is_asia_session(current_time):
+        hour_utc = (current_time if current_time is not None else datetime.now(timezone.utc)).hour
         dbg.debug(f"[{symbol}] FILTERED: Asia session hour {hour_utc} UTC (low liquidity)")
         _last_rejection_reason[symbol] = f"Asia session (UTC {hour_utc})"
         return None
@@ -1881,9 +1886,8 @@ def _generate_technical_signal(
     regime = tech["details"].get("regime", "trending")
     tp_sl = _suggest_tp_sl_for_strategy(candles_4h, direction, strategy)
 
-    time_for_filter = current_time if current_time is not None else datetime.now(timezone.utc)
-    hour_utc = time_for_filter.hour
-    if hour_utc >= 0 and hour_utc < 8:
+    if _is_asia_session(current_time):
+        hour_utc = (current_time if current_time is not None else datetime.now(timezone.utc)).hour
         dbg.debug(f"[{symbol}] FILTERED: Asia session hour {hour_utc} UTC (low liquidity)")
         _last_rejection_reason[symbol] = f"Asia session (UTC {hour_utc})"
         return None
