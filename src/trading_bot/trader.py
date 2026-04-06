@@ -102,7 +102,7 @@ def _load_config() -> dict:
         "risk_pct":          float(_get("RISK_PER_TRADE_PCT", 1.5)),
         "max_positions":     int(_get("MAX_POSITIONS", 3)),
         "scan_interval":     int(_get("SCAN_INTERVAL_SEC", 300)),
-        "cooldown_hours":    int(_get("COOLDOWN_HOURS", 48)),
+        "cooldown_hours":    int(_get("COOLDOWN_HOURS", 24)),
         "timeout_hours":     int(_get("TIMEOUT_HOURS", 180)),
         "max_drawdown_pct":  float(_get("MAX_DRAWDOWN_PCT", 25.0)),
         "circuit_break_hours": int(_get("CIRCUIT_BREAK_HOURS", 168)),
