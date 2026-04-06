@@ -18,15 +18,25 @@ import hashlib
 import logging
 import requests
 from typing import Optional
+from uuid import uuid4
+from requests.exceptions import RequestException
 
 log = logging.getLogger("trader.binance")
 
 BASE_URL_LIVE    = "https://fapi.binance.com"
 BASE_URL_TESTNET = "https://testnet.binancefuture.com"
+BASE_URL_LIVE_FALLBACKS = [
+    BASE_URL_LIVE,
+    "https://fapi1.binance.com",
+    "https://fapi2.binance.com",
+    "https://fapi3.binance.com",
+]
 
 _CONFIG_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "config", "binance-trading.json"
 )
+
+_ALGO_ORDER_PREFIX = "algo:"
 
 
 class BinanceClient:
@@ -67,13 +77,27 @@ class BinanceClient:
             testnet = raw not in ("false", "0", "no")
 
         self.testnet = testnet
-        self.base_url = BASE_URL_TESTNET if testnet else BASE_URL_LIVE
+        self.base_urls = [BASE_URL_TESTNET] if testnet else list(BASE_URL_LIVE_FALLBACKS)
+        self.base_url = self.base_urls[0]
+        self._request_retries = int(os.environ.get("BINANCE_REQUEST_RETRIES", "1"))
+        self._request_backoff_sec = float(os.environ.get("BINANCE_REQUEST_BACKOFF_SEC", "0.25"))
         self._symbol_cache: dict = {}
 
         mode = "TESTNET" if testnet else "LIVE ⚠️"
         log.info(f"BinanceClient ready [{mode}] {self.base_url}")
 
     # ── Internal ────────────────────────────────────────────────────
+
+    @staticmethod
+    def _algo_order_ref(client_algo_id: str) -> str:
+        return f"{_ALGO_ORDER_PREFIX}{client_algo_id}"
+
+    @staticmethod
+    def _parse_order_ref(order_id: str) -> tuple[str, str]:
+        text = str(order_id)
+        if text.startswith(_ALGO_ORDER_PREFIX):
+            return "algo", text[len(_ALGO_ORDER_PREFIX):]
+        return "regular", text
 
     def _sign(self, params: dict) -> str:
         """Sign params and return the full query string (params + signature)."""
@@ -89,35 +113,62 @@ class BinanceClient:
         params: dict = None,
         signed: bool = False,
     ) -> Optional[dict]:
-        params = dict(params or {})
+        base_params = dict(params or {})
         headers = {"X-MBX-APIKEY": self._api_key}
-        url = self.base_url + endpoint
+        request_fn = getattr(requests, method.lower())
+        last_exception = None
 
-        try:
-            if signed:
-                # Build query string ourselves to guarantee param order matches signature
-                qs = self._sign(params)
-                r = getattr(requests, method.lower())(
-                    f"{url}?{qs}", headers=headers, timeout=10
-                )
-            else:
-                r = getattr(requests, method.lower())(
-                    url, params=params, headers=headers, timeout=10
-                )
-            if not r.ok:
+        for retry_idx in range(self._request_retries + 1):
+            for host_idx, host in enumerate(self.base_urls):
+                url = host + endpoint
+                req_params = dict(base_params)
+                try:
+                    if signed:
+                        # Build query string ourselves to guarantee param order matches signature
+                        qs = self._sign(req_params)
+                        r = request_fn(f"{url}?{qs}", headers=headers, timeout=10)
+                    else:
+                        r = request_fn(url, params=req_params, headers=headers, timeout=10)
+                except RequestException as exc:
+                    last_exception = exc
+                    log.warning(
+                        f"Binance request network error [{method} {endpoint}] host={host}: {exc}"
+                    )
+                    continue
+
+                if r.ok:
+                    if host_idx > 0:
+                        log.warning(f"Binance failover success on {host} for [{method} {endpoint}]")
+                    return r.json()
+
                 try:
                     err = r.json()
-                    log.error(
-                        f"Binance [{method} {endpoint}] {r.status_code}: "
-                        f"code={err.get('code')} msg={err.get('msg')}"
-                    )
+                    err_code = err.get("code")
+                    err_msg = err.get("msg")
                 except Exception:
-                    log.error(f"Binance [{method} {endpoint}] HTTP {r.status_code}")
+                    err_code = None
+                    err_msg = None
+
+                # Retry/failover for transient infra/rate errors
+                if r.status_code in (418, 429, 500, 502, 503, 504):
+                    log.warning(
+                        f"Binance transient [{method} {endpoint}] {r.status_code} "
+                        f"code={err_code} msg={err_msg} host={host}"
+                    )
+                    continue
+
+                log.error(
+                    f"Binance [{method} {endpoint}] {r.status_code}: "
+                    f"code={err_code} msg={err_msg}"
+                )
                 return None
-            return r.json()
-        except Exception as e:
-            log.error(f"Binance request failed [{method} {endpoint}]: {e}")
-            return None
+
+            if retry_idx < self._request_retries and self._request_backoff_sec > 0:
+                time.sleep(self._request_backoff_sec * (retry_idx + 1))
+
+        if last_exception is not None:
+            log.error(f"Binance request failed [{method} {endpoint}]: {last_exception}")
+        return None
 
     # ── Account ─────────────────────────────────────────────────────
 
@@ -253,55 +304,50 @@ class BinanceClient:
         self, symbol: str, close_side: str, tp_price: float, price_precision: int
     ) -> Optional[str]:
         """
-        Place a TAKE_PROFIT_MARKET order that closes the full position.
+        Place a TAKE_PROFIT_MARKET algo order that closes the full position.
 
-        Args:
-            close_side: "SELL" (close long) or "BUY" (close short)
-            tp_price:   trigger price (mark price based)
-
-        Returns:
-            order_id string or None on failure
+        Binance moved conditional futures orders to the Algo Order API.
+        We keep our own clientAlgoId so we can query/cancel it later.
         """
+        client_algo_id = f"tp_{symbol}_{uuid4().hex[:24]}"
         params = {
             "symbol": symbol,
             "side": close_side,
             "type": "TAKE_PROFIT_MARKET",
-            "stopPrice": round(tp_price, price_precision),
+            "triggerPrice": round(tp_price, price_precision),
             "closePosition": "true",
             "workingType": "MARK_PRICE",
             "priceProtect": "true",
+            "algoType": "CONDITIONAL",
+            "clientAlgoId": client_algo_id,
         }
-        result = self._request("POST", "/fapi/v1/order", params, signed=True)
+        result = self._request("POST", "/fapi/v1/algoOrder", params, signed=True)
         if not result:
             return None
-        return str(result["orderId"])
+        return self._algo_order_ref(str(result.get("clientAlgoId", client_algo_id)))
 
     def place_sl_order(
         self, symbol: str, close_side: str, sl_price: float, price_precision: int
     ) -> Optional[str]:
         """
-        Place a STOP_MARKET order that closes the full position.
-
-        Args:
-            close_side: "SELL" (close long) or "BUY" (close short)
-            sl_price:   stop trigger price (mark price based)
-
-        Returns:
-            order_id string or None on failure
+        Place a STOP_MARKET algo order that closes the full position.
         """
+        client_algo_id = f"sl_{symbol}_{uuid4().hex[:24]}"
         params = {
             "symbol": symbol,
             "side": close_side,
             "type": "STOP_MARKET",
-            "stopPrice": round(sl_price, price_precision),
+            "triggerPrice": round(sl_price, price_precision),
             "closePosition": "true",
             "workingType": "MARK_PRICE",
             "priceProtect": "true",
+            "algoType": "CONDITIONAL",
+            "clientAlgoId": client_algo_id,
         }
-        result = self._request("POST", "/fapi/v1/order", params, signed=True)
+        result = self._request("POST", "/fapi/v1/algoOrder", params, signed=True)
         if not result:
             return None
-        return str(result["orderId"])
+        return self._algo_order_ref(str(result.get("clientAlgoId", client_algo_id)))
 
     def place_market_close(self, symbol: str, close_side: str, quantity: float) -> Optional[dict]:
         """
@@ -328,28 +374,47 @@ class BinanceClient:
         }
 
     def cancel_order(self, symbol: str, order_id: str) -> bool:
-        params = {"symbol": symbol, "orderId": order_id}
-        result = self._request("DELETE", "/fapi/v1/order", params, signed=True)
+        order_kind, order_ref = self._parse_order_ref(order_id)
+        if order_kind == "algo":
+            params = {"symbol": symbol, "clientAlgoId": order_ref}
+            result = self._request("DELETE", "/fapi/v1/algoOrder", params, signed=True)
+        else:
+            params = {"symbol": symbol, "orderId": order_ref}
+            result = self._request("DELETE", "/fapi/v1/order", params, signed=True)
         return result is not None
 
     def cancel_all_orders(self, symbol: str) -> bool:
-        result = self._request(
+        regular = self._request(
             "DELETE", "/fapi/v1/allOpenOrders", {"symbol": symbol}, signed=True
         )
-        return result is not None
+        algo = self._request(
+            "DELETE", "/fapi/v1/algoOpenOrders", {"symbol": symbol}, signed=True
+        )
+        return (regular is not None) and (algo is not None)
 
     def get_order_status(self, symbol: str, order_id: str) -> Optional[str]:
         """Returns: "NEW" | "FILLED" | "CANCELED" | "PARTIALLY_FILLED" | "EXPIRED"."""
-        params = {"symbol": symbol, "orderId": order_id}
-        result = self._request("GET", "/fapi/v1/order", params, signed=True)
+        order_kind, order_ref = self._parse_order_ref(order_id)
+        if order_kind == "algo":
+            params = {"symbol": symbol, "clientAlgoId": order_ref}
+            result = self._request("GET", "/fapi/v1/algoOrder", params, signed=True)
+        else:
+            params = {"symbol": symbol, "orderId": order_ref}
+            result = self._request("GET", "/fapi/v1/order", params, signed=True)
         if not result:
             return None
-        return result.get("status")
+        return result.get("status") or result.get("algoStatus")
 
     def get_order_fill_price(self, symbol: str, order_id: str) -> Optional[float]:
         """Get the average fill price of a completed order."""
-        params = {"symbol": symbol, "orderId": order_id}
-        result = self._request("GET", "/fapi/v1/order", params, signed=True)
+        order_kind, order_ref = self._parse_order_ref(order_id)
+        if order_kind == "algo":
+            params = {"symbol": symbol, "clientAlgoId": order_ref}
+            result = self._request("GET", "/fapi/v1/algoOrder", params, signed=True)
+        else:
+            params = {"symbol": symbol, "orderId": order_ref}
+            result = self._request("GET", "/fapi/v1/order", params, signed=True)
         if not result:
             return None
-        return float(result.get("avgPrice", 0)) or None
+        fill_price = result.get("avgPrice") or result.get("avgExecutedPrice") or result.get("executedPrice") or 0
+        return float(fill_price) or None

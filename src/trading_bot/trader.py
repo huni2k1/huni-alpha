@@ -115,18 +115,30 @@ def _load_config() -> dict:
 # ─────────────────────────────────────────────────────────────────
 from logging.handlers import RotatingFileHandler
 
-_LOG_FILE = os.environ.get("TRADER_LOG", "/tmp/trader.log")
+_LOG_FILE = os.environ.get("TRADING_BOT_LOG", "/tmp/trading-bot.log")
+_DEBUG_LOG_FILE = os.environ.get("TRADING_BOT_DEBUG_LOG", "/tmp/trading-bot-debug.log")
 os.makedirs(os.path.dirname(_LOG_FILE), exist_ok=True)
 
-log = logging.getLogger("trader")
-log.setLevel(logging.INFO)
+log = logging.getLogger("trading-bot")
+log.setLevel(logging.DEBUG)  # Capture everything, filter by handler level
 log.propagate = False
 _fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+
+# INFO handler — monitoring log
 _fh = RotatingFileHandler(_LOG_FILE, maxBytes=50 * 1024 * 1024, backupCount=5)
+_fh.setLevel(logging.INFO)
 _fh.setFormatter(_fmt)
 log.addHandler(_fh)
+
+# DEBUG handler — verbose debug log
+_dfh = RotatingFileHandler(_DEBUG_LOG_FILE, maxBytes=50 * 1024 * 1024, backupCount=5)
+_dfh.setLevel(logging.DEBUG)
+_dfh.setFormatter(_fmt)
+log.addHandler(_dfh)
+
 if sys.stdout.isatty():
     _sh = logging.StreamHandler(sys.stdout)
+    _sh.setLevel(logging.INFO)
     _sh.setFormatter(_fmt)
     log.addHandler(_sh)
 

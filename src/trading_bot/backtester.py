@@ -755,6 +755,7 @@ def run_backtest(
     validated_setups_path: Optional[str] = None,  # Deduped validated_setups export for statistical mode
     start_date: Optional[datetime] = None,  # Custom start date (overrides months parameter)
     end_date: Optional[datetime] = None,    # Custom end date (overrides months parameter)
+    allowed_weekdays: Optional[set] = None,  # 0=Mon..6=Sun; None=all days allowed
 ) -> dict:
     """
     Walk-forward backtest using the scanner's generate_signal() contract.
@@ -1146,6 +1147,10 @@ def run_backtest(
             candle_time = datetime.fromtimestamp(
                 candles[t]["close_time"] / 1000, tz=timezone.utc
             )
+
+            # Weekday filter: skip candles on disallowed days
+            if allowed_weekdays is not None and candle_time.weekday() not in allowed_weekdays:
+                continue
 
             # Use pre-computed indicators (RSI, EMA, MACD, ADX, Bollinger, volume ratio)
             indicators_at_t = all_indicators.get(symbol, {}).get(t)
@@ -1804,6 +1809,8 @@ if __name__ == "__main__":
     parser.add_argument("--no-kelly-sizing", action="store_false", dest="kelly_sizing", default=True, help="Disable Kelly sizing, use flat risk%% instead")
     parser.add_argument("--signal-model", choices=["technical", "statistical", "statistical_curated", "statistical_wide_short_rsi28", "hybrid_technical_wide_short_rsi28"], default="technical", help="Signal engine to use inside generate_signal()")
     parser.add_argument("--validated-setups", type=str, default=None, help="Path to validated_setups.json for statistical mode")
+    parser.add_argument("--allowed-weekdays", nargs="+", default=None, metavar="DAY",
+                        help="Only enter trades on these days (e.g. Thu Fri Sat Sun). Default: all days.")
     # Circuit breaker
     parser.add_argument("--max-drawdown", type=float, default=25.0, help="Max drawdown %% before circuit breaker (default: 25)")
     parser.add_argument("--recovery-candles", type=int, default=168, help="Candles to pause after circuit breaker (default: 168)")
@@ -1841,6 +1848,19 @@ if __name__ == "__main__":
         log.info(f"Validated setups: {args.validated_setups}")
     log.info(f"Circuit breaker: {args.max_drawdown}% DD → pause {args.recovery_candles} candles")
 
+    _day_name_to_int = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+    allowed_weekdays = None
+    if args.allowed_weekdays:
+        allowed_weekdays = set()
+        for d in args.allowed_weekdays:
+            key = d.lower()[:3]
+            if key not in _day_name_to_int:
+                log.error(f"Unknown weekday: {d}. Use Mon Tue Wed Thu Fri Sat Sun.")
+                sys.exit(1)
+            allowed_weekdays.add(_day_name_to_int[key])
+        day_names = [args.allowed_weekdays[i] for i in range(len(args.allowed_weekdays))]
+        log.info(f"Weekday filter: only entering on {', '.join(day_names)}")
+
     results = run_backtest(
         symbols=symbols,
         months=args.months,
@@ -1865,6 +1885,7 @@ if __name__ == "__main__":
         validated_setups_path=args.validated_setups,
         start_date=start_date,
         end_date=end_date,
+        allowed_weekdays=allowed_weekdays,
     )
 
     print_summary(results)
