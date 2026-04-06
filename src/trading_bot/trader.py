@@ -124,6 +124,10 @@ log.setLevel(logging.DEBUG)  # Capture everything, filter by handler level
 log.propagate = False
 _fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
 
+# Clear any existing handlers (prevents duplicates on module reload)
+for handler in log.handlers[:]:
+    log.removeHandler(handler)
+
 # INFO handler — monitoring log
 _fh = RotatingFileHandler(_LOG_FILE, maxBytes=50 * 1024 * 1024, backupCount=5)
 _fh.setLevel(logging.INFO)
