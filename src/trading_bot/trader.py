@@ -613,6 +613,10 @@ def _release_pid_lock():
 
 
 def main():
+    # Default to LIVE mode (unless explicitly overridden)
+    if "BINANCE_TESTNET" not in os.environ:
+        os.environ["BINANCE_TESTNET"] = "false"
+
     if not _acquire_pid_lock():
         print(f"Another trader instance is already running (PID file: {_PID_FILE})")
         sys.exit(1)
