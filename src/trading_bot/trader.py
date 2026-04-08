@@ -758,7 +758,9 @@ def main():
                 time.sleep(1.5)  # Rate limit between symbols
 
                 if signal is None or signal["direction"] == "NEUTRAL":
-                    log.info(f"  {symbol}: no signal")
+                    # Get rejection reason from scanner
+                    rejection_reason = scanner._last_rejection_reason.get(symbol, "Unknown")
+                    log.info(f"  {symbol}: ✗ {rejection_reason}")
                     continue
 
                 score    = signal["score"]
@@ -844,7 +846,14 @@ def main():
                     log.info(f"    [HYBRID] => {sel.get('source', '?')} ({sel.get('reason', '?')})")
 
                 if threshold is not None and score < threshold:
-                    log.info(f"  {symbol}: REJECTED score {score:.2f} < {threshold:.0f}")
+                    d = signal.get("details", {})
+                    rsi = d.get("rsi", "?")
+                    adx = d.get("adx", "?")
+                    regime = signal.get("regime", "?")
+                    log.info(
+                        f"  {symbol}: ✗ score {score:.2f} < {threshold:.0f} "
+                        f"| {regime} | RSI={rsi} ADX={adx}"
+                    )
                     continue
 
                 log.info(
