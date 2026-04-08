@@ -403,7 +403,13 @@ class BinanceClient:
             result = self._request("GET", "/fapi/v1/order", params, signed=True)
         if not result:
             return None
-        return result.get("status") or result.get("algoStatus")
+        status = result.get("status") or result.get("algoStatus")
+        # Normalize Binance Algo Order statuses to standard order vocabulary
+        if status == "COMPLETED":
+            return "FILLED"
+        if status == "CANCELLED":
+            return "CANCELED"
+        return status
 
     def get_order_fill_price(self, symbol: str, order_id: str) -> Optional[float]:
         """Get the average fill price of a completed order."""

@@ -667,9 +667,12 @@ def main():
         f"Testnet: {client.testnet}"
     )
 
+    cycle_count = 0
+
     while True:
         cycle_start = time.time()
         now = datetime.now(timezone.utc)
+        cycle_count += 1
         log.info(f"\n{'─'*50}")
         log.info(f"Cycle @ {now.strftime('%Y-%m-%d %H:%M:%S UTC')} | {mode_tag}")
 
@@ -677,6 +680,11 @@ def main():
         if state["positions"]:
             log.info(f"Monitoring {len(state['positions'])} open position(s)...")
             monitor_positions(state, client, cfg, dry_run)
+
+        # Periodic reconcile (every 12 cycles = ~1h) to self-heal stale positions
+        if not dry_run and cycle_count % 12 == 0:
+            log.info("Running periodic reconcile with Binance...")
+            reconcile_with_binance(state, client)
 
         # ── 2. Get current balance ─────────────────────────────────
         if not dry_run:
