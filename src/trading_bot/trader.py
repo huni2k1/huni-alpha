@@ -190,13 +190,20 @@ def size_position(
     qty_precision: int,
     min_qty: float,
     min_notional: float,
+    max_positions: int = 3,
 ) -> Optional[float]:
     """
     Risk-based position sizing — same formula as backtester.
 
     risk_amount    = balance * risk_pct%
     position_usdt  = risk_amount / sl_pct_decimal
-    quantity       = position_usdt / entry_price, capped at 50% balance, rounded
+    quantity       = position_usdt / entry_price, capped at balance/max_positions
+
+    Example with $100 balance, max_positions=3:
+      - Trade 1: max $33.33 per position
+      - Trade 2: max $33.33 per position
+      - Trade 3: max $33.33 per position
+      - Total exposure: ~$100
 
     Returns quantity in base asset, or None if below minimum.
     """
@@ -205,7 +212,7 @@ def size_position(
 
     risk_amount = balance * (risk_pct / 100)
     position_usdt = risk_amount / (sl_pct / 100)
-    position_usdt = min(position_usdt, balance * 0.5)   # max 50% of balance
+    position_usdt = min(position_usdt, balance / max_positions)   # balance divided by max positions
 
     quantity = position_usdt / entry_price
     quantity = round(quantity, qty_precision)
@@ -443,7 +450,8 @@ def execute_entry(
         min_qty, min_notional = 0.001, 5.0
 
     quantity = size_position(
-        balance, cfg["risk_pct"], sl_pct, entry_p, qty_prec, min_qty, min_notional
+        balance, cfg["risk_pct"], sl_pct, entry_p, qty_prec, min_qty, min_notional,
+        max_positions=cfg["max_positions"]
     )
     if quantity is None:
         log.warning(f"  {symbol}: Position size below minimum, skipping")
