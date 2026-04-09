@@ -1,0 +1,1390 @@
+{
+  "config": {
+    "symbols": [
+      "BTCUSDT"
+    ],
+    "months": 6,
+    "starting_account": 1000.0,
+    "risk_pct": 1.5,
+    "fee_pct": 0.1,
+    "slippage_pct": 0.05,
+    "trailing_stop": false,
+    "reset_monthly": false,
+    "tp_sl_source": "ATR-based from generate_signal() (strategy-dependent R:R)",
+    "avg_tp_pct": 3.14,
+    "avg_sl_pct": 1.34,
+    "threshold_entry": 6.0,
+    "trend_threshold": 7.0,
+    "breakout_threshold": 6.0,
+    "threshold_high": 8.0,
+    "signal_model": "technical",
+    "validated_setups_path": null,
+    "cooldown_candles": 48,
+    "max_positions": 3,
+    "use_next_open": true,
+    "fixed_size": 0.0,
+    "max_drawdown_pct": 25.0,
+    "scoring": "multi_regime (technical)",
+    "run_time": "2026-04-09T00:30:40.056087+00:00"
+  },
+  "summary": {
+    "total_trades": 11,
+    "wins": 6,
+    "losses": 5,
+    "win_rate": 54.5,
+    "profit_factor": 2.66,
+    "total_pnl_usd": 61.25,
+    "total_return_pct": 6.12,
+    "final_equity": 1061.25,
+    "max_drawdown_usd": 18.5,
+    "max_drawdown_pct": 1.83,
+    "avg_win_pct": 3.2,
+    "avg_loss_pct": -1.42,
+    "avg_win_usd": 16.34,
+    "avg_loss_usd": 7.36,
+    "payoff_ratio": 2.22,
+    "avg_ev_per_trade_pct": 1.1,
+    "avg_ev_per_trade_usd": 5.57,
+    "best_trade_pct": 5.06,
+    "worst_trade_pct": -2.15,
+    "avg_mfe_pct": 2.87,
+    "avg_mae_pct": 1.36,
+    "avg_r_multiple": 0.62,
+    "avg_win_r": 2.17,
+    "avg_loss_r": -1.23,
+    "max_consecutive_wins": 4,
+    "max_consecutive_losses": 3,
+    "avg_trades_per_month": 1.8,
+    "long_trades": 4,
+    "short_trades": 7,
+    "long_win_rate": 50.0,
+    "short_win_rate": 57.1,
+    "tp_exits": 6,
+    "sl_exits": 5,
+    "trail_sl_exits": 0,
+    "timeout_exits": 0,
+    "total_fees_usd": 5.65,
+    "avg_duration_hours": 18.9,
+    "avg_duration_tp_hours": 28.0,
+    "avg_duration_sl_hours": 8.0,
+    "avg_duration_long_hours": 10.2,
+    "avg_duration_short_hours": 23.9,
+    "months_tested": 6,
+    "requested_months": 6,
+    "positive_months": 3,
+    "negative_months": 0,
+    "consistency_pct": 50.0,
+    "avg_monthly_return_pct": 1.01,
+    "monthly_volatility_pct": 1.67,
+    "downside_volatility_pct": 0.0,
+    "best_month_return_pct": 4.61,
+    "worst_month_return_pct": 0.0,
+    "annualized_return_pct": 12.61,
+    "sharpe_ratio": 2.09,
+    "sortino_ratio": 0.0,
+    "calmar_ratio": 6.89,
+    "recovery_factor": 3.34
+  },
+  "monthly": [
+    {
+      "month": "2026-01",
+      "trades": 3,
+      "wins": 1,
+      "win_rate": 33.3,
+      "pnl_usd": 1.72,
+      "month_start_equity": 1000.0,
+      "monthly_return_pct": 0.17,
+      "avg_pnl_pct": 0.12
+    },
+    {
+      "month": "2026-02",
+      "trades": 4,
+      "wins": 3,
+      "win_rate": 75.0,
+      "pnl_usd": 46.16,
+      "month_start_equity": 1001.73,
+      "monthly_return_pct": 4.61,
+      "avg_pnl_pct": 2.29
+    },
+    {
+      "month": "2026-03",
+      "trades": 4,
+      "wins": 2,
+      "win_rate": 50.0,
+      "pnl_usd": 13.36,
+      "month_start_equity": 1047.89,
+      "monthly_return_pct": 1.27,
+      "avg_pnl_pct": 0.65
+    }
+  ],
+  "rolling_returns": {
+    "1m": {
+      "pnl_usd": 1.72,
+      "return_pct": 0.17,
+      "months_available": 1,
+      "months_requested": 1
+    },
+    "3m": {
+      "pnl_usd": 61.24,
+      "return_pct": 6.12,
+      "months_available": 3,
+      "months_requested": 3
+    },
+    "6m": {
+      "pnl_usd": 61.24,
+      "return_pct": 6.12,
+      "months_available": 3,
+      "months_requested": 6
+    },
+    "12m": {
+      "pnl_usd": 61.24,
+      "return_pct": 6.12,
+      "months_available": 3,
+      "months_requested": 12
+    }
+  },
+  "by_symbol": {
+    "BTCUSDT": {
+      "total_trades": 11,
+      "wins": 6,
+      "losses": 5,
+      "win_rate": 54.5,
+      "avg_win_pct": 3.2,
+      "avg_loss_pct": -1.42,
+      "total_pnl_usd": 61.24,
+      "best_trade": 5.06,
+      "worst_trade": -2.15
+    }
+  },
+  "by_strategy": {
+    "breakout": {
+      "trades": 7,
+      "wins": 4,
+      "losses": 3,
+      "win_rate": 57.1,
+      "total_pnl_usd": 53.04,
+      "avg_pnl_usd": 7.58,
+      "avg_pnl_pct": 1.49,
+      "profit_factor": 3.33,
+      "avg_score": 6.5,
+      "avg_duration_hours": 23.9,
+      "avg_mfe_pct": 3.67,
+      "avg_mae_pct": 1.45,
+      "avg_r_multiple": 0.8
+    },
+    "trend_pullback": {
+      "trades": 4,
+      "wins": 2,
+      "losses": 2,
+      "win_rate": 50.0,
+      "total_pnl_usd": 8.2,
+      "avg_pnl_usd": 2.05,
+      "avg_pnl_pct": 0.41,
+      "profit_factor": 1.58,
+      "avg_score": 7.62,
+      "avg_duration_hours": 10.2,
+      "avg_mfe_pct": 1.47,
+      "avg_mae_pct": 1.22,
+      "avg_r_multiple": 0.32
+    }
+  },
+  "by_regime": {
+    "breakout": {
+      "trades": 7,
+      "wins": 4,
+      "losses": 3,
+      "win_rate": 57.1,
+      "total_pnl_usd": 53.04,
+      "avg_pnl_usd": 7.58,
+      "avg_pnl_pct": 1.49,
+      "profit_factor": 3.33,
+      "avg_score": 6.5,
+      "avg_duration_hours": 23.9,
+      "avg_mfe_pct": 3.67,
+      "avg_mae_pct": 1.45,
+      "avg_r_multiple": 0.8
+    },
+    "trending": {
+      "trades": 4,
+      "wins": 2,
+      "losses": 2,
+      "win_rate": 50.0,
+      "total_pnl_usd": 8.2,
+      "avg_pnl_usd": 2.05,
+      "avg_pnl_pct": 0.41,
+      "profit_factor": 1.58,
+      "avg_score": 7.62,
+      "avg_duration_hours": 10.2,
+      "avg_mfe_pct": 1.47,
+      "avg_mae_pct": 1.22,
+      "avg_r_multiple": 0.32
+    }
+  },
+  "by_strategy_direction": {
+    "breakout_LONG": {
+      "trades": 1,
+      "wins": 0,
+      "losses": 1,
+      "win_rate": 0.0,
+      "total_pnl_usd": -2.97,
+      "avg_pnl_usd": -2.97,
+      "avg_pnl_pct": -0.59,
+      "profit_factor": 0.0,
+      "avg_score": 6.5,
+      "avg_duration_hours": 4.0,
+      "avg_mfe_pct": 0.05,
+      "avg_mae_pct": 1.96,
+      "avg_r_multiple": -1.51
+    },
+    "breakout_SHORT": {
+      "trades": 6,
+      "wins": 4,
+      "losses": 2,
+      "win_rate": 66.7,
+      "total_pnl_usd": 56.01,
+      "avg_pnl_usd": 9.34,
+      "avg_pnl_pct": 1.84,
+      "profit_factor": 3.83,
+      "avg_score": 6.5,
+      "avg_duration_hours": 27.2,
+      "avg_mfe_pct": 4.27,
+      "avg_mae_pct": 1.36,
+      "avg_r_multiple": 1.19
+    },
+    "trend_pullback_LONG": {
+      "trades": 3,
+      "wins": 2,
+      "losses": 1,
+      "win_rate": 66.7,
+      "total_pnl_usd": 12.99,
+      "avg_pnl_usd": 4.33,
+      "avg_pnl_pct": 0.86,
+      "profit_factor": 2.4,
+      "avg_score": 7.83,
+      "avg_duration_hours": 12.3,
+      "avg_mfe_pct": 1.82,
+      "avg_mae_pct": 1.29,
+      "avg_r_multiple": 0.84
+    },
+    "trend_pullback_SHORT": {
+      "trades": 1,
+      "wins": 0,
+      "losses": 1,
+      "win_rate": 0.0,
+      "total_pnl_usd": -4.79,
+      "avg_pnl_usd": -4.79,
+      "avg_pnl_pct": -0.95,
+      "profit_factor": 0.0,
+      "avg_score": 7.0,
+      "avg_duration_hours": 4.0,
+      "avg_mfe_pct": 0.42,
+      "avg_mae_pct": 0.99,
+      "avg_r_multiple": -1.27
+    }
+  },
+  "by_exit_reason": {
+    "TP": {
+      "trades": 6,
+      "wins": 6,
+      "losses": 0,
+      "win_rate": 100.0,
+      "total_pnl_usd": 98.06,
+      "avg_pnl_usd": 16.34,
+      "avg_pnl_pct": 3.2,
+      "profit_factor": 0,
+      "avg_score": 7.08,
+      "avg_duration_hours": 28.0,
+      "avg_mfe_pct": 4.4,
+      "avg_mae_pct": 0.98,
+      "avg_r_multiple": 2.17
+    },
+    "SL": {
+      "trades": 5,
+      "wins": 0,
+      "losses": 5,
+      "win_rate": 0.0,
+      "total_pnl_usd": -36.82,
+      "avg_pnl_usd": -7.36,
+      "avg_pnl_pct": -1.42,
+      "profit_factor": 0.0,
+      "avg_score": 6.7,
+      "avg_duration_hours": 8.0,
+      "avg_mfe_pct": 1.03,
+      "avg_mae_pct": 1.82,
+      "avg_r_multiple": -1.23
+    }
+  },
+  "by_entry_hour_utc": {
+    "09": {
+      "trades": 1,
+      "wins": 1,
+      "losses": 0,
+      "win_rate": 100.0,
+      "total_pnl_usd": 25.05,
+      "avg_pnl_usd": 25.05,
+      "avg_pnl_pct": 5.06,
+      "profit_factor": 0,
+      "avg_score": 6.5,
+      "avg_duration_hours": 54.0,
+      "avg_mfe_pct": 5.85,
+      "avg_mae_pct": 1.84,
+      "avg_r_multiple": 2.41
+    },
+    "11": {
+      "trades": 1,
+      "wins": 1,
+      "losses": 0,
+      "win_rate": 100.0,
+      "total_pnl_usd": 12.8,
+      "avg_pnl_usd": 12.8,
+      "avg_pnl_pct": 2.42,
+      "profit_factor": 0,
+      "avg_score": 7.5,
+      "avg_duration_hours": 14.0,
+      "avg_mfe_pct": 2.95,
+      "avg_mae_pct": 1.12,
+      "avg_r_multiple": 1.85
+    },
+    "12": {
+      "trades": 1,
+      "wins": 0,
+      "losses": 1,
+      "win_rate": 0.0,
+      "total_pnl_usd": -4.79,
+      "avg_pnl_usd": -4.79,
+      "avg_pnl_pct": -0.95,
+      "profit_factor": 0.0,
+      "avg_score": 7.0,
+      "avg_duration_hours": 4.0,
+      "avg_mfe_pct": 0.42,
+      "avg_mae_pct": 0.99,
+      "avg_r_multiple": -1.27
+    },
+    "13": {
+      "trades": 1,
+      "wins": 1,
+      "losses": 0,
+      "win_rate": 100.0,
+      "total_pnl_usd": 18.87,
+      "avg_pnl_usd": 18.87,
+      "avg_pnl_pct": 3.6,
+      "profit_factor": 0,
+      "avg_score": 7.0,
+      "avg_duration_hours": 30.0,
+      "avg_mfe_pct": 4.23,
+      "avg_mae_pct": 0.67,
+      "avg_r_multiple": 2.37
+    },
+    "14": {
+      "trades": 1,
+      "wins": 1,
+      "losses": 0,
+      "win_rate": 100.0,
+      "total_pnl_usd": 7.83,
+      "avg_pnl_usd": 7.83,
+      "avg_pnl_pct": 1.54,
+      "profit_factor": 0,
+      "avg_score": 6.5,
+      "avg_duration_hours": 11.0,
+      "avg_mfe_pct": 4.92,
+      "avg_mae_pct": 0.29,
+      "avg_r_multiple": 2.2
+    },
+    "15": {
+      "trades": 1,
+      "wins": 0,
+      "losses": 1,
+      "win_rate": 0.0,
+      "total_pnl_usd": -9.02,
+      "avg_pnl_usd": -9.02,
+      "avg_pnl_pct": -1.69,
+      "profit_factor": 0.0,
+      "avg_score": 6.0,
+      "avg_duration_hours": 7.0,
+      "avg_mfe_pct": 0.44,
+      "avg_mae_pct": 1.76,
+      "avg_r_multiple": -1.14
+    },
+    "16": {
+      "trades": 3,
+      "wins": 1,
+      "losses": 2,
+      "win_rate": 33.3,
+      "total_pnl_usd": 3.99,
+      "avg_pnl_usd": 1.33,
+      "avg_pnl_pct": 0.27,
+      "profit_factor": 1.2,
+      "avg_score": 7.0,
+      "avg_duration_hours": 21.0,
+      "avg_mfe_pct": 3.55,
+      "avg_mae_pct": 1.9,
+      "avg_r_multiple": 0.05
+    },
+    "18": {
+      "trades": 1,
+      "wins": 1,
+      "losses": 0,
+      "win_rate": 100.0,
+      "total_pnl_usd": 9.48,
+      "avg_pnl_usd": 9.48,
+      "avg_pnl_pct": 1.9,
+      "profit_factor": 0,
+      "avg_score": 8.0,
+      "avg_duration_hours": 21.0,
+      "avg_mfe_pct": 2.05,
+      "avg_mae_pct": 0.69,
+      "avg_r_multiple": 1.81
+    },
+    "19": {
+      "trades": 1,
+      "wins": 0,
+      "losses": 1,
+      "win_rate": 0.0,
+      "total_pnl_usd": -2.97,
+      "avg_pnl_usd": -2.97,
+      "avg_pnl_pct": -0.59,
+      "profit_factor": 0.0,
+      "avg_score": 6.5,
+      "avg_duration_hours": 4.0,
+      "avg_mfe_pct": 0.05,
+      "avg_mae_pct": 1.96,
+      "avg_r_multiple": -1.51
+    }
+  },
+  "by_entry_weekday_utc": {
+    "Mon": {
+      "trades": 3,
+      "wins": 3,
+      "losses": 0,
+      "win_rate": 100.0,
+      "total_pnl_usd": 47.33,
+      "avg_pnl_usd": 15.78,
+      "avg_pnl_pct": 3.13,
+      "profit_factor": 0,
+      "avg_score": 7.33,
+      "avg_duration_hours": 29.7,
+      "avg_mfe_pct": 3.62,
+      "avg_mae_pct": 1.22,
+      "avg_r_multiple": 2.02
+    },
+    "Tue": {
+      "trades": 2,
+      "wins": 0,
+      "losses": 2,
+      "win_rate": 0.0,
+      "total_pnl_usd": -14.08,
+      "avg_pnl_usd": -7.04,
+      "avg_pnl_pct": -1.34,
+      "profit_factor": 0.0,
+      "avg_score": 7.5,
+      "avg_duration_hours": 3.0,
+      "avg_mfe_pct": 0.43,
+      "avg_mae_pct": 1.53,
+      "avg_r_multiple": -1.2
+    },
+    "Thu": {
+      "trades": 1,
+      "wins": 1,
+      "losses": 0,
+      "win_rate": 100.0,
+      "total_pnl_usd": 24.03,
+      "avg_pnl_usd": 24.03,
+      "avg_pnl_pct": 4.69,
+      "profit_factor": 0,
+      "avg_score": 7.0,
+      "avg_duration_hours": 38.0,
+      "avg_mfe_pct": 6.41,
+      "avg_mae_pct": 1.29,
+      "avg_r_multiple": 2.39
+    },
+    "Fri": {
+      "trades": 2,
+      "wins": 1,
+      "losses": 1,
+      "win_rate": 50.0,
+      "total_pnl_usd": 9.85,
+      "avg_pnl_usd": 4.93,
+      "avg_pnl_pct": 0.96,
+      "profit_factor": 2.09,
+      "avg_score": 6.5,
+      "avg_duration_hours": 18.5,
+      "avg_mfe_pct": 2.34,
+      "avg_mae_pct": 1.22,
+      "avg_r_multiple": 0.61
+    },
+    "Sun": {
+      "trades": 3,
+      "wins": 1,
+      "losses": 2,
+      "win_rate": 33.3,
+      "total_pnl_usd": -5.89,
+      "avg_pnl_usd": -1.96,
+      "avg_pnl_pct": -0.4,
+      "profit_factor": 0.57,
+      "avg_score": 6.33,
+      "avg_duration_hours": 12.7,
+      "avg_mfe_pct": 2.92,
+      "avg_mae_pct": 1.53,
+      "avg_r_multiple": -0.14
+    }
+  },
+  "by_score_band": {
+    "6.0-6.5": {
+      "trades": 2,
+      "wins": 0,
+      "losses": 2,
+      "win_rate": 0.0,
+      "pnl_usd": -19.77,
+      "avg_win_pct": 0,
+      "avg_loss_pct": -1.92,
+      "avg_pnl_pct": -1.92
+    },
+    "6.5-7.0": {
+      "trades": 3,
+      "wins": 2,
+      "losses": 1,
+      "win_rate": 66.7,
+      "pnl_usd": 29.91,
+      "avg_win_pct": 3.3,
+      "avg_loss_pct": -0.59,
+      "avg_pnl_pct": 2.0
+    },
+    "7.0-8.0": {
+      "trades": 4,
+      "wins": 3,
+      "losses": 1,
+      "win_rate": 75.0,
+      "pnl_usd": 50.91,
+      "avg_win_pct": 3.57,
+      "avg_loss_pct": -0.95,
+      "avg_pnl_pct": 2.44
+    }
+  },
+  "rejection_counts": {
+    "No Signal": 377,
+    "Asia session (UTC 0)": 59,
+    "Asia session (UTC 1)": 56,
+    "Asia session (UTC 2)": 56,
+    "Asia session (UTC 3)": 53,
+    "Asia session (UTC 4)": 53,
+    "Asia session (UTC 5)": 52,
+    "Asia session (UTC 7)": 50,
+    "Asia session (UTC 6)": 49,
+    "Ambiguous (L=1.8 S=2.0)": 4,
+    "Ambiguous (L=1.0 S=1.1)": 4,
+    "Ambiguous (L=2.0 S=1.8)": 3,
+    "Ambiguous (L=2.5 S=2.1)": 2,
+    "Ambiguous (L=1.5 S=1.4)": 2,
+    "Ambiguous (L=2.1 S=2.5)": 1
+  },
+  "equity_curve": [
+    {
+      "time": "2025-07-18T00:00:00+00:00",
+      "equity": 1000.0
+    },
+    {
+      "time": "2026-01-04T00:59:59.999000+00:00",
+      "equity": 1000.0
+    },
+    {
+      "time": "2026-01-05T00:59:59.999000+00:00",
+      "equity": 1000.0
+    },
+    {
+      "time": "2026-01-06T00:59:59.999000+00:00",
+      "equity": 1000.0
+    },
+    {
+      "time": "2026-01-07T00:59:59.999000+00:00",
+      "equity": 1000.0
+    },
+    {
+      "time": "2026-01-08T00:59:59.999000+00:00",
+      "equity": 1000.0
+    },
+    {
+      "time": "2026-01-09T00:59:59.999000+00:00",
+      "equity": 1000.0
+    },
+    {
+      "time": "2026-01-10T00:59:59.999000+00:00",
+      "equity": 1000.0
+    },
+    {
+      "time": "2026-01-11T00:59:59.999000+00:00",
+      "equity": 1000.0
+    },
+    {
+      "time": "2026-01-12T00:59:59.999000+00:00",
+      "equity": 1000.0
+    },
+    {
+      "time": "2026-01-13T00:59:59.999000+00:00",
+      "equity": 999.53
+    },
+    {
+      "time": "2026-01-14T00:59:59.999000+00:00",
+      "equity": 1009.48
+    },
+    {
+      "time": "2026-01-15T00:59:59.999000+00:00",
+      "equity": 1009.48
+    },
+    {
+      "time": "2026-01-16T00:59:59.999000+00:00",
+      "equity": 1009.48
+    },
+    {
+      "time": "2026-01-17T00:59:59.999000+00:00",
+      "equity": 1009.48
+    },
+    {
+      "time": "2026-01-18T00:59:59.999000+00:00",
+      "equity": 1009.48
+    },
+    {
+      "time": "2026-01-19T00:59:59.999000+00:00",
+      "equity": 1006.52
+    },
+    {
+      "time": "2026-01-20T00:59:59.999000+00:00",
+      "equity": 1006.52
+    },
+    {
+      "time": "2026-01-21T00:59:59.999000+00:00",
+      "equity": 1006.52
+    },
+    {
+      "time": "2026-01-22T00:59:59.999000+00:00",
+      "equity": 1006.52
+    },
+    {
+      "time": "2026-01-23T00:59:59.999000+00:00",
+      "equity": 1006.52
+    },
+    {
+      "time": "2026-01-24T00:59:59.999000+00:00",
+      "equity": 1006.52
+    },
+    {
+      "time": "2026-01-25T00:59:59.999000+00:00",
+      "equity": 1006.52
+    },
+    {
+      "time": "2026-01-26T00:59:59.999000+00:00",
+      "equity": 1006.52
+    },
+    {
+      "time": "2026-01-27T00:59:59.999000+00:00",
+      "equity": 1006.52
+    },
+    {
+      "time": "2026-01-28T00:59:59.999000+00:00",
+      "equity": 1001.73
+    },
+    {
+      "time": "2026-01-29T00:59:59.999000+00:00",
+      "equity": 1001.73
+    },
+    {
+      "time": "2026-01-30T00:59:59.999000+00:00",
+      "equity": 1001.73
+    },
+    {
+      "time": "2026-01-31T00:59:59.999000+00:00",
+      "equity": 1001.73
+    },
+    {
+      "time": "2026-02-01T00:59:59.999000+00:00",
+      "equity": 1001.73
+    },
+    {
+      "time": "2026-02-02T00:59:59.999000+00:00",
+      "equity": 1000.96
+    },
+    {
+      "time": "2026-02-03T00:59:59.999000+00:00",
+      "equity": 990.98
+    },
+    {
+      "time": "2026-02-04T00:59:59.999000+00:00",
+      "equity": 990.98
+    },
+    {
+      "time": "2026-02-05T00:59:59.999000+00:00",
+      "equity": 990.98
+    },
+    {
+      "time": "2026-02-06T00:59:59.999000+00:00",
+      "equity": 990.98
+    },
+    {
+      "time": "2026-02-07T00:59:59.999000+00:00",
+      "equity": 990.98
+    },
+    {
+      "time": "2026-02-08T00:59:59.999000+00:00",
+      "equity": 990.98
+    },
+    {
+      "time": "2026-02-09T00:59:59.999000+00:00",
+      "equity": 990.98
+    },
+    {
+      "time": "2026-02-10T00:59:59.999000+00:00",
+      "equity": 991.06
+    },
+    {
+      "time": "2026-02-11T00:59:59.999000+00:00",
+      "equity": 995.5
+    },
+    {
+      "time": "2026-02-12T00:59:59.999000+00:00",
+      "equity": 1016.03
+    },
+    {
+      "time": "2026-02-13T00:59:59.999000+00:00",
+      "equity": 1016.03
+    },
+    {
+      "time": "2026-02-14T00:59:59.999000+00:00",
+      "equity": 1016.03
+    },
+    {
+      "time": "2026-02-15T00:59:59.999000+00:00",
+      "equity": 1016.03
+    },
+    {
+      "time": "2026-02-16T00:59:59.999000+00:00",
+      "equity": 1016.03
+    },
+    {
+      "time": "2026-02-17T00:59:59.999000+00:00",
+      "equity": 1016.03
+    },
+    {
+      "time": "2026-02-18T00:59:59.999000+00:00",
+      "equity": 1016.03
+    },
+    {
+      "time": "2026-02-19T00:59:59.999000+00:00",
+      "equity": 1016.03
+    },
+    {
+      "time": "2026-02-20T00:59:59.999000+00:00",
+      "equity": 1016.03
+    },
+    {
+      "time": "2026-02-21T00:59:59.999000+00:00",
+      "equity": 1016.03
+    },
+    {
+      "time": "2026-02-22T00:59:59.999000+00:00",
+      "equity": 1016.03
+    },
+    {
+      "time": "2026-02-23T00:59:59.999000+00:00",
+      "equity": 1022.62
+    },
+    {
+      "time": "2026-02-24T00:59:59.999000+00:00",
+      "equity": 1023.86
+    },
+    {
+      "time": "2026-02-25T00:59:59.999000+00:00",
+      "equity": 1023.86
+    },
+    {
+      "time": "2026-02-26T00:59:59.999000+00:00",
+      "equity": 1023.86
+    },
+    {
+      "time": "2026-02-27T00:59:59.999000+00:00",
+      "equity": 1024.78
+    },
+    {
+      "time": "2026-02-28T00:59:59.999000+00:00",
+      "equity": 1034.54
+    },
+    {
+      "time": "2026-03-01T00:59:59.999000+00:00",
+      "equity": 1047.89
+    },
+    {
+      "time": "2026-03-02T00:59:59.999000+00:00",
+      "equity": 1047.89
+    },
+    {
+      "time": "2026-03-03T00:59:59.999000+00:00",
+      "equity": 1047.89
+    },
+    {
+      "time": "2026-03-04T00:59:59.999000+00:00",
+      "equity": 1047.89
+    },
+    {
+      "time": "2026-03-05T00:59:59.999000+00:00",
+      "equity": 1047.89
+    },
+    {
+      "time": "2026-03-06T00:59:59.999000+00:00",
+      "equity": 1047.89
+    },
+    {
+      "time": "2026-03-07T00:59:59.999000+00:00",
+      "equity": 1059.75
+    },
+    {
+      "time": "2026-03-08T00:59:59.999000+00:00",
+      "equity": 1066.76
+    },
+    {
+      "time": "2026-03-09T00:59:59.999000+00:00",
+      "equity": 1066.76
+    },
+    {
+      "time": "2026-03-10T00:59:59.999000+00:00",
+      "equity": 1066.76
+    },
+    {
+      "time": "2026-03-11T00:59:59.999000+00:00",
+      "equity": 1057.47
+    },
+    {
+      "time": "2026-03-12T00:59:59.999000+00:00",
+      "equity": 1057.47
+    },
+    {
+      "time": "2026-03-13T00:59:59.999000+00:00",
+      "equity": 1057.47
+    },
+    {
+      "time": "2026-03-14T00:59:59.999000+00:00",
+      "equity": 1057.47
+    },
+    {
+      "time": "2026-03-15T00:59:59.999000+00:00",
+      "equity": 1057.47
+    },
+    {
+      "time": "2026-03-16T00:59:59.999000+00:00",
+      "equity": 1057.47
+    },
+    {
+      "time": "2026-03-17T00:59:59.999000+00:00",
+      "equity": 1068.2
+    },
+    {
+      "time": "2026-03-18T00:59:59.999000+00:00",
+      "equity": 1070.27
+    },
+    {
+      "time": "2026-03-19T00:59:59.999000+00:00",
+      "equity": 1070.27
+    },
+    {
+      "time": "2026-03-20T00:59:59.999000+00:00",
+      "equity": 1070.27
+    },
+    {
+      "time": "2026-03-21T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-03-22T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-03-23T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-03-24T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-03-25T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-03-26T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-03-27T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-03-28T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-03-29T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-03-30T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-03-31T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-04-01T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-04-02T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-04-03T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-04-04T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-04-05T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-04-06T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-04-07T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-04-08T00:59:59.999000+00:00",
+      "equity": 1061.25
+    },
+    {
+      "time": "2026-04-09T00:59:59.999000+00:00",
+      "equity": 1061.25
+    }
+  ],
+  "trades": [
+    {
+      "symbol": "BTCUSDT",
+      "direction": "LONG",
+      "strategy": "trend_pullback",
+      "regime": "trending",
+      "tier": "HIGH_CONF",
+      "score": 8.0,
+      "entry_price": 91568.591415,
+      "entry_time": "2026-01-12T18:00:00+00:00",
+      "exit_price": 93396.591343,
+      "exit_time": "2026-01-13T15:59:59.999000+00:00",
+      "duration_hours": 21,
+      "exit_reason": "TP",
+      "tp_price": 93443.313,
+      "sl_price": 90562.5885,
+      "final_sl": 90562.5885,
+      "trail_activated": false,
+      "tp_pct": 2.1,
+      "sl_pct": 1.05,
+      "fee_pct": 0.1,
+      "atr": 640.161,
+      "pnl_pct": 1.9,
+      "pnl_usd": 9.48,
+      "position_size": 500.0,
+      "equity_after": 1009.48,
+      "max_favorable_pct": 2.05,
+      "max_adverse_pct": 0.69,
+      "details": {
+        "rsi": 54.5,
+        "adx": 25.7,
+        "ema_bull": "True",
+        "ema_bear": "False",
+        "above_ema200": "True",
+        "vol_ratio": 1.74,
+        "regime": "trending",
+        "strategy": "trend_pullback"
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "direction": "LONG",
+      "strategy": "breakout",
+      "regime": "breakout",
+      "tier": "ENTRY",
+      "score": 6.5,
+      "entry_price": 95487.3198,
+      "entry_time": "2026-01-18T19:00:00+00:00",
+      "exit_price": 95021.879293,
+      "exit_time": "2026-01-18T23:59:59.999000+00:00",
+      "duration_hours": 4,
+      "exit_reason": "SL",
+      "tp_price": 96365.065,
+      "sl_price": 95069.414,
+      "final_sl": 95069.414,
+      "trail_activated": false,
+      "tp_pct": 0.97,
+      "sl_pct": 0.39,
+      "fee_pct": 0.1,
+      "atr": 185.093,
+      "pnl_pct": -0.59,
+      "pnl_usd": -2.97,
+      "position_size": 504.74,
+      "equity_after": 1006.52,
+      "max_favorable_pct": 0.05,
+      "max_adverse_pct": 1.96,
+      "details": {
+        "rsi": 58.4,
+        "adx": 20.0,
+        "ema_bull": "False",
+        "ema_bear": "False",
+        "above_ema200": "True",
+        "vol_ratio": 1.97,
+        "regime": "breakout",
+        "strategy": "breakout"
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "direction": "SHORT",
+      "strategy": "trend_pullback",
+      "regime": "trending",
+      "tier": "ENTRY",
+      "score": 7.0,
+      "entry_price": 87948.74363,
+      "entry_time": "2026-01-27T12:00:00+00:00",
+      "exit_price": 88697.957815,
+      "exit_time": "2026-01-27T16:59:59.999000+00:00",
+      "duration_hours": 4,
+      "exit_reason": "SL",
+      "tp_price": 86670.958,
+      "sl_price": 88653.631,
+      "final_sl": 88653.631,
+      "trail_activated": false,
+      "tp_pct": 1.5,
+      "sl_pct": 0.75,
+      "fee_pct": 0.1,
+      "atr": 440.594,
+      "pnl_pct": -0.95,
+      "pnl_usd": -4.79,
+      "position_size": 503.26,
+      "equity_after": 1001.73,
+      "max_favorable_pct": 0.42,
+      "max_adverse_pct": 0.99,
+      "details": {
+        "rsi": 47.2,
+        "adx": 25.1,
+        "ema_bull": "False",
+        "ema_bear": "True",
+        "above_ema200": "False",
+        "vol_ratio": 0.68,
+        "regime": "trending",
+        "strategy": "trend_pullback"
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "direction": "SHORT",
+      "strategy": "breakout",
+      "regime": "breakout",
+      "tier": "ENTRY",
+      "score": 6.0,
+      "entry_price": 77554.6033,
+      "entry_time": "2026-02-01T16:00:00+00:00",
+      "exit_price": 79141.041745,
+      "exit_time": "2026-02-02T15:59:59.999000+00:00",
+      "duration_hours": 23,
+      "exit_reason": "SL",
+      "tp_price": 73823.1725,
+      "sl_price": 79101.491,
+      "final_sl": 79101.491,
+      "trail_activated": false,
+      "tp_pct": 4.86,
+      "sl_pct": 1.94,
+      "fee_pct": 0.1,
+      "atr": 754.0455,
+      "pnl_pct": -2.15,
+      "pnl_usd": -10.75,
+      "position_size": 500.86,
+      "equity_after": 990.98,
+      "max_favorable_pct": 3.8,
+      "max_adverse_pct": 2.33,
+      "details": {
+        "rsi": 31.2,
+        "adx": 55.3,
+        "ema_bull": "False",
+        "ema_bear": "True",
+        "above_ema200": "False",
+        "vol_ratio": 2.08,
+        "regime": "breakout",
+        "strategy": "breakout"
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "direction": "SHORT",
+      "strategy": "breakout",
+      "regime": "breakout",
+      "tier": "ENTRY",
+      "score": 6.5,
+      "entry_price": 69838.513275,
+      "entry_time": "2026-02-09T09:00:00+00:00",
+      "exit_price": 66238.337617,
+      "exit_time": "2026-02-11T15:59:59.999000+00:00",
+      "duration_hours": 54,
+      "exit_reason": "TP",
+      "tp_price": 66205.235,
+      "sl_price": 71340.736,
+      "final_sl": 71340.736,
+      "trail_activated": false,
+      "tp_pct": 5.25,
+      "sl_pct": 2.1,
+      "fee_pct": 0.1,
+      "atr": 733.643,
+      "pnl_pct": 5.06,
+      "pnl_usd": 25.05,
+      "position_size": 495.49,
+      "equity_after": 1016.03,
+      "max_favorable_pct": 5.85,
+      "max_adverse_pct": 1.84,
+      "details": {
+        "rsi": 43.3,
+        "adx": 26.8,
+        "ema_bull": "False",
+        "ema_bear": "False",
+        "above_ema200": "False",
+        "vol_ratio": 1.76,
+        "regime": "breakout",
+        "strategy": "breakout"
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "direction": "SHORT",
+      "strategy": "breakout",
+      "regime": "breakout",
+      "tier": "ENTRY",
+      "score": 6.5,
+      "entry_price": 67618.55381,
+      "entry_time": "2026-02-22T14:00:00+00:00",
+      "exit_price": 66508.940351,
+      "exit_time": "2026-02-23T01:59:59.999000+00:00",
+      "duration_hours": 11,
+      "exit_reason": "TP",
+      "tp_price": 66475.7025,
+      "sl_price": 68123.051,
+      "final_sl": 68123.051,
+      "trail_activated": false,
+      "tp_pct": 1.74,
+      "sl_pct": 0.7,
+      "fee_pct": 0.1,
+      "atr": 235.3355,
+      "pnl_pct": 1.54,
+      "pnl_usd": 7.83,
+      "position_size": 508.01,
+      "equity_after": 1023.86,
+      "max_favorable_pct": 4.92,
+      "max_adverse_pct": 0.29,
+      "details": {
+        "rsi": 39.9,
+        "adx": 15.8,
+        "ema_bull": "False",
+        "ema_bear": "False",
+        "above_ema200": "False",
+        "vol_ratio": 2.71,
+        "regime": "breakout",
+        "strategy": "breakout"
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "direction": "SHORT",
+      "strategy": "breakout",
+      "regime": "breakout",
+      "tier": "ENTRY",
+      "score": 7.0,
+      "entry_price": 67348.309,
+      "entry_time": "2026-02-26T16:00:00+00:00",
+      "exit_price": 64119.116036,
+      "exit_time": "2026-02-28T06:59:59.999000+00:00",
+      "duration_hours": 38,
+      "exit_reason": "TP",
+      "tp_price": 64087.0725,
+      "sl_price": 68699.971,
+      "final_sl": 68699.971,
+      "trail_activated": false,
+      "tp_pct": 4.89,
+      "sl_pct": 1.96,
+      "fee_pct": 0.1,
+      "atr": 658.9855,
+      "pnl_pct": 4.69,
+      "pnl_usd": 24.03,
+      "position_size": 511.93,
+      "equity_after": 1047.89,
+      "max_favorable_pct": 6.41,
+      "max_adverse_pct": 1.29,
+      "details": {
+        "rsi": 45.8,
+        "adx": 20.1,
+        "ema_bull": "True",
+        "ema_bear": "False",
+        "above_ema200": "False",
+        "vol_ratio": 2.29,
+        "regime": "breakout",
+        "strategy": "breakout"
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "direction": "SHORT",
+      "strategy": "breakout",
+      "regime": "breakout",
+      "tier": "ENTRY",
+      "score": 7.0,
+      "entry_price": 69872.0465,
+      "entry_time": "2026-03-06T13:00:00+00:00",
+      "exit_price": 67286.116245,
+      "exit_time": "2026-03-07T19:59:59.999000+00:00",
+      "duration_hours": 30,
+      "exit_reason": "TP",
+      "tp_price": 67252.49,
+      "sl_price": 70968.804,
+      "final_sl": 70968.804,
+      "trail_activated": false,
+      "tp_pct": 3.8,
+      "sl_pct": 1.52,
+      "fee_pct": 0.1,
+      "atr": 530.902,
+      "pnl_pct": 3.6,
+      "pnl_usd": 18.87,
+      "position_size": 523.94,
+      "equity_after": 1066.76,
+      "max_favorable_pct": 4.23,
+      "max_adverse_pct": 0.67,
+      "details": {
+        "rsi": 33.9,
+        "adx": 25.4,
+        "ema_bull": "False",
+        "ema_bear": "True",
+        "above_ema200": "False",
+        "vol_ratio": 2.41,
+        "regime": "breakout",
+        "strategy": "breakout"
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "direction": "LONG",
+      "strategy": "trend_pullback",
+      "regime": "trending",
+      "tier": "HIGH_CONF",
+      "score": 8.0,
+      "entry_price": 71381.843085,
+      "entry_time": "2026-03-10T16:00:00+00:00",
+      "exit_price": 70210.091643,
+      "exit_time": "2026-03-10T18:59:59.999000+00:00",
+      "duration_hours": 2,
+      "exit_reason": "SL",
+      "tp_price": 73548.0815,
+      "sl_price": 70245.21425,
+      "final_sl": 70245.21425,
+      "trail_activated": false,
+      "tp_pct": 3.09,
+      "sl_pct": 1.54,
+      "fee_pct": 0.1,
+      "atr": 733.9705,
+      "pnl_pct": -1.74,
+      "pnl_usd": -9.29,
+      "position_size": 533.38,
+      "equity_after": 1057.47,
+      "max_favorable_pct": 0.45,
+      "max_adverse_pct": 2.07,
+      "details": {
+        "rsi": 64.7,
+        "adx": 51.2,
+        "ema_bull": "True",
+        "ema_bear": "False",
+        "above_ema200": "True",
+        "vol_ratio": 1.61,
+        "regime": "trending",
+        "strategy": "trend_pullback"
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "direction": "LONG",
+      "strategy": "trend_pullback",
+      "regime": "trending",
+      "tier": "ENTRY",
+      "score": 7.5,
+      "entry_price": 73820.31171,
+      "entry_time": "2026-03-16T11:00:00+00:00",
+      "exit_price": 75681.467836,
+      "exit_time": "2026-03-17T01:59:59.999000+00:00",
+      "duration_hours": 14,
+      "exit_reason": "TP",
+      "tp_price": 75719.3275,
+      "sl_price": 72815.46625,
+      "final_sl": 72815.46625,
+      "trail_activated": false,
+      "tp_pct": 2.62,
+      "sl_pct": 1.31,
+      "fee_pct": 0.1,
+      "atr": 645.3025,
+      "pnl_pct": 2.42,
+      "pnl_usd": 12.8,
+      "position_size": 528.73,
+      "equity_after": 1070.27,
+      "max_favorable_pct": 2.95,
+      "max_adverse_pct": 1.12,
+      "details": {
+        "rsi": 65.0,
+        "adx": 55.2,
+        "ema_bull": "True",
+        "ema_bear": "False",
+        "above_ema200": "True",
+        "vol_ratio": 1.13,
+        "regime": "trending",
+        "strategy": "trend_pullback"
+      }
+    },
+    {
+      "symbol": "BTCUSDT",
+      "direction": "SHORT",
+      "strategy": "breakout",
+      "regime": "breakout",
+      "tier": "ENTRY",
+      "score": 6.0,
+      "entry_price": 69696.3344,
+      "entry_time": "2026-03-20T15:00:00+00:00",
+      "exit_price": 70801.887252,
+      "exit_time": "2026-03-20T22:59:59.999000+00:00",
+      "duration_hours": 7,
+      "exit_reason": "SL",
+      "tp_price": 67142.94,
+      "sl_price": 70766.504,
+      "final_sl": 70766.504,
+      "trail_activated": false,
+      "tp_pct": 3.71,
+      "sl_pct": 1.48,
+      "fee_pct": 0.1,
+      "atr": 517.652,
+      "pnl_pct": -1.69,
+      "pnl_usd": -9.02,
+      "position_size": 535.13,
+      "equity_after": 1061.25,
+      "max_favorable_pct": 0.44,
+      "max_adverse_pct": 1.76,
+      "details": {
+        "rsi": 37.7,
+        "adx": 8.3,
+        "ema_bull": "False",
+        "ema_bear": "True",
+        "above_ema200": "False",
+        "vol_ratio": 2.46,
+        "regime": "breakout",
+        "strategy": "breakout"
+      }
+    }
+  ]
+}

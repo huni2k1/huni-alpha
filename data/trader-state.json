@@ -1,0 +1,25 @@
+{
+  "positions": {
+    "AVAXUSDT": {
+      "symbol": "AVAXUSDT",
+      "direction": "LONG",
+      "entry_price": 9.64,
+      "entry_time": "2026-04-09T22:18:37.001374+00:00",
+      "quantity": 1.0,
+      "position_size_usdt": 9.64,
+      "tp_price": 9.955,
+      "sl_price": 9.4825,
+      "tp_order_id": "algo:tp_AVAXUSDT_62e2f91c1790479fa8fe57fd",
+      "sl_order_id": "algo:sl_AVAXUSDT_a399cea215674b6c8c1b4ca8",
+      "score": 7.75,
+      "strategy": "trend_pullback",
+      "signal_model": "hybrid_technical_wide_short_rsi28"
+    }
+  },
+  "last_signal": {
+    "AVAXUSDT": "2026-04-09T22:18:37.001425+00:00"
+  },
+  "peak_equity": null,
+  "circuit_breaker_until": null,
+  "trade_log": []
+}

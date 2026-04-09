@@ -519,12 +519,12 @@ def adx(highs: list, lows: list, closes: list, period: int = 14) -> float:
 # ─────────────────────────────────────────────────────────────────
 # SUPPORT / RESISTANCE  (swing highs/lows on last 10 1h candles)
 # ─────────────────────────────────────────────────────────────────
-def support_resistance(candles_4h: list, price: float):
+def support_resistance(candles_1h: list, price: float):
     """Returns (near_support, near_resistance, dist_support_pct, dist_resist_pct)"""
-    if len(candles_4h) < 10:
+    if len(candles_1h) < 10:
         return False, False, 999, 999
 
-    recent = candles_4h[-10:]
+    recent = candles_1h[-10:]
     highs = [c[1] for c in recent]
     lows  = [c[2] for c in recent]
     resistance = max(highs)
@@ -542,12 +542,12 @@ def support_resistance(candles_4h: list, price: float):
 # ─────────────────────────────────────────────────────────────────
 # MARKET STRUCTURE  (higher highs / lower lows)
 # ─────────────────────────────────────────────────────────────────
-def market_structure(candles_4h: list):
+def market_structure(candles_1h: list):
     """Returns (higher_highs, lower_lows) bool flags."""
-    if len(candles_4h) < 6:
+    if len(candles_1h) < 6:
         return False, False
-    highs = [c[1] for c in candles_4h[-6:]]
-    lows  = [c[2] for c in candles_4h[-6:]]
+    highs = [c[1] for c in candles_1h[-6:]]
+    lows  = [c[2] for c in candles_1h[-6:]]
     hh = all(highs[i] > highs[i-1] for i in range(1, len(highs)))
     ll = all(lows[i]  < lows[i-1]  for i in range(1, len(lows)))
     return hh, ll
@@ -909,7 +909,7 @@ def score_breakout(closes: list, candles: list, rsi_val: float,
 # ─────────────────────────────────────────────────────────────────
 # ATR-BASED TP/SL — Single implementation (no more trade_setup duplicate)
 # ─────────────────────────────────────────────────────────────────
-def suggest_tp_sl(candles_4h: list, direction: str,
+def suggest_tp_sl(candles_1h: list, direction: str,
                   multiplier_sl: float = 1.5, rr_ratio: float = 2.0) -> dict:
     """
     Compute TP/SL levels from ATR and risk/reward ratio.
@@ -918,9 +918,9 @@ def suggest_tp_sl(candles_4h: list, direction: str,
 
     Returns dict with entry_price, suggested_tp, suggested_sl, sl_pct, tp_pct, atr.
     """
-    closes = [float(c[3]) for c in candles_4h]
-    highs  = [float(c[1]) for c in candles_4h]
-    lows   = [float(c[2]) for c in candles_4h]
+    closes = [float(c[3]) for c in candles_1h]
+    highs  = [float(c[1]) for c in candles_1h]
+    lows   = [float(c[2]) for c in candles_1h]
 
     entry_price = closes[-1]
 
@@ -960,7 +960,7 @@ def suggest_tp_sl(candles_4h: list, direction: str,
     }
 
 
-def score_technical(symbol: str, candles_4h: list, precomputed_indicators: dict = None) -> dict:
+def score_technical(symbol: str, candles_1h: list, precomputed_indicators: dict = None) -> dict:
     """
     Multi-regime technical scoring.
     Detects market regime (trending/ranging/breakout) and applies
@@ -968,14 +968,14 @@ def score_technical(symbol: str, candles_4h: list, precomputed_indicators: dict 
 
     Args:
         symbol: Trading pair
-        candles_4h: OHLCV candles
+        candles_1h: OHLCV candles
         precomputed_indicators: Optional dict with pre-computed indicator values (optimization for backtester).
                                If provided, uses these instead of computing.
     """
-    closes  = [c[3] for c in candles_4h]
-    volumes = [c[4] for c in candles_4h]
-    highs   = [c[1] for c in candles_4h]
-    lows    = [c[2] for c in candles_4h]
+    closes  = [c[3] for c in candles_1h]
+    volumes = [c[4] for c in candles_1h]
+    highs   = [c[1] for c in candles_1h]
+    lows    = [c[2] for c in candles_1h]
 
     if len(closes) < 50:
         return {"score": 0, "direction": "NEUTRAL", "long_score": 0, "short_score": 0, "details": {}}
@@ -1025,8 +1025,8 @@ def score_technical(symbol: str, candles_4h: list, precomputed_indicators: dict 
     regime = detect_regime(adx_val, bb_squeeze, vol_r, closes)
 
     # ── Calculate Taker Buy Ratio (measure of buyer vs seller aggression) ──
-    quote_vol = candles_4h[-1][5]      # Total USD volume
-    taker_buy_vol = candles_4h[-1][6]  # Taker buy USD volume
+    quote_vol = candles_1h[-1][5]      # Total USD volume
+    taker_buy_vol = candles_1h[-1][6]  # Taker buy USD volume
     taker_buy_ratio = taker_buy_vol / quote_vol if quote_vol > 0 else 0.5
     dbg.debug(f"[{symbol}] Taker buy ratio = {taker_buy_ratio:.1%}")
 
@@ -1073,7 +1073,7 @@ def score_technical(symbol: str, candles_4h: list, precomputed_indicators: dict 
 
     elif regime == "breakout":
         long_pts, short_pts = score_breakout(
-            closes, candles_4h, rsi_val, macd_line_val, sig_line_val,
+            closes, candles_1h, rsi_val, macd_line_val, sig_line_val,
             hist_curr, hist_prev, vol_r, adx_val, bull_align, bear_align,
             above_e200=above_e200, below_e200=below_e200
         )
@@ -1546,15 +1546,15 @@ def _setup_matches_scope(setup: dict, symbol: str) -> bool:
 
 def _build_statistical_snapshot(
     symbol: str,
-    candles_4h: list,
+    candles_1h: list,
     current_time: Optional[datetime] = None,
     precomputed_indicators: dict = None,
 ) -> dict:
     """Build the latest-candle feature snapshot used by validated setup matching."""
-    closes = [c[3] for c in candles_4h]
-    volumes = [c[4] for c in candles_4h]
-    highs = [c[1] for c in candles_4h]
-    lows = [c[2] for c in candles_4h]
+    closes = [c[3] for c in candles_1h]
+    volumes = [c[4] for c in candles_1h]
+    highs = [c[1] for c in candles_1h]
+    lows = [c[2] for c in candles_1h]
     if len(closes) < 50:
         return {}
 
@@ -1605,7 +1605,7 @@ def _build_statistical_snapshot(
         vol_r = volume_ratio(volumes)
         bb_mid, bb_upper, bb_lower = bollinger(closes, 20, 2.0)
         bb_bw, bb_squeeze = bollinger_bandwidth(closes)
-    higher_highs, lower_lows = market_structure(candles_4h)
+    higher_highs, lower_lows = market_structure(candles_1h)
     time_for_filter = current_time if current_time is not None else datetime.now(timezone.utc)
 
     return {
@@ -1656,29 +1656,29 @@ def _find_matching_statistical_setups(
     return matches
 
 
-def _suggest_tp_sl_for_setup(candles_4h: list, direction: str, matched_setup: dict) -> dict:
+def _suggest_tp_sl_for_setup(candles_1h: list, direction: str, matched_setup: dict) -> dict:
     """Use the validated setup's stored ATR/RR template directly."""
     tp_sl = matched_setup.get("tp_sl", {})
     return suggest_tp_sl(
-        candles_4h,
+        candles_1h,
         direction,
         multiplier_sl=float(tp_sl.get("sl_atr_mult", 1.5) or 1.5),
         rr_ratio=float(tp_sl.get("rr_ratio", 2.0) or 2.0),
     )
 
 
-def _suggest_tp_sl_for_strategy(candles_4h: list, direction: str, strategy: str) -> dict:
+def _suggest_tp_sl_for_strategy(candles_1h: list, direction: str, strategy: str) -> dict:
     """Return ATR TP/SL parameters for legacy technical strategies."""
     if strategy == "mean_reversion":
-        return suggest_tp_sl(candles_4h, direction, multiplier_sl=1.0, rr_ratio=1.5)
+        return suggest_tp_sl(candles_1h, direction, multiplier_sl=1.0, rr_ratio=1.5)
     if strategy == "breakout":
-        return suggest_tp_sl(candles_4h, direction, multiplier_sl=2.0, rr_ratio=2.5)
-    return suggest_tp_sl(candles_4h, direction, multiplier_sl=1.5, rr_ratio=2.0)
+        return suggest_tp_sl(candles_1h, direction, multiplier_sl=2.0, rr_ratio=2.5)
+    return suggest_tp_sl(candles_1h, direction, multiplier_sl=1.5, rr_ratio=2.0)
 
 
 def _generate_statistical_signal(
     symbol: str,
-    candles_4h: list,
+    candles_1h: list,
     signal_model: str,
     state: dict = None,
     current_time: Optional[datetime] = None,
@@ -1688,7 +1688,7 @@ def _generate_statistical_signal(
     """Generate a signal by matching the latest candle against validated setups."""
     snapshot = _build_statistical_snapshot(
         symbol,
-        candles_4h,
+        candles_1h,
         current_time=current_time,
         precomputed_indicators=precomputed_indicators,
     )
@@ -1713,7 +1713,7 @@ def _generate_statistical_signal(
         _last_rejection_reason[symbol] = "Whipsaw"
         return None
 
-    tp_sl = _suggest_tp_sl_for_setup(candles_4h, direction, matched_setup)
+    tp_sl = _suggest_tp_sl_for_setup(candles_1h, direction, matched_setup)
     statistical_details = {
         "matched_setup": matched_setup["name"],
         "conditions": matched_setup["conditions"],
@@ -1757,7 +1757,7 @@ def _generate_statistical_signal(
 
 def _generate_dedicated_wide_short_rsi28_signal(
     symbol: str,
-    candles_4h: list,
+    candles_1h: list,
     signal_model: str,
     state: dict = None,
     current_time: Optional[datetime] = None,
@@ -1766,7 +1766,7 @@ def _generate_dedicated_wide_short_rsi28_signal(
     """Generate a dedicated short signal for the strongest recent statistical setup."""
     snapshot = _build_statistical_snapshot(
         symbol,
-        candles_4h,
+        candles_1h,
         current_time=current_time,
         precomputed_indicators=precomputed_indicators,
     )
@@ -1785,7 +1785,7 @@ def _generate_dedicated_wide_short_rsi28_signal(
         _last_rejection_reason[symbol] = "Whipsaw"
         return None
 
-    tp_sl = _suggest_tp_sl_for_setup(candles_4h, direction, DEDICATED_WIDE_SHORT_RSI28_SETUP)
+    tp_sl = _suggest_tp_sl_for_setup(candles_1h, direction, DEDICATED_WIDE_SHORT_RSI28_SETUP)
     strategy = signal_model
     regime = "statistical"
     statistical_details = {
@@ -1830,7 +1830,7 @@ def _generate_dedicated_wide_short_rsi28_signal(
 
 def _generate_technical_signal(
     symbol: str,
-    candles_4h: list,
+    candles_1h: list,
     include_fundamentals: bool = True,
     include_news: bool = True,
     state: dict = None,
@@ -1838,7 +1838,7 @@ def _generate_technical_signal(
     precomputed_indicators: dict = None,
 ) -> Optional[dict]:
     """Generate the legacy technical signal payload."""
-    tech = score_technical(symbol, candles_4h, precomputed_indicators=precomputed_indicators)
+    tech = score_technical(symbol, candles_1h, precomputed_indicators=precomputed_indicators)
     if tech["direction"] == "NEUTRAL":
         return None
 
@@ -1901,7 +1901,7 @@ def _generate_technical_signal(
 
     strategy = tech["details"].get("strategy", "trend_pullback")
     regime = tech["details"].get("regime", "trending")
-    tp_sl = _suggest_tp_sl_for_strategy(candles_4h, direction, strategy)
+    tp_sl = _suggest_tp_sl_for_strategy(candles_1h, direction, strategy)
 
     if _is_asia_session(current_time):
         hour_utc = (current_time if current_time is not None else datetime.now(timezone.utc)).hour
@@ -1936,7 +1936,7 @@ def _generate_technical_signal(
 
 def _generate_hybrid_technical_wide_short_rsi28_signal(
     symbol: str,
-    candles_4h: list,
+    candles_1h: list,
     state: dict = None,
     current_time: Optional[datetime] = None,
     precomputed_indicators: dict = None,
@@ -1945,7 +1945,7 @@ def _generate_hybrid_technical_wide_short_rsi28_signal(
     _last_rejection_reason.pop(symbol, None)
     technical_signal = _generate_technical_signal(
         symbol,
-        candles_4h,
+        candles_1h,
         include_fundamentals=True,
         include_news=True,
         state=state,
@@ -1956,7 +1956,7 @@ def _generate_hybrid_technical_wide_short_rsi28_signal(
     _last_rejection_reason.pop(symbol, None)  # Clear before statistical to avoid inheriting technical's reason
     statistical_signal = _generate_dedicated_wide_short_rsi28_signal(
         symbol,
-        candles_4h,
+        candles_1h,
         "statistical_wide_short_rsi28",
         state=state,
         current_time=current_time,
@@ -2023,7 +2023,7 @@ def _generate_hybrid_technical_wide_short_rsi28_signal(
 # Both live scanner and backtester call this.
 # Returns a complete, self-contained trade signal with TP/SL.
 # ─────────────────────────────────────────────────────────────────
-def generate_signal(symbol: str, candles_4h: list,
+def generate_signal(symbol: str, candles_1h: list,
                     include_fundamentals: bool = True,
                     include_news: bool = True,
                     state: dict = None,
@@ -2036,7 +2036,7 @@ def generate_signal(symbol: str, candles_4h: list,
 
     Args:
         symbol: Trading pair (e.g. "BTCUSDT")
-        candles_4h: OHLCV candles [[open, high, low, close, volume], ...]
+        candles_1h: OHLCV candles [[open, high, low, close, volume], ...]
         include_fundamentals: False for backtesting (no historical data available)
         include_news: False for backtesting (no historical data available)
         current_time: Time to use for session filter (defaults to now). Backtester passes candle timestamp
@@ -2054,7 +2054,7 @@ def generate_signal(symbol: str, candles_4h: list,
     if resolved_signal_model in {"statistical", "statistical_curated"}:
         return _generate_statistical_signal(
             symbol,
-            candles_4h,
+            candles_1h,
             resolved_signal_model,
             state=state,
             current_time=current_time,
@@ -2064,7 +2064,7 @@ def generate_signal(symbol: str, candles_4h: list,
     if resolved_signal_model == "statistical_wide_short_rsi28":
         return _generate_dedicated_wide_short_rsi28_signal(
             symbol,
-            candles_4h,
+            candles_1h,
             resolved_signal_model,
             state=state,
             current_time=current_time,
@@ -2073,7 +2073,7 @@ def generate_signal(symbol: str, candles_4h: list,
     if resolved_signal_model == "hybrid_technical_wide_short_rsi28":
         return _generate_hybrid_technical_wide_short_rsi28_signal(
             symbol,
-            candles_4h,
+            candles_1h,
             state=state,
             current_time=current_time,
             precomputed_indicators=precomputed_indicators,
@@ -2081,7 +2081,7 @@ def generate_signal(symbol: str, candles_4h: list,
 
     return _generate_technical_signal(
         symbol,
-        candles_4h,
+        candles_1h,
         include_fundamentals=include_fundamentals,
         include_news=include_news,
         state=state,

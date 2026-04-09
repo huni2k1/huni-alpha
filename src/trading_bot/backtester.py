@@ -124,7 +124,7 @@ def validate_code_match():
 
     sig = inspect.signature(generate_signal)
     assert "symbol" in sig.parameters, "CRITICAL: generate_signal missing 'symbol'"
-    assert "candles_4h" in sig.parameters, "CRITICAL: generate_signal missing 'candles_4h'"
+    assert "candles_1h" in sig.parameters, "CRITICAL: generate_signal missing 'candles_1h'"
     assert "include_fundamentals" in sig.parameters, "CRITICAL: generate_signal missing 'include_fundamentals'"
 
 validate_code_match()
@@ -190,6 +190,8 @@ def fetch_klines_historical(symbol: str, interval: str, start_ms: int, end_ms: i
                 "close": float(c[4]),
                 "volume": float(c[5]),
                 "close_time": int(c[6]),
+                "quote_asset_volume": float(c[7]) if len(c) > 7 else float(c[4]) * float(c[5]),
+                "taker_buy_quote_asset_volume": float(c[10]) if len(c) > 10 else float(c[4]) * float(c[5]) * 0.5,
             })
 
         current_start = int(data[-1][6]) + 1
@@ -799,7 +801,9 @@ def run_backtest(
     window_size = 1000
     trade_start_idx = max(window_size, warmup_hours)
 
-    expected_hours = months * 30 * 24 + warmup_hours  # Total expected candles
+    # Calculate expected candles based on actual date range (warmup + test window)
+    total_days = (end_dt - start_dt).days
+    expected_hours = total_days * 24
     skipped_symbols = []
 
     for symbol in symbols:
@@ -839,7 +843,11 @@ def run_backtest(
     all_indicators = {}
     all_ohlcv = {}
     for symbol, candles in all_candles.items():
-        ohlcv = [[c["open"], c["high"], c["low"], c["close"], c["volume"]] for c in candles]
+        # Build 7-field OHLCV: [open, high, low, close, volume, quote_asset_volume, taker_buy_quote_asset_volume]
+        ohlcv = [[c["open"], c["high"], c["low"], c["close"], c["volume"],
+                  c.get("quote_asset_volume", c["close"] * c["volume"]),
+                  c.get("taker_buy_quote_asset_volume", c["close"] * c["volume"] * 0.5)]
+                 for c in candles]
         all_ohlcv[symbol] = ohlcv
         indicators = scanner.precompute_indicators_for_all_candles(ohlcv)
 
