@@ -22,12 +22,19 @@ def make_trending_candles(n=1000, direction="up"):
             price += 0.15
         else:
             price -= 0.15
+        volume = 1000.0 + (i % 50) * 20
+        quote_vol = volume * price
+        # For uptrends, higher taker_buy_ratio (0.65+); for downtrends, lower (0.35-)
+        taker_buy_ratio = 0.70 if direction == "up" else 0.30
+        taker_buy_vol = quote_vol * taker_buy_ratio
         candles.append([
             price - 0.05,   # open
             price + 0.10,   # high
             price - 0.10,   # low
             price,          # close
-            1000.0 + (i % 50) * 20  # volume with some variation
+            volume,         # volume
+            quote_vol,      # quote_asset_volume
+            taker_buy_vol   # taker_buy_quote_asset_volume
         ])
     return candles
 
@@ -40,12 +47,18 @@ def make_choppy_candles(n=1000):
     for i in range(n):
         change = random.uniform(-0.3, 0.3)
         price = max(90.0, min(110.0, price + change))
+        volume = 1000.0
+        quote_vol = volume * price
+        # Neutral taker_buy_ratio (0.50 = balanced)
+        taker_buy_vol = quote_vol * 0.50
         candles.append([
             price - 0.05,
             price + 0.15,
             price - 0.15,
             price,
-            1000.0
+            volume,
+            quote_vol,
+            taker_buy_vol
         ])
     return candles
 

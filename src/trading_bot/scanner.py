@@ -254,8 +254,9 @@ def fetch_klines(symbol: str, interval: str, limit: int) -> Optional[list]:
         if len(data) < int(limit * 0.95):
             log.warning(f"  {symbol}: Incomplete data — requested {limit} candles, got {len(data)}")
             return None
-        # Convert to [open, high, low, close, volume] format
-        return [[float(c[1]), float(c[2]), float(c[3]), float(c[4]), float(c[5])]
+        # Convert to [open, high, low, close, volume, quote_volume, taker_buy_volume] format
+        return [[float(c[1]), float(c[2]), float(c[3]), float(c[4]), float(c[5]),
+                 float(c[7]), float(c[10])]
                 for c in data]
 
     # For > 1000 candles, paginate by repeatedly fetching latest 1000
@@ -277,9 +278,10 @@ def fetch_klines(symbol: str, interval: str, limit: int) -> Optional[list]:
         if not data or len(data) == 0:
             break  # Stop if API fails or no more data
 
-        # Binance returns [openTime, open, high, low, close, volume, ...]
-        # Convert to [open, high, low, close, volume] format
-        batch = [[float(c[1]), float(c[2]), float(c[3]), float(c[4]), float(c[5])]
+        # Binance returns [openTime, open, high, low, close, volume, quote_asset_volume, ..., taker_buy_quote_asset_volume]
+        # Convert to [open, high, low, close, volume, quote_volume, taker_buy_volume] format
+        batch = [[float(c[1]), float(c[2]), float(c[3]), float(c[4]), float(c[5]),
+                  float(c[7]), float(c[10])]
                  for c in data]
         batch_raw = data
 
@@ -1022,6 +1024,12 @@ def score_technical(symbol: str, candles_4h: list, precomputed_indicators: dict 
     # ── Detect market regime ──
     regime = detect_regime(adx_val, bb_squeeze, vol_r, closes)
 
+    # ── Calculate Taker Buy Ratio (measure of buyer vs seller aggression) ──
+    quote_vol = candles_4h[-1][5]      # Total USD volume
+    taker_buy_vol = candles_4h[-1][6]  # Taker buy USD volume
+    taker_buy_ratio = taker_buy_vol / quote_vol if quote_vol > 0 else 0.5
+    dbg.debug(f"[{symbol}] Taker buy ratio = {taker_buy_ratio:.1%}")
+
     # Debug: Log regime and key indicators
     dbg.debug(f"[{symbol}] Regime={regime} | ADX={adx_val:.1f} BB_squeeze={bb_squeeze} vol_r={vol_r:.2f}")
     dbg.debug(f"[{symbol}] Indicators | RSI={rsi_val:.1f} MACD={macd_line_val:.6f} sig={sig_line_val:.6f} hist={hist_curr:.6f} prev={hist_prev:.6f}")
@@ -1051,6 +1059,16 @@ def score_technical(symbol: str, candles_4h: list, precomputed_indicators: dict 
         short_pts *= adx_mult
         dbg.debug(f"[{symbol}] ADX mult={adx_mult:.2f} → LONG={long_pts:.2f} SHORT={short_pts:.2f}")
 
+        # Taker buy confirmation boost for weak_trend (strengthen entries with buyer/seller aggression)
+        if taker_buy_ratio > 0.65 and rsi_val > 55:
+            boost = 1.0
+            long_pts += boost
+            dbg.debug(f"[{symbol}] Taker buy boost (LONG): ratio={taker_buy_ratio:.1%}, RSI={rsi_val:.1f} → +{boost:.2f}")
+        elif taker_buy_ratio < 0.35 and rsi_val < 45:
+            boost = 1.0
+            short_pts += boost
+            dbg.debug(f"[{symbol}] Taker sell boost (SHORT): ratio={taker_buy_ratio:.1%}, RSI={rsi_val:.1f} → +{boost:.2f}")
+
         strategy = "trend_pullback_weak"
 
     elif regime == "breakout":
@@ -1059,6 +1077,17 @@ def score_technical(symbol: str, candles_4h: list, precomputed_indicators: dict 
             hist_curr, hist_prev, vol_r, adx_val, bull_align, bear_align,
             above_e200=above_e200, below_e200=below_e200
         )
+
+        # Volume confirmation for breakouts (taker buy/sell aggression alignment)
+        if taker_buy_ratio > 0.65:
+            boost = 0.5
+            long_pts += boost
+            dbg.debug(f"[{symbol}] Breakout + buyer aggression (LONG): +{boost:.1f}")
+        elif taker_buy_ratio < 0.35:
+            boost = 0.5
+            short_pts += boost
+            dbg.debug(f"[{symbol}] Breakout + seller aggression (SHORT): +{boost:.1f}")
+
         strategy = "breakout"
 
     # NOTE: Mean reversion regime removed (was losing -$475 in 12mo backtest)
