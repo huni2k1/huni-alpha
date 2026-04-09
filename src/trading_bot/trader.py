@@ -33,8 +33,10 @@ import os
 import sys
 import json
 import time
+import atexit
 import logging
 import requests
+import signal
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -177,6 +179,41 @@ def load_state() -> dict:
 def save_state(state: dict):
     with open(_STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
+
+
+def _write_position_state(
+    state: dict,
+    symbol: str,
+    direction: str,
+    fill_price: float,
+    quantity: float,
+    score: float,
+    strategy: str,
+    signal_model: str,
+    price_precision: int,
+    tp_price: Optional[float] = None,
+    sl_price: Optional[float] = None,
+    tp_order_id: Optional[str] = None,
+    sl_order_id: Optional[str] = None,
+    protection_status: str = "pending",
+):
+    state["positions"][symbol] = {
+        "symbol": symbol,
+        "direction": direction,
+        "entry_price": fill_price,
+        "entry_time": datetime.now(timezone.utc).isoformat(),
+        "quantity": quantity,
+        "position_size_usdt": round(quantity * fill_price, 2),
+        "tp_price": None if tp_price is None else round(tp_price, price_precision),
+        "sl_price": None if sl_price is None else round(sl_price, price_precision),
+        "tp_order_id": tp_order_id,
+        "sl_order_id": sl_order_id,
+        "score": score,
+        "strategy": strategy,
+        "signal_model": signal_model,
+        "protection_status": protection_status,
+    }
+    save_state(state)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -481,6 +518,21 @@ def execute_entry(
         fill_price = fill["filled_price"] or entry_p
         log.info(f"  {symbol}: Filled @ {fill_price:.4f} (ordered @ {entry_p:.4f})")
 
+        # Persist immediately after market fill so a restart can reconcile a live
+        # position even if the process dies before TP/SL placement completes.
+        _write_position_state(
+            state,
+            symbol=symbol,
+            direction=direction,
+            fill_price=fill_price,
+            quantity=quantity,
+            score=score,
+            strategy=strategy,
+            signal_model=cfg["signal_model"],
+            price_precision=price_prec,
+            protection_status="pending",
+        )
+
         # 3. Re-anchor TP/SL to actual fill price (same ATR distance)
         if direction == "LONG":
             tp_distance = tp_p - entry_p
@@ -504,6 +556,8 @@ def execute_entry(
             if not result:
                 log.error(f"  {symbol}: EMERGENCY CLOSE ALSO FAILED — position open without TP/SL!")
                 send_telegram(f"🚨 {symbol} EMERGENCY CLOSE FAILED — manual intervention needed!")
+            state["positions"].pop(symbol, None)
+            save_state(state)
             return False
 
         # 5. Place SL order
@@ -515,24 +569,27 @@ def execute_entry(
             if not result:
                 log.error(f"  {symbol}: EMERGENCY CLOSE ALSO FAILED — position has TP but no SL!")
                 send_telegram(f"🚨 {symbol} EMERGENCY CLOSE FAILED — has TP but no SL! Manual intervention needed!")
+            state["positions"].pop(symbol, None)
+            save_state(state)
             return False
 
-    # Save position to state
-    state["positions"][symbol] = {
-        "symbol":           symbol,
-        "direction":        direction,
-        "entry_price":      fill_price,
-        "entry_time":       datetime.now(timezone.utc).isoformat(),
-        "quantity":         quantity,
-        "position_size_usdt": round(quantity * fill_price, 2),
-        "tp_price":         round(tp_p, price_prec if not dry_run else 4),
-        "sl_price":         round(sl_p, price_prec if not dry_run else 4),
-        "tp_order_id":      tp_order_id,
-        "sl_order_id":      sl_order_id,
-        "score":            score,
-        "strategy":         strategy,
-        "signal_model":     cfg["signal_model"],
-    }
+    # Save fully protected position to state
+    _write_position_state(
+        state,
+        symbol=symbol,
+        direction=direction,
+        fill_price=fill_price,
+        quantity=quantity,
+        score=score,
+        strategy=strategy,
+        signal_model=cfg["signal_model"],
+        price_precision=price_prec if not dry_run else 4,
+        tp_price=tp_p,
+        sl_price=sl_p,
+        tp_order_id=tp_order_id,
+        sl_order_id=sl_order_id,
+        protection_status="armed",
+    )
     _set_cooldown(state, symbol)
     save_state(state)
 
@@ -620,6 +677,11 @@ def _release_pid_lock():
         pass
 
 
+def _handle_exit_signal(signum, frame):
+    _release_pid_lock()
+    raise SystemExit(0)
+
+
 def main():
     # Default to LIVE mode (unless explicitly overridden)
     if "BINANCE_TESTNET" not in os.environ:
@@ -628,6 +690,10 @@ def main():
     if not _acquire_pid_lock():
         print(f"Another trader instance is already running (PID file: {_PID_FILE})")
         sys.exit(1)
+
+    atexit.register(_release_pid_lock)
+    signal.signal(signal.SIGTERM, _handle_exit_signal)
+    signal.signal(signal.SIGINT, _handle_exit_signal)
 
     cfg = _load_config()
     dry_run = cfg["dry_run"]

@@ -1684,12 +1684,6 @@ def _generate_statistical_signal(
         _last_rejection_reason[symbol] = "Whipsaw"
         return None
 
-    if _is_asia_session(current_time):
-        hour_utc = (current_time if current_time is not None else datetime.now(timezone.utc)).hour
-        dbg.debug(f"[{symbol}] FILTERED: Asia session hour {hour_utc} UTC (low liquidity)")
-        _last_rejection_reason[symbol] = f"Asia session (UTC {hour_utc})"
-        return None
-
     tp_sl = _suggest_tp_sl_for_setup(candles_4h, direction, matched_setup)
     statistical_details = {
         "matched_setup": matched_setup["name"],
@@ -1760,12 +1754,6 @@ def _generate_dedicated_wide_short_rsi28_signal(
     if state and is_whipsaw(state, symbol, direction):
         dbg.debug(f"[{symbol}] REJECTED: whipsaw detected (direction change <5min)")
         _last_rejection_reason[symbol] = "Whipsaw"
-        return None
-
-    if _is_asia_session(current_time):
-        hour_utc = (current_time if current_time is not None else datetime.now(timezone.utc)).hour
-        dbg.debug(f"[{symbol}] FILTERED: Asia session hour {hour_utc} UTC (low liquidity)")
-        _last_rejection_reason[symbol] = f"Asia session (UTC {hour_utc})"
         return None
 
     tp_sl = _suggest_tp_sl_for_setup(candles_4h, direction, DEDICATED_WIDE_SHORT_RSI28_SETUP)

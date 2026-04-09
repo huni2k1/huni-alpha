@@ -17,6 +17,7 @@ Covers:
 import pytest
 import sys
 import os
+import json
 import random
 import importlib.util
 import numpy as np
@@ -33,6 +34,8 @@ backtester_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'trading_
 spec_bt = importlib.util.spec_from_file_location("backtester", backtester_path)
 bt = importlib.util.module_from_spec(spec_bt)
 spec_bt.loader.exec_module(bt)
+
+from trading_bot import trader
 
 
 # ── Helpers ──────────────────────────────────────────────────────
@@ -470,3 +473,72 @@ class TestRegimeDetection:
         """ADX exactly 25 → trending."""
         regime = scanner.detect_regime(25.0, False, 1.0, self._closes())
         assert regime == "trending"
+
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST 11: Trader crash-window persistence
+# ═══════════════════════════════════════════════════════════════════
+
+class TestTraderEntryRecovery:
+    """A filled live order should be persisted before TP/SL setup finishes."""
+
+    class _FakeClient:
+        def get_symbol_info(self, symbol):
+            return {
+                "qty_precision": 3,
+                "price_precision": 2,
+                "min_qty": 0.001,
+                "min_notional": 5.0,
+            }
+
+        def set_leverage(self, symbol, leverage):
+            return True
+
+        def place_market_order(self, symbol, side, quantity):
+            return {"filled_price": 100.0}
+
+        def place_tp_order(self, symbol, close_side, tp_price, price_precision):
+            raise RuntimeError("crash after fill")
+
+        def place_market_close(self, symbol, close_side, quantity):
+            return {"filled_price": 100.0}
+
+    def test_filled_position_is_written_before_tp_sl_complete(self, tmp_path, monkeypatch):
+        state_path = tmp_path / "trader-state.json"
+        monkeypatch.setattr(trader, "_STATE_FILE", str(state_path))
+        monkeypatch.setattr(trader, "send_telegram", lambda text: None)
+
+        state = dict(trader._EMPTY_STATE)
+        signal = {
+            "symbol": "ETHUSDT",
+            "direction": "LONG",
+            "entry_price": 100.0,
+            "tp": 104.0,
+            "sl": 98.4,
+            "tp_pct": 4.0,
+            "sl_pct": 1.6,
+            "score": 7.75,
+            "strategy": "breakout",
+        }
+        cfg = {
+            "risk_pct": 1.5,
+            "max_positions": 3,
+            "signal_model": "hybrid_technical_wide_short_rsi28",
+        }
+
+        with pytest.raises(RuntimeError, match="crash after fill"):
+            trader.execute_entry(
+                signal,
+                state,
+                self._FakeClient(),
+                cfg,
+                dry_run=False,
+                balance=90.0,
+            )
+
+        saved = json.loads(state_path.read_text())
+        pos = saved["positions"]["ETHUSDT"]
+        assert pos["entry_price"] == 100.0
+        assert pos["protection_status"] == "pending"
+        assert pos["tp_order_id"] is None
+        assert pos["sl_order_id"] is None
