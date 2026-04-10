@@ -1436,6 +1436,7 @@ def run_backtest(
     for k in sorted(monthly.keys()):
         m = monthly[k]
         month_start_equity = monthly_start_equity.get(k, account)
+        month_ending_equity = month_start_equity + m["pnl_usd"]
         monthly_return_pct = (m["pnl_usd"] / month_start_equity * 100) if month_start_equity > 0 else 0
         monthly_sorted.append({
             "month": k,
@@ -1444,20 +1445,22 @@ def run_backtest(
             "win_rate": round(m["wins"] / m["trades"] * 100, 1) if m["trades"] > 0 else 0,
             "pnl_usd": round(m["pnl_usd"], 2),
             "month_start_equity": round(month_start_equity, 2),
-            "monthly_return_pct": round(monthly_return_pct, 2),
+            "ending_balance": round(month_ending_equity, 2),
+            "return_pct": round(monthly_return_pct, 2),
             "avg_pnl_pct": round(m["pnl_pct_sum"] / m["trades"], 2) if m["trades"] > 0 else 0,
         })
 
-    # Rolling returns (1M, 3M, 6M, 12M from start of period, forward in time)
+    # Rolling returns (1M, 3M, 6M, 12M for the most recent N months)
     rolling_returns = {}
 
-    # Helper to calculate return from first N months (forward from start)
+    # Helper to calculate return from last N complete months (backward from end)
     def calc_rolling_return(n_months):
         if len(monthly_sorted) == 0:
             return {"pnl_usd": 0, "return_pct": 0, "months_available": 0, "months_requested": n_months}
 
-        # Take first n_months from monthly_sorted (forward from start, not backward from end)
-        months_slice = monthly_sorted[:n_months] if n_months <= len(monthly_sorted) else monthly_sorted
+        # Take last n_months from monthly_sorted (most recent months, not first months)
+        # This includes the partial current month if present
+        months_slice = monthly_sorted[-n_months:] if n_months <= len(monthly_sorted) else monthly_sorted
 
         total_pnl = sum(m["pnl_usd"] for m in months_slice)
         # Return percentage is: total_pnl / starting_account * 100
