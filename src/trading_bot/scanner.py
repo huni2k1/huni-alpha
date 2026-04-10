@@ -1813,7 +1813,8 @@ def _generate_dedicated_wide_short_rsi28_signal(
         "statistical_setup": "wide_short_rsi_below_28",
         "statistical_score": 0.0,
         "statistical_details": {
-            "condition": "rsi < 28",
+            "conditions": ["rsi_below_28"],
+            "template": "wide",
             "rsi_value": float(rsi_val),
         },
     }
