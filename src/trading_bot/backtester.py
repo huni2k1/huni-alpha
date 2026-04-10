@@ -1801,7 +1801,7 @@ if __name__ == "__main__":
     parser.add_argument("--symbols", nargs="+", default=None, help="Symbols to test")
     parser.add_argument("--account", type=float, default=1000.0, help="Starting account USD")
     parser.add_argument("--risk-pct", type=float, default=SCANNER_RISK_PCT, help="Risk per trade (from scanner)")
-    parser.add_argument("--fee-pct", type=float, default=0.10, help="Round-trip fee (default: 0.10)")
+    parser.add_argument("--fee-pct", type=float, default=0.06, help="Round-trip fee (default: 0.06 for Binance futures)")
     parser.add_argument("--trailing-stop", action="store_true", help="Enable trailing stop (default: disabled)")
     parser.add_argument("--reset-monthly", action="store_true", help="Reset balance to starting account at beginning of each month")
     parser.add_argument("--output", type=str, default="backtest-results.json", help="Output JSON file")
