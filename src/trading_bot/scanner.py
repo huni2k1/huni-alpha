@@ -1763,42 +1763,30 @@ def _generate_dedicated_wide_short_rsi28_signal(
     current_time: Optional[datetime] = None,
     precomputed_indicators: dict = None,
 ) -> Optional[dict]:
-    """Generate a dedicated short signal for the strongest recent statistical setup."""
-    snapshot = _build_statistical_snapshot(
-        symbol,
-        candles_1h,
-        current_time=current_time,
-        precomputed_indicators=precomputed_indicators,
-    )
-    if not snapshot:
-        _last_rejection_reason[symbol] = "No snapshot (insufficient data)"
-        return None
-    if not matches_conditions(snapshot, DEDICATED_WIDE_SHORT_RSI28_SETUP["conditions"]):
-        _last_rejection_reason[symbol] = (
-            f"RSI={snapshot.get('rsi', '?'):.1f} (need <28)"
-        )
+    """Generate a SHORT signal when 1h RSI < 28 (oversold condition)."""
+    # Validate minimum candles
+    if len(candles_1h) < 50:
+        _last_rejection_reason[symbol] = "Insufficient data (<50 candles)"
         return None
 
-    direction = DEDICATED_WIDE_SHORT_RSI28_SETUP["direction"]
+    # Get precomputed RSI value (default 50 if not available)
+    rsi_val = precomputed_indicators.get("rsi", 50.0) if precomputed_indicators else 50.0
+
+    # Simple condition: RSI must be below 28
+    if rsi_val >= 28.0:
+        _last_rejection_reason[symbol] = f"RSI={rsi_val:.1f} (need <28)"
+        return None
+
+    direction = "SHORT"
+
+    # Check for whipsaw (avoid rapid direction changes)
     if state and is_whipsaw(state, symbol, direction):
         dbg.debug(f"[{symbol}] REJECTED: whipsaw detected (direction change <5min)")
         _last_rejection_reason[symbol] = "Whipsaw"
         return None
 
-    tp_sl = _suggest_tp_sl_for_setup(candles_1h, direction, DEDICATED_WIDE_SHORT_RSI28_SETUP)
-    strategy = signal_model
-    regime = "statistical"
-    statistical_details = {
-        "matched_setup": DEDICATED_WIDE_SHORT_RSI28_SETUP["name"],
-        "conditions": list(DEDICATED_WIDE_SHORT_RSI28_SETUP["conditions"]),
-        "template": DEDICATED_WIDE_SHORT_RSI28_SETUP["template"],
-        "scope_type": "pooled",
-        "scope_symbol": None,
-        "scope_regime": None,
-        "candidate_count": 1,
-        "validated_setups_path": None,
-        "mode": signal_model,
-    }
+    # Calculate TP/SL using breakout multipliers (2.0x SL, 2.5 R:R)
+    tp_sl = suggest_tp_sl(candles_1h, direction, multiplier_sl=2.0, rr_ratio=2.5)
 
     return {
         "symbol": symbol,
@@ -1816,15 +1804,18 @@ def _generate_dedicated_wide_short_rsi28_signal(
         "news_score": 0.0,
         "long_score": 0.0,
         "short_score": 0.0,
-        "regime": regime,
-        "strategy": strategy,
-        "details": {"regime": regime, "strategy": strategy, "template": "wide"},
+        "regime": "statistical",
+        "strategy": signal_model,
+        "details": {"regime": "statistical", "strategy": signal_model},
         "fund_details": {},
         "news_details": {},
         "signal_model": signal_model,
-        "statistical_setup": DEDICATED_WIDE_SHORT_RSI28_SETUP["name"],
+        "statistical_setup": "wide_short_rsi_below_28",
         "statistical_score": 0.0,
-        "statistical_details": statistical_details,
+        "statistical_details": {
+            "condition": "rsi < 28",
+            "rsi_value": float(rsi_val),
+        },
     }
 
 
