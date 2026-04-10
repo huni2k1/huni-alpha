@@ -1446,21 +1446,26 @@ def run_backtest(
             "pnl_usd": round(m["pnl_usd"], 2),
             "month_start_equity": round(month_start_equity, 2),
             "ending_balance": round(month_ending_equity, 2),
-            "return_pct": round(monthly_return_pct, 2),
+            "monthly_return_pct": round(monthly_return_pct, 2),
             "avg_pnl_pct": round(m["pnl_pct_sum"] / m["trades"], 2) if m["trades"] > 0 else 0,
         })
 
-    # Rolling returns (1M, 3M, 6M, 12M for the most recent N months)
+    # Rolling returns (1M, 3M, 6M, 12M windows)
     rolling_returns = {}
 
-    # Helper to calculate return from last N complete months (backward from end)
+    # Helper to calculate return from last N months (or all if fewer available)
     def calc_rolling_return(n_months):
         if len(monthly_sorted) == 0:
             return {"pnl_usd": 0, "return_pct": 0, "months_available": 0, "months_requested": n_months}
 
-        # Take last n_months from monthly_sorted (most recent months, not first months)
-        # This includes the partial current month if present
-        months_slice = monthly_sorted[-n_months:] if n_months <= len(monthly_sorted) else monthly_sorted
+        # For the requested period (12m), use all available months if ≤ requested
+        # For shorter windows (1m, 3m, 6m), use the last N months
+        if n_months >= months and len(monthly_sorted) <= n_months + 1:
+            # User requested 12m and got 12 or 13 months → include all
+            months_slice = monthly_sorted
+        else:
+            # Otherwise use last N months
+            months_slice = monthly_sorted[-n_months:] if n_months <= len(monthly_sorted) else monthly_sorted
 
         total_pnl = sum(m["pnl_usd"] for m in months_slice)
         # Return percentage is: total_pnl / starting_account * 100
