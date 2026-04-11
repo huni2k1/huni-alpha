@@ -818,8 +818,6 @@ def main():
                     trade_signal = generate_signal(
                         symbol,
                         candles,
-                        include_fundamentals=False,
-                        include_news=False,
                         current_time=now,
                         signal_model=signal_model,
                         validated_setups_path=validated_path,

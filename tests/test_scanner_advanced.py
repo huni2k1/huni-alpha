@@ -99,8 +99,7 @@ class TestAsiaSessionFilter:
         }
 
         current_time = datetime(2025, 1, 1, 0, 30, tzinfo=timezone.utc)
-        signal = generate_signal("BTC", trending_up_1000, include_fundamentals=False,
-                               include_news=False, current_time=current_time)
+        signal = generate_signal("BTC", trending_up_1000, current_time=current_time)
         assert signal is None, "Asia session hour 0 should be filtered"
 
     @patch('market_scanner.score_technical')
@@ -114,8 +113,7 @@ class TestAsiaSessionFilter:
         }
 
         current_time = datetime(2025, 1, 1, 7, 59, tzinfo=timezone.utc)
-        signal = generate_signal("BTC", trending_up_1000, include_fundamentals=False,
-                               include_news=False, current_time=current_time)
+        signal = generate_signal("BTC", trending_up_1000, current_time=current_time)
         assert signal is None, "Asia session hour 7 should be filtered"
 
     @patch('market_scanner.score_technical')
@@ -129,8 +127,7 @@ class TestAsiaSessionFilter:
         }
 
         current_time = datetime(2025, 1, 1, 8, 0, tzinfo=timezone.utc)
-        signal = generate_signal("BTC", trending_up_1000, include_fundamentals=False,
-                               include_news=False, current_time=current_time)
+        signal = generate_signal("BTC", trending_up_1000, current_time=current_time)
         assert signal is not None, "Hour 8 UTC should NOT be filtered"
 
     @patch('market_scanner.score_technical')
@@ -144,8 +141,7 @@ class TestAsiaSessionFilter:
         }
 
         current_time = datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc)
-        signal = generate_signal("BTC", trending_up_1000, include_fundamentals=False,
-                               include_news=False, current_time=current_time)
+        signal = generate_signal("BTC", trending_up_1000, current_time=current_time)
         assert signal is not None, "Hour 12 UTC should NOT be filtered"
 
 

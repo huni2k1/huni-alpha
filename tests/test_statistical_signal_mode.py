@@ -135,8 +135,6 @@ def test_generate_signal_statistical_matches_validated_setup(tmp_path):
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
-            include_fundamentals=False,
-            include_news=False,
             current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
             signal_model="statistical",
             validated_setups_path=str(validated_path),
@@ -162,8 +160,6 @@ def test_generate_signal_statistical_returns_none_without_matching_setup(tmp_pat
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
-            include_fundamentals=False,
-            include_news=False,
             current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
             signal_model="statistical",
             validated_setups_path=str(validated_path),
@@ -182,8 +178,6 @@ def test_generate_signal_dedicated_wide_short_rsi28_matches():
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
-            include_fundamentals=False,
-            include_news=False,
             current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
             signal_model="statistical_wide_short_rsi28",
         )
@@ -205,8 +199,6 @@ def test_generate_signal_dedicated_wide_short_rsi28_returns_none_without_match()
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
-            include_fundamentals=False,
-            include_news=False,
             current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
             signal_model="statistical_wide_short_rsi28",
         )
@@ -228,15 +220,11 @@ def test_generate_signal_hybrid_exposes_both_evaluations_and_prefers_statistical
         "atr": 1.0,
         "rr_ratio": 2.0,
         "technical_score": 7.4,
-        "fundamental_score": 0.0,
-        "news_score": 0.0,
         "long_score": 2.0,
         "short_score": 7.4,
         "regime": "breakout",
         "strategy": "breakout",
         "details": {"strategy": "breakout", "regime": "breakout"},
-        "fund_details": {},
-        "news_details": {},
         "signal_model": "technical",
     }
     statistical_signal = {
@@ -251,15 +239,11 @@ def test_generate_signal_hybrid_exposes_both_evaluations_and_prefers_statistical
         "atr": 1.0,
         "rr_ratio": 2.5,
         "technical_score": 0.0,
-        "fundamental_score": 0.0,
-        "news_score": 0.0,
         "long_score": 0.0,
         "short_score": 0.0,
         "regime": "statistical",
         "strategy": "statistical_wide_short_rsi28",
         "details": {"strategy": "statistical_wide_short_rsi28", "regime": "statistical"},
-        "fund_details": {},
-        "news_details": {},
         "signal_model": "statistical_wide_short_rsi28",
         "statistical_setup": "wide_short_rsi_below_28",
         "statistical_details": {"conditions": ["rsi_below_28"], "template": "wide"},
@@ -270,8 +254,6 @@ def test_generate_signal_hybrid_exposes_both_evaluations_and_prefers_statistical
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
-            include_fundamentals=False,
-            include_news=False,
             current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
             signal_model="hybrid_technical_wide_short_rsi28",
         )
@@ -298,15 +280,11 @@ def test_generate_signal_hybrid_keeps_technical_long_when_statistical_short_conf
         "atr": 1.0,
         "rr_ratio": 2.0,
         "technical_score": 7.6,
-        "fundamental_score": 0.0,
-        "news_score": 0.0,
         "long_score": 7.6,
         "short_score": 2.0,
         "regime": "trending",
         "strategy": "trend_pullback",
         "details": {"strategy": "trend_pullback", "regime": "trending"},
-        "fund_details": {},
-        "news_details": {},
         "signal_model": "technical",
     }
     statistical_signal = {
@@ -321,15 +299,11 @@ def test_generate_signal_hybrid_keeps_technical_long_when_statistical_short_conf
         "atr": 1.0,
         "rr_ratio": 2.5,
         "technical_score": 0.0,
-        "fundamental_score": 0.0,
-        "news_score": 0.0,
         "long_score": 0.0,
         "short_score": 0.0,
         "regime": "statistical",
         "strategy": "statistical_wide_short_rsi28",
         "details": {"strategy": "statistical_wide_short_rsi28", "regime": "statistical"},
-        "fund_details": {},
-        "news_details": {},
         "signal_model": "statistical_wide_short_rsi28",
         "statistical_setup": "wide_short_rsi_below_28",
         "statistical_details": {"conditions": ["rsi_below_28"], "template": "wide"},
@@ -340,8 +314,6 @@ def test_generate_signal_hybrid_keeps_technical_long_when_statistical_short_conf
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
-            include_fundamentals=False,
-            include_news=False,
             current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
             signal_model="hybrid_technical_wide_short_rsi28",
         )
@@ -361,8 +333,6 @@ def test_generate_signal_hybrid_reports_both_rejection_reasons_when_no_signal():
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
-            include_fundamentals=False,
-            include_news=False,
             current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
             signal_model="hybrid_technical_wide_short_rsi28",
         )
@@ -383,8 +353,6 @@ def test_generate_signal_statistical_curated_prefers_scoped_setup(tmp_path):
         signal = scanner.generate_signal(
             "AVAXUSDT",
             candles,
-            include_fundamentals=False,
-            include_news=False,
             current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
             signal_model="statistical_curated",
             validated_setups_path=str(validated_path),
@@ -435,8 +403,6 @@ def test_generate_signal_statistical_ignores_technical_neutral_gate(tmp_path):
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
-            include_fundamentals=False,
-            include_news=False,
             current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
             signal_model="statistical",
             validated_setups_path=str(validated_path),
@@ -459,8 +425,6 @@ def test_generate_signal_statistical_does_not_force_asia_session_rejection(tmp_p
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
-            include_fundamentals=False,
-            include_news=False,
             current_time=datetime(2025, 1, 1, 2, 0, tzinfo=timezone.utc),
             signal_model="statistical",
             validated_setups_path=str(validated_path),
@@ -546,8 +510,6 @@ def test_generate_signal_technical_path_still_builds_tp_sl():
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
-            include_fundamentals=False,
-            include_news=False,
             current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
             signal_model="technical",
         )
@@ -557,18 +519,6 @@ def test_generate_signal_technical_path_still_builds_tp_sl():
     assert signal["direction"] == "LONG"
     assert signal["tp"] > signal["entry_price"]
     assert signal["sl"] < signal["entry_price"]
-
-
-def test_fetch_news_sentiment_uses_float_ratio_for_classification():
-    headlines = ["BTC sees bullish setup with strong adoption and rally risk"]
-
-    with patch.object(scanner, "fetch_rss_headlines", return_value=headlines), \
-         patch.object(scanner, "filter_headlines_by_symbol", return_value=headlines):
-        scanner._news_cache["by_symbol"]["BTCUSDT"] = {"ts": 0, "score": 0.0, "details": {}}
-        score, details = scanner.fetch_news_sentiment("BTCUSDT")
-
-    assert details["sentiment"] in {"bullish", "strong_bullish"}
-    assert score >= 1.5
 
 
 def test_repo_default_setup_artifacts_load_cleanly():
@@ -609,8 +559,6 @@ def test_repo_default_curated_signal_mode_generates_signal():
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
-            include_fundamentals=False,
-            include_news=False,
             current_time=datetime(2025, 1, 1, 15, 0, tzinfo=timezone.utc),
             signal_model="statistical_curated",
             validated_setups_path=str(REPO_CURATED_SETUPS),

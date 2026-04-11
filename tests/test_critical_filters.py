@@ -35,7 +35,7 @@ def test_min_score_differential_filter_exists():
         for i in range(1000)
     ]
 
-    signal = generate_signal("TESTUSDT", candles, include_fundamentals=False, include_news=False)
+    signal = generate_signal("TESTUSDT", candles)
 
     # Signal should either be None or have one clear direction (not both)
     # This validates MIN_SCORE_DIFFERENTIAL enforcement
@@ -52,12 +52,12 @@ def test_signal_generation_does_not_crash():
     """Verify signal generation handles various market conditions without crashing."""
     # Test uptrend
     uptrend = [[100.0 + i*0.3, 101 + i*0.3, 99.5 + i*0.3, 100.2 + i*0.3, 1000] for i in range(1000)]
-    signal_up = generate_signal("TESTUSDT", uptrend, include_fundamentals=False, include_news=False)
+    signal_up = generate_signal("TESTUSDT", uptrend)
     assert signal_up is None or isinstance(signal_up, dict), "Signal should be None or dict"
 
     # Test downtrend
     downtrend = [[100.0 - i*0.3, 100.5 - i*0.3, 99 - i*0.3, 99.8 - i*0.3, 1000] for i in range(1000)]
-    signal_down = generate_signal("TESTUSDT", downtrend, include_fundamentals=False, include_news=False)
+    signal_down = generate_signal("TESTUSDT", downtrend)
     assert signal_down is None or isinstance(signal_down, dict), "Signal should be None or dict"
 
     # Test choppy market
@@ -66,7 +66,7 @@ def test_signal_generation_does_not_crash():
     choppy = [[100 + random.uniform(-1, 1), 100.5 + random.uniform(-1, 1),
                99.5 + random.uniform(-1, 1), 100 + random.uniform(-1, 1), 1000]
               for _ in range(1000)]
-    signal_choppy = generate_signal("TESTUSDT", choppy, include_fundamentals=False, include_news=False)
+    signal_choppy = generate_signal("TESTUSDT", choppy)
     assert signal_choppy is None or isinstance(signal_choppy, dict), "Signal should be None or dict"
 
 
@@ -77,7 +77,7 @@ def test_signal_returns_either_direction_or_none():
     """Signal must return LONG, SHORT, or None (never other values)."""
     candles = [[100 + i*0.1, 100.5 + i*0.1, 99.8 + i*0.1, 100.2 + i*0.1, 1000] for i in range(1000)]
 
-    signal = generate_signal("TESTUSDT", candles, include_fundamentals=False, include_news=False)
+    signal = generate_signal("TESTUSDT", candles)
 
     if signal is not None:
         assert signal["direction"] in ["LONG", "SHORT"], \
@@ -90,7 +90,7 @@ def test_signal_score_matches_direction():
     """When a signal fires, its score must match the winning direction."""
     candles = [[100 + i*0.2, 100.8 + i*0.2, 99.5 + i*0.2, 100.5 + i*0.2, 1000 + i*5] for i in range(1000)]
 
-    signal = generate_signal("TESTUSDT", candles, include_fundamentals=False, include_news=False)
+    signal = generate_signal("TESTUSDT", candles)
 
     if signal is not None:
         # Score should match the winning direction's total
@@ -106,7 +106,7 @@ def test_signal_tp_sl_consistency():
     """TP and SL must be on correct sides of entry for the signal direction."""
     candles = [[100 + i*0.1, 100.5 + i*0.1, 99.8 + i*0.1, 100.2 + i*0.1, 1000] for i in range(1000)]
 
-    signal = generate_signal("TESTUSDT", candles, include_fundamentals=False, include_news=False)
+    signal = generate_signal("TESTUSDT", candles)
 
     if signal is not None:
         entry = signal.get("entry_price", 100)
@@ -127,7 +127,7 @@ def test_signal_generation_has_required_output_structure():
     """Verify all required fields are present when signal fires."""
     candles = [[100 + i*0.15, 100.8 + i*0.15, 99.5 + i*0.15, 100.3 + i*0.15, 1000 + i*10] for i in range(1000)]
 
-    signal = generate_signal("TESTUSDT", candles, include_fundamentals=False, include_news=False)
+    signal = generate_signal("TESTUSDT", candles)
 
     if signal is not None:
         required_keys = ["symbol", "direction", "score", "entry_price", "tp", "sl",

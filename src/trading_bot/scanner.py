@@ -1096,318 +1096,6 @@ def score_technical(symbol: str, candles_1h: list, precomputed_indicators: dict 
         return {"score": short_pts, "direction": "SHORT", "long_score": long_pts, "short_score": short_pts, "details": details}
 
 
-# ─────────────────────────────────────────────────────────────────
-# FUNDAMENTALS  (0-5 points)
-# ─────────────────────────────────────────────────────────────────
-_fundamental_cache = {"ts": 0, "data": {}}
-
-def fetch_fundamentals(direction: str, symbol: str = "BTCUSDT") -> dict:
-    """Fetch fundamentals for a specific symbol.
-
-    Fear & Greed: Global (applies to all)
-    BTC Dominance: Global (applies to all)
-    Funding Rate: PER-SYMBOL
-    Long/Short Ratio: PER-SYMBOL
-    """
-    global _fundamental_cache
-    now = time.time()
-    cache_key = f"{symbol}_fund"
-    if cache_key not in _fundamental_cache:
-        _fundamental_cache[cache_key] = {"ts": 0, "data": {}}
-
-    cache_entry = _fundamental_cache[cache_key]
-    if now - cache_entry["ts"] < 30:
-        return cache_entry["data"]
-
-    result = {}
-    score  = 0
-
-    # Fear & Greed (Global)
-    fg = get("https://api.alternative.me/fng/?limit=1")
-    if fg and fg.get("data"):
-        fgi = int(fg["data"][0]["value"])
-        result["fear_greed"] = fgi
-        if fgi < 25:
-            result["fg_signal"] = "extreme_fear_bull"
-            score += 1.5
-        elif fgi > 75:
-            result["fg_signal"] = "extreme_greed_bear"
-            score -= 1.5
-        elif fgi < 40:
-            score += 0.5
-        elif fgi > 60:
-            score -= 0.5
-    result["fg_score"] = round(score, 2)
-    fg_score_val = score
-    score = 0
-
-    # BTC Dominance (Global)
-    cg = get("https://api.coingecko.com/api/v3/global")
-    if cg and cg.get("data"):
-        btc_dom = cg["data"].get("market_cap_percentage", {}).get("btc", 50)
-        result["btc_dominance"] = round(btc_dom, 2)
-        result["btc_dom_bias"] = "btc_bull" if btc_dom > 55 else "alt_bull"
-
-    # Funding Rate (PER-SYMBOL)
-    funding_data = get("https://fapi.binance.com/fapi/v1/premiumIndex")
-    if funding_data and isinstance(funding_data, list):
-        symbol_fund = next((float(x["lastFundingRate"]) for x in funding_data
-                           if x.get("symbol") == symbol), None)
-        if symbol_fund is not None:
-            result["funding_rate"] = round(symbol_fund * 100, 4)
-            if symbol_fund > 0.001:
-                score -= 1
-                result["funding_signal"] = "high_longs_squeeze_risk"
-            elif symbol_fund < -0.001:
-                score += 1
-                result["funding_signal"] = "negative_short_squeeze_risk"
-    result["funding_score"] = round(score, 2)
-    funding_score_val = score
-    score = 0
-
-    # Open Interest (per-symbol)
-    oi_data = get("https://fapi.binance.com/fapi/v1/openInterest", {"symbol": symbol})
-    if oi_data:
-        result["open_interest"] = oi_data.get("openInterest")
-    result["oi_score"] = 0
-
-    # Long/Short Ratio (PER-SYMBOL)
-    ls = get("https://fapi.binance.com/futures/data/globalLongShortAccountRatio",
-             {"symbol": symbol, "period": "5m", "limit": 2})
-    if ls and len(ls) >= 2:
-        ratio_now  = float(ls[-1]["longShortRatio"])
-        ratio_prev = float(ls[-2]["longShortRatio"])
-        result["ls_ratio"] = round(ratio_now, 3)
-        if ratio_now > 2.0:
-            score -= 0.5
-            result["ls_signal"] = "crowded_longs"
-        elif ratio_now < 0.5:
-            score += 0.5
-            result["ls_signal"] = "crowded_shorts"
-        if ratio_now > ratio_prev:
-            score += 0.25
-        else:
-            score -= 0.25
-    result["ls_score"] = round(score, 2)
-
-    total = fg_score_val + funding_score_val + score
-    total = round(total, 2)
-    result["total_raw"] = total
-    result["direction_score"] = total
-
-    cache_entry["ts"] = now
-    cache_entry["data"] = result
-    return result
-
-
-def fundamental_score(direction: str, symbol: str = "BTCUSDT") -> tuple:
-    """Returns (long_pts: 0-5, short_pts: 0-5, details_dict)"""
-    f = fetch_fundamentals(direction, symbol)
-    raw = f.get("direction_score", 0)
-    if raw > 0:
-        long_pts  = min(5, raw)
-        short_pts = 0.0
-    elif raw < 0:
-        long_pts  = 0.0
-        short_pts = min(5, -raw)
-    else:
-        long_pts  = 0.0
-        short_pts = 0.0
-    return round(long_pts, 2), round(short_pts, 2), f
-
-
-# ─────────────────────────────────────────────────────────────────
-# NEWS SENTIMENT  (0-3 points)
-# ─────────────────────────────────────────────────────────────────
-BULL_PHRASES = {
-    "bullish breakout", "bull run", "bull market", "buying pressure",
-    "accumulation", "strong demand", "institutional buying", "inflow",
-    "bullish signal", "strong support", "new high", "new record",
-    "record high", "all-time high", "breakout above"
-}
-BEAR_PHRASES = {
-    "bear market", "selling pressure", "bearish signal", "weak support",
-    "support broken", "resistance break", "breakdown", "downtrend",
-    "lower highs", "lower lows", "selling off", "institutional selling",
-    "outflow", "panic selling"
-}
-BULL_WORDS = {
-    "bullish", "surge", "rally", "breakout", "pump", "spike", "boom",
-    "rocket", "soar", "moon", "jump", "gains", "bull",
-    "buy", "adoption", "upgrade", "launch", "partnership", "approval",
-    "endorsement", "success", "positive", "growth", "recovery", "outperform",
-    "beat", "milestone", "record", "exceed", "ath",
-    "institutional", "inflow", "support"
-}
-BEAR_WORDS = {
-    "bearish", "crash", "dump", "plunge", "collapse", "tank", "tumble",
-    "slump", "bear", "decline", "drop", "negative", "failure", "fail",
-    "miss", "trouble", "scandal", "violation", "falter", "weakness",
-    "underperform", "outflow", "breakdown", "downtrend"
-}
-
-SYMBOL_KEYWORDS = {
-    "BTCUSDT": ["bitcoin", "btc", "satoshi", "blockchain"],
-    "ETHUSDT": ["ethereum", "eth", "solidity", "smart contract"],
-    "SOLUSDT": ["solana", "sol"],
-    "XRPUSDT": ["ripple", "xrp"],
-    "BNBUSDT": ["binance", "bnb"],
-    "DOGEUSDT": ["dogecoin", "doge"],
-    "ADAUSDT": ["cardano", "ada"],
-    "AVAXUSDT": ["avalanche", "avax"],
-    "LINKUSDT": ["chainlink", "link"],
-    "DOTUSDT": ["polkadot", "dot"],
-}
-
-_news_cache = {"ts": 0, "by_symbol": {}}
-
-
-def filter_headlines_by_symbol(headlines: list, symbol: str) -> list:
-    """Filter headlines to only include those relevant to the symbol."""
-    if symbol not in SYMBOL_KEYWORDS:
-        return headlines
-
-    keywords = SYMBOL_KEYWORDS[symbol]
-    filtered = [h for h in headlines if any(kw in h.lower() for kw in keywords)]
-
-    # Return only matched headlines. If no matches, return empty (no news = no score)
-    # This prevents generic headlines from inflating scores for symbols with no relevant news
-    return filtered
-
-
-def fetch_rss_headlines(url: str, limit: int = 15) -> list:
-    """Fetch and parse RSS feed. Returns list of headlines."""
-    try:
-        r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0 (CryptoScanner)"})
-        r.raise_for_status()
-        root = ET.fromstring(r.content)
-        headlines = []
-        for item in root.findall(".//item"):
-            title = item.findtext("title", "")
-            if title:
-                headlines.append(title)
-        if not headlines:
-            for entry in root.findall("{http://www.w3.org/2005/Atom}entry"):
-                title = entry.findtext("{http://www.w3.org/2005/Atom}title", "")
-                if title:
-                    headlines.append(title)
-        return headlines[:limit]
-    except Exception as e:
-        log.debug(f"RSS fetch failed ({url}): {type(e).__name__}")
-        return []
-
-
-def fetch_news_sentiment(symbol: str = "BTCUSDT") -> tuple:
-    """Fetch and score news sentiment specific to the given symbol."""
-    global _news_cache
-    now = time.time()
-
-    if symbol not in _news_cache["by_symbol"]:
-        _news_cache["by_symbol"][symbol] = {"ts": 0, "score": 0.0, "details": {}}
-
-    cache_entry = _news_cache["by_symbol"][symbol]
-    if now - cache_entry["ts"] < 60:
-        return cache_entry["score"], cache_entry["details"]
-
-    headlines = []
-    source_used = None
-
-    rss_sources = [
-        ("CoinTelegraph", "https://feeds.cointelegraph.com/feed/news"),
-        ("CoinDesk", "https://feeds.coindesk.com/news"),
-        ("Kraken Blog", "https://blog.kraken.com/feed/"),
-        ("TheBlock", "https://feeds.theblockcrypto.com/feed"),
-    ]
-
-    for source_name, rss_url in rss_sources:
-        headlines = fetch_rss_headlines(rss_url, limit=15)
-        if headlines:
-            source_used = source_name
-            log.debug(f"News: Fetched {len(headlines)} headlines from {source_name}")
-            break
-        log.debug(f"News: {source_name} unavailable, trying next source...")
-
-    filtered_headlines = filter_headlines_by_symbol(headlines, symbol)
-
-    if not filtered_headlines:
-        details = {"headlines": 0, "bull_signals": 0, "bear_signals": 0,
-                   "sentiment": "neutral", "source": source_used}
-        dbg.debug(f"[{symbol}] News: No headlines matching symbol (0 filtered from {len(headlines)} total)")
-        cache_entry.update({"ts": now, "score": 0.0, "details": details})
-        return 0.0, details
-
-    # Debug: Log filtered headlines
-    dbg.debug(f"[{symbol}] News: {len(filtered_headlines)} headlines matching symbol from {source_used}:")
-    for i, h in enumerate(filtered_headlines, 1):
-        dbg.debug(f"  [{i}] {h}")
-
-    bull_score = bear_score = 0.0
-    for h in filtered_headlines:
-        h_lower = h.lower()
-        for phrase in BULL_PHRASES:
-            if phrase in h_lower:
-                bull_score += h_lower.count(phrase) * 2.0
-        for phrase in BEAR_PHRASES:
-            if phrase in h_lower:
-                bear_score += h_lower.count(phrase) * 2.0
-        for word in BULL_WORDS:
-            if word in h_lower:
-                bull_score += h_lower.count(word) * 1.0
-        for word in BEAR_WORDS:
-            if word in h_lower:
-                bear_score += h_lower.count(word) * 1.0
-
-    total = bull_score + bear_score
-    bull_count = int(bull_score)
-    bear_count = int(bear_score)
-
-    # Debug: Log raw scores
-    dbg.debug(f"[{symbol}] News scoring: bull_score={bull_score:.1f} bear_score={bear_score:.1f} total={total:.1f}")
-
-    if total == 0:
-        score = 0.0
-        sentiment = "neutral"
-    else:
-        ratio = bull_score / total
-        dbg.debug(f"[{symbol}] Bull/Bear ratio: {bull_score:.1f}/{total:.1f} = {ratio:.2f}")
-
-        if ratio >= 0.70:
-            score = 2.5 + (ratio - 0.70) * 10
-            sentiment = "strong_bullish"
-        elif ratio >= 0.60:
-            score = 1.5 + (ratio - 0.60) * 10
-            sentiment = "bullish"
-        elif ratio >= 0.55:
-            score = 0.5 + (ratio - 0.55) * 10
-            sentiment = "slightly_bullish"
-        elif ratio <= 0.30:
-            score = 2.5 + ((1 - ratio) - 0.70) * 10
-            sentiment = "strong_bearish"
-        elif ratio <= 0.40:
-            score = 1.5 + ((1 - ratio) - 0.60) * 10
-            sentiment = "bearish"
-        elif ratio <= 0.45:
-            score = 0.5 + ((1 - ratio) - 0.55) * 10
-            sentiment = "slightly_bearish"
-        else:
-            score = 0.0
-            sentiment = "neutral"
-
-        score = min(3.0, score)
-        dbg.debug(f"[{symbol}] News sentiment: {sentiment} (score={score:.2f})")
-
-    details = {
-        "headlines": len(filtered_headlines),
-        "bull_signals": bull_count,
-        "bear_signals": bear_count,
-        "sentiment": sentiment,
-        "source": source_used,
-    }
-
-    cache_entry.update({"ts": now, "score": round(score, 2), "details": details})
-    return round(score, 2), details
-
-
 _validated_setups_cache = {"path": None, "mtime": None, "data": None}
 _validated_setups_missing_warned = set()
 
@@ -1713,15 +1401,11 @@ def _generate_statistical_signal(
         "atr": tp_sl["atr"],
         "rr_ratio": tp_sl["rr_ratio"],
         "technical_score": 0.0,
-        "fundamental_score": 0.0,
-        "news_score": 0.0,
         "long_score": long_total,
         "short_score": short_total,
         "regime": regime,
         "strategy": strategy,
         "details": {"regime": regime, "strategy": strategy, "template": template},
-        "fund_details": {},
-        "news_details": {},
         "signal_model": signal_model,
         "statistical_setup": matched_setup["name"],
         "statistical_score": total_score,
@@ -1778,15 +1462,11 @@ def _generate_dedicated_wide_short_rsi28_signal(
         "atr": tp_sl["atr"],
         "rr_ratio": tp_sl["rr_ratio"],
         "technical_score": 0.0,
-        "fundamental_score": 0.0,
-        "news_score": 0.0,
         "long_score": 0.0,
         "short_score": 0.0,
         "regime": "statistical",
         "strategy": signal_model,
         "details": {"regime": "statistical", "strategy": signal_model},
-        "fund_details": {},
-        "news_details": {},
         "signal_model": signal_model,
         "statistical_setup": "wide_short_rsi_below_28",
         "statistical_score": 0.0,
@@ -1801,8 +1481,6 @@ def _generate_dedicated_wide_short_rsi28_signal(
 def _generate_technical_signal(
     symbol: str,
     candles_1h: list,
-    include_fundamentals: bool = True,
-    include_news: bool = True,
     state: dict = None,
     current_time: Optional[datetime] = None,
     precomputed_indicators: dict = None,
@@ -1815,25 +1493,10 @@ def _generate_technical_signal(
     tech_long = tech["long_score"]
     tech_short = tech["short_score"]
 
-    fund_long = fund_short = 0.0
-    fund_details = {}
-    if include_fundamentals:
-        fund_long, fund_short, fund_details = fundamental_score("LONG", symbol)
+    long_total = round(tech_long, 2)
+    short_total = round(tech_short, 2)
 
-    news_long = news_short = 0.0
-    news_details = {}
-    if include_news:
-        news_score_val, news_details = fetch_news_sentiment(symbol)
-        sentiment = news_details.get("sentiment", "neutral")
-        if "bullish" in sentiment:
-            news_long, news_short = news_score_val, 0.0
-        elif "bearish" in sentiment:
-            news_long, news_short = 0.0, news_score_val
-
-    long_total = round(tech_long + fund_long + news_long, 2)
-    short_total = round(tech_short + fund_short + news_short, 2)
-
-    dbg.debug(f"[{symbol}] Score breakdown | Tech L={tech_long:.2f} S={tech_short:.2f} | Fund L={fund_long:.2f} S={fund_short:.2f} | News L={news_long:.2f} S={news_short:.2f}")
+    dbg.debug(f"[{symbol}] Score breakdown | Tech L={tech_long:.2f} S={tech_short:.2f}")
     dbg.debug(f"[{symbol}] Totals | LONG={long_total:.2f} SHORT={short_total:.2f}")
 
     if long_total < 1.0 and short_total < 1.0:
@@ -1855,14 +1518,10 @@ def _generate_technical_signal(
         direction = "LONG"
         total_score = long_total
         tech_component = tech_long
-        fund_component = fund_long
-        news_component = news_long
     else:
         direction = "SHORT"
         total_score = short_total
         tech_component = tech_short
-        fund_component = fund_short
-        news_component = news_short
 
     if state and is_whipsaw(state, symbol, direction):
         dbg.debug(f"[{symbol}] REJECTED: whipsaw detected (direction change <5min)")
@@ -1891,15 +1550,11 @@ def _generate_technical_signal(
         "atr": tp_sl["atr"],
         "rr_ratio": tp_sl["rr_ratio"],
         "technical_score": round(tech_component, 2),
-        "fundamental_score": round(fund_component, 2),
-        "news_score": round(news_component, 2),
         "long_score": long_total,
         "short_score": short_total,
         "regime": regime,
         "strategy": strategy,
         "details": tech["details"],
-        "fund_details": fund_details,
-        "news_details": news_details,
         "signal_model": "technical",
     }
 
@@ -1916,8 +1571,6 @@ def _generate_hybrid_technical_wide_short_rsi28_signal(
     technical_signal = _generate_technical_signal(
         symbol,
         candles_1h,
-        include_fundamentals=True,
-        include_news=True,
         state=state,
         current_time=current_time,
         precomputed_indicators=precomputed_indicators,
@@ -1994,8 +1647,6 @@ def _generate_hybrid_technical_wide_short_rsi28_signal(
 # Returns a complete, self-contained trade signal with TP/SL.
 # ─────────────────────────────────────────────────────────────────
 def generate_signal(symbol: str, candles_1h: list,
-                    include_fundamentals: bool = True,
-                    include_news: bool = True,
                     state: dict = None,
                     current_time: Optional[datetime] = None,
                     precomputed_indicators: dict = None,
@@ -2007,8 +1658,6 @@ def generate_signal(symbol: str, candles_1h: list,
     Args:
         symbol: Trading pair (e.g. "BTCUSDT")
         candles_1h: OHLCV candles [[open, high, low, close, volume], ...]
-        include_fundamentals: False for backtesting (no historical data available)
-        include_news: False for backtesting (no historical data available)
         current_time: Time to use for session filter (defaults to now). Backtester passes candle timestamp
         precomputed_indicators: Optional dict of pre-computed indicators (optimization for backtester)
 
@@ -2052,8 +1701,6 @@ def generate_signal(symbol: str, candles_1h: list,
     return _generate_technical_signal(
         symbol,
         candles_1h,
-        include_fundamentals=include_fundamentals,
-        include_news=include_news,
         state=state,
         current_time=current_time,
         precomputed_indicators=precomputed_indicators,
@@ -2085,11 +1732,7 @@ def format_alert(signal: dict) -> str:
     price     = signal["entry_price"]
     total     = signal["score"]
     tech_pts  = signal["technical_score"]
-    fund_pts  = signal["fundamental_score"]
-    news_pts  = signal["news_score"]
     details   = signal["details"]
-    fund_det  = signal.get("fund_details", {})
-    news_det  = signal.get("news_details", {})
 
     emoji = "🟢🚀" if direction == "LONG" else "🔴📉"
 
@@ -2131,14 +1774,6 @@ def format_alert(signal: dict) -> str:
         f"📊 <b>Technical</b>  ({tech_pts:.1f}/~8)\n"
         f"  RSI: {rsi_str} | ADX: {adx_val}\n"
         f"  Vol Ratio: {vol_r}\n\n"
-        f"🌐 <b>Fundamentals</b>  ({fund_pts:.1f}/5)\n"
-        f"  Fear&Greed: {fund_det.get('fear_greed', 'N/A')} ({fund_det.get('fg_signal', 'neutral')})\n"
-        f"  Funding: {fund_det.get('funding_rate', 'N/A')}% ({fund_det.get('funding_signal', 'normal')})\n"
-        f"  L/S Ratio: {fund_det.get('ls_ratio', 'N/A')} ({fund_det.get('ls_signal', 'normal')})\n\n"
-        f"📰 <b>News</b>  ({news_pts:.1f}/3)\n"
-        f"  {news_det.get('sentiment','neutral').upper()} | "
-        f"🐂{news_det.get('bull_signals',0)} 🐻{news_det.get('bear_signals',0)} | "
-        f"📰 {news_det.get('source', 'N/A')}\n\n"
         f"📐 <b>Trade Setup (ATR-based, {signal['rr_ratio']:.1f}:1 R:R)</b>\n"
         f"  Entry:  ${price:,.4f}\n"
         f"  SL:     ${signal['sl']:,.4f}  ({-signal['sl_pct']:+.2f}%)\n"
@@ -2195,18 +1830,14 @@ def scan_symbol(symbol: str, state: dict):
         log.warning(f"  Not enough completed candles for {symbol}, skipping.")
         return
 
-    # Generate signal (full: tech + fundamentals + news)
-    signal = generate_signal(symbol, completed_candles,
-                             include_fundamentals=True,
-                             include_news=True,
-                             state=state)
+    signal = generate_signal(symbol, completed_candles, state=state)
 
     if signal is None:
         reason = _last_rejection_reason.get(symbol, "No signal")
         log.info(f"  {symbol} | No signal ({reason})")
         _cycle_results.append({
             'coin': symbol.replace('USDT', ''), 'price': completed_candles[-1][3],
-            'dir': '-', 'tech': 0, 'fund': 0, 'news': 0, 'total': 0,
+            'dir': '-', 'tech': 0, 'total': 0,
             'filter_reason': reason, 'tp': 0, 'sl': 0, 'rr_ratio': 0,
             'signal_model': DEFAULT_SIGNAL_MODEL if DEFAULT_SIGNAL_MODEL in VALID_SIGNAL_MODELS else "technical",
             'strategy': '-',
@@ -2217,8 +1848,6 @@ def scan_symbol(symbol: str, state: dict):
     direction = signal["direction"]
     total     = signal["score"]
     tech_pts  = signal["technical_score"]
-    fund_pts  = signal["fundamental_score"]
-    news_pts  = signal["news_score"]
     signal_model = signal.get("signal_model", DEFAULT_SIGNAL_MODEL)
     selected_strategy = signal.get("strategy", "?")
     selected_source = signal.get("hybrid_details", {}).get("selected", {}).get("source")
@@ -2243,8 +1872,6 @@ def scan_symbol(symbol: str, state: dict):
         'price': signal['entry_price'],
         'dir': direction,
         'tech': tech_pts,
-        'fund': fund_pts,
-        'news': news_pts,
         'total': display_total,
         'tp': signal['tp'],
         'sl': signal['sl'],
@@ -2282,7 +1909,7 @@ def scan_symbol(symbol: str, state: dict):
             f"@ <code>${signal['entry_price']:,.4f}</code>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"⚠️ Building signal — RSI: {rsi_val}\n"
-            f"Tech: {tech_pts:.1f} | Fund: {fund_pts:.1f} | News: {news_pts:.1f}\n\n"
+            f"Tech: {tech_pts:.1f}\n\n"
             f"📐 <b>If entry:</b> SL {-signal['sl_pct']:+.2f}% | TP {signal['tp_pct']:+.2f}%\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"⏰ {datetime.now(timezone.utc).strftime('%H:%M')} UTC"
@@ -2341,7 +1968,7 @@ def main():
         # Summary table - show ALL computed signals + rejected ones
         log.info(f"\n{'─'*120}")
         log.info(f"Scanner mode summary: model={active_model} | {active_banner}")
-        log.info(f"{'Coin':<6} {'Price':>10}  {'Dir':<5} {'Tech':>5} {'Fund':>5} {'News':>5} {'Total':>6} {'Source':<11} {'Strategy':<30} {'Status':<20}")
+        log.info(f"{'Coin':<6} {'Price':>10}  {'Dir':<5} {'Tech':>5} {'Total':>6} {'Source':<11} {'Strategy':<30} {'Status':<20}")
         log.info(f"{'─'*120}")
 
         if _cycle_results:
@@ -2353,7 +1980,7 @@ def main():
                 selected_source = r.get('selected_source') or r.get('signal_model', active_model)
                 log.info(
                     f"{r['coin']:<6} ${r['price']:>9,.3f}  {r['dir']:<5} "
-                    f"{r['tech']:>5.1f} {r['fund']:>5.1f} {r['news']:>5.1f} {r['total']:>6.1f} "
+                    f"{r['tech']:>5.1f} {r['total']:>6.1f} "
                     f"{selected_source:<11} {r.get('strategy', '-'): <30} {status:<20}"
                 )
         else:

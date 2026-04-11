@@ -125,7 +125,7 @@ def validate_code_match():
     sig = inspect.signature(generate_signal)
     assert "symbol" in sig.parameters, "CRITICAL: generate_signal missing 'symbol'"
     assert "candles_1h" in sig.parameters, "CRITICAL: generate_signal missing 'candles_1h'"
-    assert "include_fundamentals" in sig.parameters, "CRITICAL: generate_signal missing 'include_fundamentals'"
+    assert "state" in sig.parameters, "CRITICAL: generate_signal missing 'state'"
 
 validate_code_match()
 log.info("✅ Code validation passed: Using scanner's generate_signal() (WYTIWYT)")
@@ -1165,8 +1165,6 @@ def run_backtest(
 
             try:
                 signal = generate_signal(symbol, window_candles,
-                                         include_fundamentals=False,
-                                         include_news=False,
                                          current_time=candle_time,
                                          signal_model=signal_model,
                                          validated_setups_path=validated_setups_path,
