@@ -54,6 +54,8 @@ config/telegram.json
 # Generated output files (don't commit)
 src/trading_bot/backtest-results.json
 src/trading_bot/setup_analysis_report.json
+data/trader-state.json
+data/*.pid
 
 # Playwright MCP artifacts
 .playwright-mcp/
