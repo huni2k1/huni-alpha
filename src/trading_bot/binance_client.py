@@ -196,6 +196,16 @@ class BinanceClient:
             return []
         return [p for p in data if float(p.get("positionAmt", 0)) != 0.0]
 
+    def get_open_algo_orders(self, symbol: str) -> list:
+        """Return open algo orders for a symbol, typically TP/SL protection legs."""
+        data = self._request("GET", "/fapi/v1/algoOpenOrders", {"symbol": symbol}, signed=True)
+        if not data:
+            return []
+        if isinstance(data, dict):
+            orders = data.get("orders") or data.get("data") or []
+            return orders if isinstance(orders, list) else []
+        return data if isinstance(data, list) else []
+
     def get_mark_price(self, symbol: str) -> Optional[float]:
         data = self._request("GET", "/fapi/v1/premiumIndex", {"symbol": symbol})
         if not data:

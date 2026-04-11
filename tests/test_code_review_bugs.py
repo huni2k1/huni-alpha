@@ -542,3 +542,92 @@ class TestTraderEntryRecovery:
         assert pos["protection_status"] == "pending"
         assert pos["tp_order_id"] is None
         assert pos["sl_order_id"] is None
+
+
+class TestTraderStartupReconcile:
+    """Unknown Binance positions should be imported into local state."""
+
+    class _RecoveringClient:
+        def get_open_positions(self):
+            return [
+                {
+                    "symbol": "ETHUSDT",
+                    "positionAmt": "0.015",
+                    "entryPrice": "2500.5",
+                    "markPrice": "2510.0",
+                }
+            ]
+
+        def get_symbol_info(self, symbol):
+            return {
+                "price_precision": 2,
+            }
+
+        def get_open_algo_orders(self, symbol):
+            assert symbol == "ETHUSDT"
+            return [
+                {
+                    "side": "SELL",
+                    "type": "TAKE_PROFIT_MARKET",
+                    "triggerPrice": "2560.0",
+                    "clientAlgoId": "tp_eth",
+                },
+                {
+                    "side": "SELL",
+                    "type": "STOP_MARKET",
+                    "triggerPrice": "2460.0",
+                    "clientAlgoId": "sl_eth",
+                },
+            ]
+
+    class _RecoveringClientNoProtection(_RecoveringClient):
+        def get_open_algo_orders(self, symbol):
+            return []
+
+    def test_reconcile_imports_unknown_binance_position_into_state(self, tmp_path, monkeypatch):
+        state_path = tmp_path / "trader-state.json"
+        monkeypatch.setattr(trader, "_STATE_FILE", str(state_path))
+        sent = []
+        monkeypatch.setattr(trader, "send_telegram", sent.append)
+
+        state = {
+            "positions": {},
+            "last_signal": {},
+            "peak_equity": None,
+            "circuit_breaker_until": None,
+            "trade_log": [],
+        }
+        trader.reconcile_with_binance(state, self._RecoveringClient())
+
+        pos = state["positions"]["ETHUSDT"]
+        assert pos["direction"] == "LONG"
+        assert pos["entry_price"] == 2500.5
+        assert pos["quantity"] == 0.015
+        assert pos["tp_price"] == 2560.0
+        assert pos["sl_price"] == 2460.0
+        assert pos["tp_order_id"] == "algo:tp_eth"
+        assert pos["sl_order_id"] == "algo:sl_eth"
+        assert pos["protection_status"] == "armed"
+        assert pos["recovered_from_binance"] is True
+        assert "Recovered open Binance positions into bot state: ETHUSDT" in sent[0]
+
+    def test_reconcile_marks_recovered_position_untracked_without_protection_orders(self, tmp_path, monkeypatch):
+        state_path = tmp_path / "trader-state.json"
+        monkeypatch.setattr(trader, "_STATE_FILE", str(state_path))
+        sent = []
+        monkeypatch.setattr(trader, "send_telegram", sent.append)
+
+        state = {
+            "positions": {},
+            "last_signal": {},
+            "peak_equity": None,
+            "circuit_breaker_until": None,
+            "trade_log": [],
+        }
+        trader.reconcile_with_binance(state, self._RecoveringClientNoProtection())
+
+        pos = state["positions"]["ETHUSDT"]
+        assert pos["protection_status"] == "untracked"
+        assert pos["tp_order_id"] is None
+        assert pos["sl_order_id"] is None
+        assert "Protection orders not fully recovered: ETHUSDT" in sent[0]

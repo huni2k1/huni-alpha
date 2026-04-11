@@ -216,6 +216,72 @@ def _write_position_state(
     save_state(state)
 
 
+def _recover_position_state_from_binance(state: dict, live_position: dict, client: BinanceClient):
+    """Import a live Binance position into local state so monitoring can resume after restart."""
+    symbol = live_position["symbol"]
+    position_amt = float(live_position.get("positionAmt", 0.0))
+    quantity = abs(position_amt)
+    if quantity == 0:
+        return
+
+    direction = "LONG" if position_amt > 0 else "SHORT"
+    entry_price = float(live_position.get("entryPrice", 0.0) or 0.0)
+    if entry_price <= 0:
+        mark_price = float(live_position.get("markPrice", 0.0) or 0.0)
+        entry_price = mark_price
+
+    sym_info = client.get_symbol_info(symbol) or {}
+    price_precision = int(sym_info.get("price_precision", 4))
+
+    tp_price = None
+    sl_price = None
+    tp_order_id = None
+    sl_order_id = None
+
+    for order in client.get_open_algo_orders(symbol):
+        side = str(order.get("side", "")).upper()
+        close_side = "SELL" if direction == "LONG" else "BUY"
+        if side != close_side:
+            continue
+
+        order_type = str(order.get("type") or order.get("origType") or order.get("algoType") or "").upper()
+        trigger_price = order.get("triggerPrice") or order.get("stopPrice")
+        client_algo_id = order.get("clientAlgoId")
+        if trigger_price is None or not client_algo_id:
+            continue
+
+        order_ref = BinanceClient._algo_order_ref(str(client_algo_id))
+        trigger_price = round(float(trigger_price), price_precision)
+
+        if "TAKE_PROFIT" in order_type:
+            tp_price = trigger_price
+            tp_order_id = order_ref
+        elif order_type == "STOP_MARKET" or "STOP" in order_type:
+            sl_price = trigger_price
+            sl_order_id = order_ref
+
+    protection_status = "armed" if tp_order_id and sl_order_id else "untracked"
+
+    state["positions"][symbol] = {
+        "symbol": symbol,
+        "direction": direction,
+        "entry_price": round(entry_price, price_precision),
+        # Unknown original open time after a crash/restart; use recovery time to avoid false timeout exits.
+        "entry_time": datetime.now(timezone.utc).isoformat(),
+        "quantity": quantity,
+        "position_size_usdt": round(quantity * entry_price, 2),
+        "tp_price": tp_price,
+        "sl_price": sl_price,
+        "tp_order_id": tp_order_id,
+        "sl_order_id": sl_order_id,
+        "score": None,
+        "strategy": "recovered_from_binance",
+        "signal_model": "recovered",
+        "protection_status": protection_status,
+        "recovered_from_binance": True,
+    }
+
+
 # ─────────────────────────────────────────────────────────────────
 # POSITION SIZING  (mirrors backtester logic)
 # ─────────────────────────────────────────────────────────────────
@@ -614,12 +680,10 @@ def execute_entry(
 def reconcile_with_binance(state: dict, client: BinanceClient):
     """
     On startup: compare state positions vs Binance actual positions.
-    Warns on mismatch — does not auto-close anything.
+    Remove stale local positions and import unknown live Binance positions.
     """
-    if not state["positions"]:
-        return
-
-    live_positions = {p["symbol"] for p in client.get_open_positions()}
+    live_position_rows = client.get_open_positions()
+    live_positions = {p["symbol"] for p in live_position_rows}
     state_symbols = set(state["positions"].keys())
 
     stale = state_symbols - live_positions
@@ -635,14 +699,27 @@ def reconcile_with_binance(state: dict, client: BinanceClient):
         save_state(state)
 
     if unknown:
-        log.warning(
-            f"Binance has positions not in state: {unknown}. "
-            f"Manual intervention may be needed."
-        )
+        imported = []
+        unprotected = []
+        live_by_symbol = {p["symbol"]: p for p in live_position_rows}
+        for sym in sorted(unknown):
+            live_position = live_by_symbol.get(sym)
+            if not live_position:
+                continue
+            _recover_position_state_from_binance(state, live_position, client)
+            imported.append(sym)
+            if state["positions"][sym].get("protection_status") != "armed":
+                unprotected.append(sym)
+
+        save_state(state)
+        log.warning(f"Recovered Binance positions into state: {imported}")
+        details = ""
+        if unprotected:
+            details = f"\nProtection orders not fully recovered: {', '.join(unprotected)}"
         send_telegram(
             f"⚠️ <b>Position mismatch on startup</b>\n"
-            f"Binance has open positions not tracked by bot: {', '.join(unknown)}\n"
-            f"Please review manually."
+            f"Recovered open Binance positions into bot state: {', '.join(imported)}"
+            f"{details}"
         )
 
 
