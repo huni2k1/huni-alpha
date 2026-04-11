@@ -1,4 +1,4 @@
-# Trading Bot
+# Huni Alpha
 
 Multi-regime crypto signal generator and backtester built around a single shared signal contract.
 
@@ -198,6 +198,60 @@ The test suite covers:
 - scanner filters and regime detection,
 - backtester accounting, cooldowns, Kelly sizing, and trailing-stop behavior,
 - score-band aggregation.
+
+## CI/CD Deployment
+
+The recommended production path for this repo is:
+
+- GitHub Actions runs tests on every push and pull request.
+- Pushes to `main` deploy to a DigitalOcean droplet over SSH after tests pass.
+- The droplet runs the live trader via `systemd`.
+
+Deployment assets live in [`deploy/`](/Users/ninhvan/.openclaw/workspace/trading-bot/deploy):
+
+- [`deploy.yml`](/Users/ninhvan/.openclaw/workspace/trading-bot/.github/workflows/deploy.yml)
+- [`deploy.sh`](/Users/ninhvan/.openclaw/workspace/trading-bot/deploy/deploy.sh)
+- [`huni-alpha.service`](/Users/ninhvan/.openclaw/workspace/trading-bot/deploy/huni-alpha.service)
+
+GitHub Actions secrets required:
+
+- `DROPLET_HOST`
+- `DROPLET_USER`
+- `DROPLET_SSH_KEY`
+
+Suggested droplet layout:
+
+```bash
+sudo mkdir -p /opt/huni-alpha
+sudo chown -R "$USER":"$USER" /opt/huni-alpha
+git clone git@github.com:huni2k1/trading-bot.git /opt/huni-alpha
+cd /opt/huni-alpha
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+mkdir -p data
+```
+
+Install the service:
+
+```bash
+sudo cp deploy/huni-alpha.service /etc/systemd/system/huni-alpha.service
+sudo systemctl daemon-reload
+sudo systemctl enable huni-alpha
+sudo systemctl start huni-alpha
+```
+
+Put live credentials on the droplet only:
+
+- `config/binance-trading.json`
+- `config/telegram.json`
+
+Then validate the bot locally on the droplet:
+
+```bash
+cd /opt/huni-alpha
+PYTHONPATH=/opt/huni-alpha/src /opt/huni-alpha/.venv/bin/python -u -c 'from trading_bot import trader; trader.main()'
+```
 
 ## Dependencies
 

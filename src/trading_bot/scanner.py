@@ -1738,13 +1738,17 @@ def _generate_dedicated_wide_short_rsi28_signal(
     precomputed_indicators: dict = None,
 ) -> Optional[dict]:
     """Generate a SHORT signal when 1h RSI < 28 (oversold condition)."""
-    # Validate minimum candles
-    if len(candles_1h) < 50:
-        _last_rejection_reason[symbol] = "Insufficient data (<50 candles)"
+    snapshot = _build_statistical_snapshot(
+        symbol,
+        candles_1h,
+        current_time=current_time,
+        precomputed_indicators=precomputed_indicators,
+    )
+    if not snapshot:
+        _last_rejection_reason[symbol] = "No snapshot (insufficient data)"
         return None
 
-    # Get precomputed RSI value (default 50 if not available)
-    rsi_val = precomputed_indicators.get("rsi", 50.0) if precomputed_indicators else 50.0
+    rsi_val = float(snapshot.get("rsi", 50.0))
 
     # Simple condition: RSI must be below 28
     if rsi_val >= 28.0:

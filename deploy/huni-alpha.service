@@ -1,0 +1,18 @@
+[Unit]
+Description=Huni Alpha Live Trader
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/huni-alpha
+Environment=PYTHONPATH=/opt/huni-alpha/src
+Environment=BINANCE_TESTNET=false
+ExecStart=/opt/huni-alpha/.venv/bin/python -u -c 'from trading_bot import trader; trader.main()'
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
