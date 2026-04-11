@@ -815,7 +815,7 @@ def main():
 
                 # Generate signal (same function as backtester)
                 try:
-                    signal = generate_signal(
+                    trade_signal = generate_signal(
                         symbol,
                         candles,
                         include_fundamentals=False,
@@ -831,27 +831,27 @@ def main():
 
                 time.sleep(1.5)  # Rate limit between symbols
 
-                if signal is None or signal["direction"] == "NEUTRAL":
+                if trade_signal is None or trade_signal["direction"] == "NEUTRAL":
                     # Get rejection reason from scanner
                     rejection_reason = scanner._last_rejection_reason.get(symbol, "Unknown")
                     log.info(f"  {symbol}: ✗ {rejection_reason}")
                     continue
 
-                score    = signal["score"]
-                strategy = signal.get("strategy", "trend_pullback")
+                score    = trade_signal["score"]
+                strategy = trade_signal.get("strategy", "trend_pullback")
                 threshold = _required_threshold(signal_model, strategy)
 
                 # ── Log signal details ──
-                d = signal.get("details", {})
-                entry_p   = signal.get("entry_price", 0)
-                l_score   = signal.get("long_score", 0)
-                s_score   = signal.get("short_score", 0)
-                regime    = signal.get("regime") or d.get("regime", "?")
-                sig_model = signal.get("signal_model", signal_model)
-                hybrid_d  = signal.get("hybrid_details")
+                d = trade_signal.get("details", {})
+                entry_p   = trade_signal.get("entry_price", 0)
+                l_score   = trade_signal.get("long_score", 0)
+                s_score   = trade_signal.get("short_score", 0)
+                regime    = trade_signal.get("regime") or d.get("regime", "?")
+                sig_model = trade_signal.get("signal_model", signal_model)
+                hybrid_d  = trade_signal.get("hybrid_details")
 
                 log.info(
-                    f"  {symbol}: ${entry_p:,.2f} | {signal['direction']} "
+                    f"  {symbol}: ${entry_p:,.2f} | {trade_signal['direction']} "
                     f"score={score:.2f} | model={sig_model} strategy={strategy}"
                 )
 
@@ -903,7 +903,7 @@ def main():
                 elif hybrid_d:
                     log.info(f"    [STATISTICAL] no match")
 
-                stat_d = signal.get("statistical_details")
+                stat_d = trade_signal.get("statistical_details")
                 if stat_d:
                     test_stats = stat_d.get("test_stats", {})
                     train_stats = stat_d.get("train_stats", {})
@@ -920,10 +920,10 @@ def main():
                     log.info(f"    [HYBRID] => {sel.get('source', '?')} ({sel.get('reason', '?')})")
 
                 if threshold is not None and score < threshold:
-                    d = signal.get("details", {})
+                    d = trade_signal.get("details", {})
                     rsi = d.get("rsi", "?")
                     adx = d.get("adx", "?")
-                    regime = signal.get("regime", "?")
+                    regime = trade_signal.get("regime", "?")
                     log.info(
                         f"  {symbol}: ✗ score {score:.2f} < {threshold:.0f} "
                         f"| {regime} | RSI={rsi} ADX={adx}"
@@ -931,13 +931,13 @@ def main():
                     continue
 
                 log.info(
-                    f"  {symbol}: >>> ENTRY {signal['direction']} "
-                    f"TP={signal['tp_pct']:.2f}% SL={signal['sl_pct']:.2f}% "
-                    f"R:R={signal.get('rr_ratio', '?')} ATR={signal.get('atr', '?')}"
+                    f"  {symbol}: >>> ENTRY {trade_signal['direction']} "
+                    f"TP={trade_signal['tp_pct']:.2f}% SL={trade_signal['sl_pct']:.2f}% "
+                    f"R:R={trade_signal.get('rr_ratio', '?')} ATR={trade_signal.get('atr', '?')}"
                 )
 
                 # Execute
-                opened = execute_entry(signal, state, client, cfg, dry_run, balance)
+                opened = execute_entry(trade_signal, state, client, cfg, dry_run, balance)
                 if opened:
                     log.info(f"  {symbol}: position opened")
                 else:
