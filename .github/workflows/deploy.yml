@@ -45,4 +45,4 @@ jobs:
 
       - name: Deploy to droplet
         run: |
-          ssh ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }} 'bash /opt/huni-alpha/deploy/deploy.sh'
+          ssh ${{ secrets.DROPLET_USER }}@${{ secrets.DROPLET_HOST }} "APP_VERSION=${GITHUB_SHA::7} bash /opt/huni-alpha/deploy/deploy.sh"

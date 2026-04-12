@@ -19,6 +19,7 @@ import sys
 import os
 import json
 import random
+import subprocess
 import importlib.util
 import numpy as np
 from datetime import datetime, timezone
@@ -416,7 +417,44 @@ class TestBacktesterReproducibility:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# TEST 9: Position sizing edge cases
+# TEST 9A: Trader version logging
+# ═══════════════════════════════════════════════════════════════════
+
+class TestTraderVersionLogging:
+    """Trader startup version logging should be deterministic and robust."""
+
+    def test_get_app_version_prefers_env(self, monkeypatch):
+        monkeypatch.setenv("APP_VERSION", "abc1234")
+        monkeypatch.setattr(trader.subprocess, "check_output", lambda *a, **k: "ignored")
+        assert trader.get_app_version() == "abc1234"
+
+    def test_get_app_version_falls_back_to_git(self, monkeypatch):
+        monkeypatch.delenv("APP_VERSION", raising=False)
+        monkeypatch.setattr(trader.subprocess, "check_output", lambda *a, **k: "18cad23\n")
+        assert trader.get_app_version() == "18cad23"
+
+    def test_get_app_version_returns_unknown_when_git_unavailable(self, monkeypatch):
+        monkeypatch.delenv("APP_VERSION", raising=False)
+
+        def _raise(*args, **kwargs):
+            raise subprocess.CalledProcessError(1, "git")
+
+        monkeypatch.setattr(trader.subprocess, "check_output", _raise)
+        assert trader.get_app_version() == "unknown"
+
+    def test_startup_banner_includes_version(self):
+        cfg = {
+            "risk_pct": 1.5,
+            "max_positions": 3,
+            "cooldown_hours": 24,
+        }
+        banner = trader._build_startup_banner(cfg, "hybrid_technical_wide_short_rsi28", "[LIVE] ", "18cad23")
+        assert any("Version:        18cad23" == line for line in banner)
+        assert any("Signal model:   hybrid_technical_wide_short_rsi28" == line for line in banner)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# TEST 10: Position sizing edge cases
 # ═══════════════════════════════════════════════════════════════════
 
 class TestPositionSizing:

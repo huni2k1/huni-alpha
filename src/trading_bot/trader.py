@@ -37,6 +37,7 @@ import atexit
 import logging
 import requests
 import signal
+import subprocess
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -76,6 +77,23 @@ except ImportError:
 _TRADER_CONFIG_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "config", "trader.json"
 )
+
+
+def get_app_version() -> str:
+    """Return deployed app version for logs/alerts."""
+    env_version = os.environ.get("APP_VERSION", "").strip()
+    if env_version:
+        return env_version
+
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    try:
+        return subprocess.check_output(
+            ["git", "-C", repo_root, "rev-parse", "--short", "HEAD"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip() or "unknown"
+    except Exception:
+        return "unknown"
 
 
 def _load_config() -> dict:
@@ -759,6 +777,21 @@ def _handle_exit_signal(signum, frame):
     raise SystemExit(0)
 
 
+def _build_startup_banner(cfg: dict, signal_model: str, mode_tag: str, version: str) -> list[str]:
+    """Build startup banner lines for consistent logging and tests."""
+    return [
+        "=" * 60,
+        f"Trader {mode_tag}starting (PID: {os.getpid()})",
+        f"Version:        {version}",
+        f"Signal model:   {signal_model}",
+        f"Risk per trade: {cfg['risk_pct']}%",
+        f"Max positions:  {cfg['max_positions']}",
+        f"Cooldown:       {cfg['cooldown_hours']}h",
+        f"Symbols:        {', '.join(SYMBOLS)}",
+        "=" * 60,
+    ]
+
+
 def main():
     # Default to LIVE mode (unless explicitly overridden)
     if "BINANCE_TESTNET" not in os.environ:
@@ -778,6 +811,7 @@ def main():
     signal_model = cfg["signal_model"]
     if signal_model not in VALID_SIGNAL_MODELS:
         signal_model = "technical"
+    app_version = get_app_version()
 
     validated_path = (
         CURATED_VALIDATED_SETUPS_PATH
@@ -786,14 +820,8 @@ def main():
     )
 
     mode_tag = "[DRY RUN] " if dry_run else "[LIVE] "
-    log.info("=" * 60)
-    log.info(f"Trader {mode_tag}starting (PID: {os.getpid()})")
-    log.info(f"Signal model:   {signal_model}")
-    log.info(f"Risk per trade: {cfg['risk_pct']}%")
-    log.info(f"Max positions:  {cfg['max_positions']}")
-    log.info(f"Cooldown:       {cfg['cooldown_hours']}h")
-    log.info(f"Symbols:        {', '.join(SYMBOLS)}")
-    log.info("=" * 60)
+    for line in _build_startup_banner(cfg, signal_model, mode_tag, app_version):
+        log.info(line)
 
     # Init Binance client
     try:
@@ -813,6 +841,7 @@ def main():
 
     send_telegram(
         f"🤖 <b>Trader Online {mode_tag}</b>\n"
+        f"Version: {app_version}\n"
         f"Model: {signal_model} | Risk: {cfg['risk_pct']}% | Max pos: {cfg['max_positions']}\n"
         f"Symbols: {', '.join(s.replace('USDT','') for s in SYMBOLS)}\n"
         f"Testnet: {client.testnet}"

@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=/opt/huni-alpha
+EnvironmentFile=-/opt/huni-alpha/deploy/runtime.env
 Environment=PYTHONPATH=/opt/huni-alpha/src
 Environment=BINANCE_TESTNET=false
 ExecStart=/opt/huni-alpha/.venv/bin/python -u -c 'from trading_bot import trader; trader.main()'
