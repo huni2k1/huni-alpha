@@ -434,3 +434,22 @@ class BinanceClient:
             return None
         fill_price = result.get("avgPrice") or result.get("avgExecutedPrice") or result.get("executedPrice") or 0
         return float(fill_price) or None
+
+    def get_user_trades(
+        self,
+        symbol: str,
+        start_ms: Optional[int] = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        """Recent fills for a symbol. Used to reconstruct exit price + realized PnL
+        when a position was closed externally (TP/SL hit between monitor cycles).
+
+        Returns raw Binance rows; caller parses `qty`, `price`, `realizedPnl`, `side`, `time`.
+        """
+        params: dict = {"symbol": symbol, "limit": limit}
+        if start_ms is not None:
+            params["startTime"] = int(start_ms)
+        data = self._request("GET", "/fapi/v1/userTrades", params, signed=True)
+        if not data:
+            return []
+        return data if isinstance(data, list) else []

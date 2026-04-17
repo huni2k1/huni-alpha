@@ -695,10 +695,105 @@ def execute_entry(
 # ─────────────────────────────────────────────────────────────────
 # STARTUP RECONCILIATION
 # ─────────────────────────────────────────────────────────────────
+def _record_reconciled_close(state: dict, client: BinanceClient, symbol: str) -> None:
+    """Reconstruct a closed trade from Binance fills and append to trade_log.
+
+    Called when reconcile finds a position in local state that Binance no longer has —
+    the position was closed (TP/SL hit, manual, or liquidation) between monitor cycles.
+    Without this, trade_log stays empty and we lose all PnL visibility on silent closes.
+    """
+    pos = state["positions"].get(symbol)
+    if not pos:
+        return
+
+    direction = pos["direction"]
+    entry_price = float(pos["entry_price"])
+    quantity = float(pos["quantity"])
+    position_size = float(pos.get("position_size_usdt") or (entry_price * quantity))
+
+    try:
+        entry_dt = datetime.fromisoformat(pos["entry_time"])
+        start_ms = int(entry_dt.timestamp() * 1000)
+    except (KeyError, ValueError):
+        start_ms = None
+
+    fills = client.get_user_trades(symbol, start_ms=start_ms)
+    close_side = "SELL" if direction == "LONG" else "BUY"
+    # Only fills on the closing side contribute to exit price / realized PnL for this trade.
+    closing_fills = [f for f in fills if str(f.get("side", "")).upper() == close_side]
+
+    exit_price = None
+    pnl_usd = None
+    exit_time_ms = None
+    if closing_fills:
+        total_qty = sum(float(f.get("qty", 0) or 0) for f in closing_fills)
+        total_notional = sum(float(f.get("qty", 0) or 0) * float(f.get("price", 0) or 0) for f in closing_fills)
+        total_realized = sum(float(f.get("realizedPnl", 0) or 0) for f in closing_fills)
+        if total_qty > 0:
+            exit_price = total_notional / total_qty
+            pnl_usd = total_realized
+            exit_time_ms = max(int(f.get("time", 0) or 0) for f in closing_fills)
+
+    # Determine exit reason from TP/SL order status
+    exit_reason = "UNKNOWN"
+    tp_id = pos.get("tp_order_id")
+    sl_id = pos.get("sl_order_id")
+    if tp_id:
+        if client.get_order_status(symbol, tp_id) == "FILLED":
+            exit_reason = "TP"
+    if exit_reason == "UNKNOWN" and sl_id:
+        if client.get_order_status(symbol, sl_id) == "FILLED":
+            exit_reason = "SL"
+
+    if exit_price is not None and pnl_usd is not None:
+        pnl_pct = (pnl_usd / position_size * 100) if position_size > 0 else 0.0
+        exit_time_iso = (
+            datetime.fromtimestamp(exit_time_ms / 1000, tz=timezone.utc).isoformat()
+            if exit_time_ms
+            else datetime.now(timezone.utc).isoformat()
+        )
+        trade_record = {
+            "symbol": symbol,
+            "direction": direction,
+            "entry_price": entry_price,
+            "exit_price": round(exit_price, 8),
+            "exit_reason": exit_reason,
+            "entry_time": pos["entry_time"],
+            "exit_time": exit_time_iso,
+            "pnl_pct": round(pnl_pct, 3),
+            "pnl_usd": round(pnl_usd, 2),
+            "score": pos.get("score"),
+            "strategy": pos.get("strategy"),
+            "reconciled": True,
+        }
+        state["trade_log"].append(trade_record)
+
+        emoji = "✅" if pnl_usd > 0 else "❌"
+        dir_emoji = "🟢" if direction == "LONG" else "🔴"
+        log.info(
+            f"  {emoji} RECONCILED {symbol} {exit_reason}: {pnl_pct:+.2f}% (${pnl_usd:+.2f})"
+        )
+        send_telegram(
+            f"{emoji} <b>{exit_reason}</b> {dir_emoji} {symbol.replace('USDT','')} "
+            f"{direction} <i>(reconciled)</i>\n"
+            f"Entry: <code>${entry_price:,.4f}</code> → Exit: <code>${exit_price:,.4f}</code>\n"
+            f"PnL: <b>{pnl_pct:+.2f}%</b> (${pnl_usd:+.2f})"
+        )
+    else:
+        log.warning(
+            f"  ⚠️ {symbol}: closed on Binance but no fill history recoverable — "
+            f"no PnL recorded (fills_found={len(closing_fills)})"
+        )
+        send_telegram(
+            f"⚠️ <b>Silent close</b> {symbol.replace('USDT','')} {direction}\n"
+            f"Position gone on Binance but fill history unrecoverable — verify manually."
+        )
+
+
 def reconcile_with_binance(state: dict, client: BinanceClient):
     """
-    On startup: compare state positions vs Binance actual positions.
-    Remove stale local positions and import unknown live Binance positions.
+    On startup and periodically: compare state positions vs Binance actual positions.
+    Record PnL for stale local positions, remove them, and import unknown live positions.
     """
     live_position_rows = client.get_open_positions()
     live_positions = {p["symbol"] for p in live_position_rows}
@@ -710,9 +805,15 @@ def reconcile_with_binance(state: dict, client: BinanceClient):
     if stale:
         log.warning(
             f"State has positions Binance doesn't: {stale}. "
-            f"These may have been closed externally. Removing from state."
+            f"These may have been closed externally. Recording PnL and removing from state."
         )
         for sym in stale:
+            _record_reconciled_close(state, client, sym)
+            # Clean up any orphan TP/SL algo orders that didn't fill.
+            try:
+                client.cancel_all_orders(sym)
+            except Exception as exc:
+                log.warning(f"  {sym}: cancel_all_orders after reconcile failed: {exc}")
             del state["positions"][sym]
         save_state(state)
 
