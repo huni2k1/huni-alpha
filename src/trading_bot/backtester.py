@@ -574,6 +574,17 @@ def _annualize_return(total_return_pct: float, months_tested: int) -> float:
     return float(annualized_return)
 
 
+def _format_period_label(
+    months: int,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+) -> str:
+    """Return the human-readable period used for this backtest."""
+    if start_date and end_date:
+        return f"{start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+    return f"{months} months"
+
+
 def _calculate_risk_metrics(monthly_sorted: list, total_return_pct: float,
                             max_drawdown_pct: float, months_tested: int) -> dict:
     monthly_returns = [m["monthly_return_pct"] for m in monthly_sorted]
@@ -795,7 +806,8 @@ def run_backtest(
 
     # ── STEP 1: Pre-fetch all candles ──────────────────────────────
     step1_start = time.time()
-    log.info(f"STEP 1: Fetching candles for {len(symbols)} symbols ({months}mo + warmup)...")
+    period_label = _format_period_label(months, start_date, end_date)
+    log.info(f"STEP 1: Fetching candles for {len(symbols)} symbols ({period_label} + warmup)...")
     all_candles = {}
     warmup_hours = warmup_days * 24
     window_size = 1000
@@ -1191,10 +1203,17 @@ def run_backtest(
             # Strategy-specific threshold filtering.
             # Statistical mode uses validated setup membership as the primary gate.
             strategy = signal.get("strategy", "trend_pullback")
-            if signal_model in {"statistical", "statistical_curated", "statistical_wide_short_rsi28"}:
+            _statistical_models = {"statistical", "statistical_curated", "statistical_wide_short_rsi28"}
+            if signal_model in _statistical_models:
                 required_threshold = None
-            elif signal_model == "hybrid_technical_wide_short_rsi28":
-                required_threshold = None if signal.get("strategy") == "statistical_wide_short_rsi28" else (
+            elif signal_model in {"hybrid_technical_wide_short_rsi28", "hybrid_technical_statistical"}:
+                # Statistical leg bypasses score threshold; technical leg still requires it
+                is_stat_leg = (
+                    signal.get("strategy") == "statistical_wide_short_rsi28"
+                    or signal.get("signal_model") in _statistical_models
+                    or signal.get("hybrid_details", {}).get("selected", {}).get("source") == "statistical"
+                )
+                required_threshold = None if is_stat_leg else (
                     _breakout_thresh if "breakout" in strategy else _trend_thresh
                 )
             elif "breakout" in strategy:
@@ -1208,8 +1227,12 @@ def run_backtest(
             # Determine tier
             if signal_model in {"statistical", "statistical_curated", "statistical_wide_short_rsi28"}:
                 tier = "ENTRY"
-            elif signal_model == "hybrid_technical_wide_short_rsi28":
-                tier = "ENTRY" if signal.get("strategy") == "statistical_wide_short_rsi28" else (
+            elif signal_model in {"hybrid_technical_wide_short_rsi28", "hybrid_technical_statistical"}:
+                is_stat_leg = (
+                    signal.get("strategy") == "statistical_wide_short_rsi28"
+                    or signal.get("hybrid_details", {}).get("selected", {}).get("source") == "statistical"
+                )
+                tier = "ENTRY" if is_stat_leg else (
                     "HIGH_CONF" if score >= threshold_high else "ENTRY"
                 )
             elif score >= threshold_high:
@@ -1271,7 +1294,7 @@ def run_backtest(
                 # Dynamic risk based on Kelly Criterion (technical mode only).
                 # Statistical mode uses flat risk_pct — setup validation is the quality gate.
                 effective_risk_pct = risk_pct
-                is_statistical = signal_model in {"statistical", "statistical_curated", "statistical_wide_short_rsi28"}
+                is_statistical = signal_model in {"statistical", "statistical_curated", "statistical_wide_short_rsi28", "hybrid_technical_statistical"}
                 if kelly_sizing and not is_statistical:
                     kelly_multiplier = calculate_kelly_risk_multiplier(score)
                     effective_risk_pct = risk_pct * kelly_multiplier
@@ -1519,6 +1542,9 @@ def run_backtest(
         "config": {
             "symbols": symbols,
             "months": months,
+            "period_label": period_label,
+            "start_date": start_date.strftime("%Y-%m-%d") if start_date else None,
+            "end_date": end_date.strftime("%Y-%m-%d") if end_date else None,
             "starting_account": account,
             "risk_pct": risk_pct,
             "fee_pct": fee_pct,
@@ -1639,9 +1665,11 @@ def print_summary(results: dict):
             return "INF"
         return f"{value:.2f}"
 
+    period_label = c.get("period_label") or f"{c['months']} months"
+
     print("\n" + "═" * 62)
     print(f"  BACKTEST RESULTS — Multi-Regime Scanner (ATR TP/SL)")
-    print(f"  {c['months']} months | {', '.join(sym.replace('USDT','') for sym in c['symbols'])}")
+    print(f"  {period_label} | {', '.join(sym.replace('USDT','') for sym in c['symbols'])}")
     print(f"  TP/SL: ATR-based, strategy-dependent R:R")
     print(f"  Risk: {c['risk_pct']}%/trade | Trend: {c.get('trend_threshold', c['threshold_entry'])}+ | Breakout: {c.get('breakout_threshold', c['threshold_entry'])}+")
     print(f"  Fees: {c['fee_pct']}% RT | Slippage: {c.get('slippage_pct', 0)}% | Trailing: {'ON' if c['trailing_stop'] else 'OFF'}")
@@ -1821,7 +1849,7 @@ if __name__ == "__main__":
     parser.add_argument("--fixed-size", type=float, default=0.0, help="Fixed $ per trade (0=use risk%% sizing)")
     parser.add_argument("--partial-tp", action="store_true", default=False, help="Close 50%% at 1R, move SL to breakeven (default: disabled)")
     parser.add_argument("--no-kelly-sizing", action="store_false", dest="kelly_sizing", default=True, help="Disable Kelly sizing, use flat risk%% instead")
-    parser.add_argument("--signal-model", choices=["technical", "statistical", "statistical_curated", "statistical_wide_short_rsi28", "hybrid_technical_wide_short_rsi28"], default="technical", help="Signal engine to use inside generate_signal()")
+    parser.add_argument("--signal-model", choices=["technical", "statistical", "statistical_curated", "statistical_wide_short_rsi28", "hybrid_technical_wide_short_rsi28", "hybrid_technical_statistical"], default="technical", help="Signal engine to use inside generate_signal()")
     parser.add_argument("--validated-setups", type=str, default=None, help="Path to validated_setups.json for statistical mode")
     parser.add_argument("--allowed-weekdays", nargs="+", default=None, metavar="DAY",
                         help="Only enter trades on these days (e.g. Thu Fri Sat Sun). Default: all days.")

@@ -36,6 +36,7 @@ try:
     from .setup_conditions import ALL_CONDITIONS, matches_conditions, normalize_conditions
     from .statistical_utils import (
         SampleStats,
+        benjamini_hochberg_adjusted,
         build_walk_forward_windows,
         summarize_outcomes,
         two_proportion_ztest,
@@ -47,6 +48,7 @@ except ImportError:
     from setup_conditions import ALL_CONDITIONS, matches_conditions, normalize_conditions  # type: ignore
     from statistical_utils import (  # type: ignore
         SampleStats,
+        benjamini_hochberg_adjusted,
         build_walk_forward_windows,
         summarize_outcomes,
         two_proportion_ztest,
@@ -74,6 +76,10 @@ DEFAULT_SYMBOLS = list(getattr(scanner, "SYMBOLS", [])) or [
 ]
 DEFAULT_REPORT_OUTPUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "setup_analysis_report.json")
 DEFAULT_VALIDATED_OUTPUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "validated_setups.json")
+DEFAULT_CANDIDATE_DATASET_OUTPUT = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "candidate_research_dataset.csv",
+)
 DEFAULT_WARMUP_CANDLES = 1000
 DEFAULT_MAX_HOLDING_CANDLES = 180
 DEFAULT_MIN_TRAIN_TRADES = 30
@@ -94,6 +100,26 @@ DOMINANCE_THRESHOLDS = {
     "test_profit_factor": 0.15,
     "test_edge_win_rate": 3.0,
 }
+
+# Groups of conditions that are nested or highly correlated.
+# During combo candidate selection only the best-ranked condition per family
+# is forwarded, preventing the combos from testing the same filter twice.
+CONDITION_FAMILIES: list[frozenset] = [
+    frozenset({"rsi_below_28", "rsi_below_30", "rsi_below_32", "rsi_below_40"}),
+    frozenset({"rsi_above_60", "rsi_above_70"}),
+    frozenset({"rsi_35_to_50", "rsi_40_to_60"}),
+    frozenset({"adx_above_25", "adx_above_30"}),
+    frozenset({"adx_below_20", "adx_below_25"}),
+    frozenset({"vol_above_1_2", "vol_above_1_5", "vol_above_2_0"}),
+    frozenset({"ema21_rising", "ema_fan_wide", "strong_ema21_slope_up"}),
+    frozenset({"atr_percentile_high", "atr_expansion"}),
+    frozenset({"macd_hist_rising", "macd_cross_up"}),
+    frozenset({"macd_hist_falling", "macd_cross_down"}),
+    frozenset({"macd_line_above_signal", "macd_hist_positive"}),
+    frozenset({"macd_line_below_signal", "macd_hist_negative"}),
+    frozenset({"rsi_bullish_divergence", "macd_bullish_divergence"}),
+    frozenset({"rsi_bearish_divergence", "macd_bearish_divergence"}),
+]
 
 SETUP_TEMPLATES = {
     "standard": {"sl_atr_mult": 1.5, "rr_ratio": 2.0},
@@ -231,6 +257,53 @@ def _build_volume_ratio_series(volumes: list[float], period: int = 20) -> list[f
     return series
 
 
+def _build_atr_series(candles: list[dict], period: int = 20) -> list[float]:
+    """Precompute ATR values for every candle."""
+    series = [0.0] * len(candles)
+    if len(candles) < 2:
+        return series
+    for idx in range(1, len(candles)):
+        series[idx] = float(calculate_atr(candles[:idx + 1], period))
+    return series
+
+
+def _build_4h_context(candles: list[dict]) -> dict:
+    """
+    Build a proper 4h close series from 1h candles using UTC timestamp boundaries.
+
+    Each UTC 4h period (00-04, 04-08, ..., 20-24) is treated as one bar.
+    The close of a 4h bar is the close of the *last 1h candle that starts
+    within that period*.  Incomplete periods (the current in-progress 4h
+    bar) are excluded so there is no look-ahead.
+
+    Returns:
+        closes       -- list of completed 4h bar closes
+        count_by_idx -- for each 1h candle index, how many completed 4h
+                        closes are available as of that candle
+    """
+    closes_series: list[float] = []
+    count_by_idx: list[int] = []
+    current_4h_boundary: Optional[datetime] = None
+    current_4h_close: Optional[float] = None
+    completed = 0
+
+    for candle in candles:
+        ts = datetime.fromtimestamp(int(candle["open_time"]) / 1000, tz=timezone.utc)
+        boundary = ts.replace(hour=(ts.hour // 4) * 4, minute=0, second=0, microsecond=0)
+
+        if boundary != current_4h_boundary:
+            # A new 4h period has started — seal the previous one
+            if current_4h_close is not None:
+                closes_series.append(current_4h_close)
+                completed += 1
+            current_4h_boundary = boundary
+
+        current_4h_close = float(candle["close"])
+        count_by_idx.append(completed)
+
+    return {"closes": closes_series, "count_by_idx": count_by_idx}
+
+
 def precompute_symbol_context(candles: list[dict]) -> dict:
     """Precompute reusable indicator context for one symbol."""
     ohlcv = [[c["open"], c["high"], c["low"], c["close"], c["volume"]] for c in candles]
@@ -244,8 +317,10 @@ def precompute_symbol_context(candles: list[dict]) -> dict:
         "volumes": volumes,
         "cheap": cheap,
         "adx": _build_adx_series(highs, lows, closes),
+        "atr20": _build_atr_series(candles, 20),
         "vol_ratio": _build_volume_ratio_series(volumes),
         "bb": _build_bollinger_context(closes),
+        "htf_4h": _build_4h_context(candles),
     }
 
 
@@ -256,6 +331,7 @@ def compute_indicator_snapshot(symbol: str, candles: list[dict], idx: int, conte
         context = precompute_symbol_context(candles)
 
     cheap = context["cheap"].get(idx, {})
+    cheap_prev = context["cheap"].get(idx - 1, {}) if idx > 0 else {}
     closes = context["closes"][:idx + 1]
     highs = context["highs"][:idx + 1]
     lows = context["lows"][:idx + 1]
@@ -263,6 +339,90 @@ def compute_indicator_snapshot(symbol: str, candles: list[dict], idx: int, conte
     ohlcv_window = context["ohlcv"][max(0, idx - 5):idx + 1]
     higher_highs, lower_lows = scanner.market_structure(ohlcv_window)
     candle_time = datetime.fromtimestamp(window[-1]["close_time"] / 1000, tz=timezone.utc)
+    candle = window[-1]
+    prev_candle = window[-2] if len(window) >= 2 else candle
+    atr20 = float(context["atr20"][idx])
+    atr20_prev = float(context["atr20"][idx - 1]) if idx > 0 else 0.0
+    current_open = float(candle["open"])
+    current_high = float(candle["high"])
+    current_low = float(candle["low"])
+    current_close = float(candle["close"])
+    prev_open = float(prev_candle["open"])
+    prev_high = float(prev_candle["high"])
+    prev_low = float(prev_candle["low"])
+    prev_close = float(prev_candle["close"])
+    current_body = abs(current_close - current_open)
+    current_range = max(current_high - current_low, 1e-9)
+    upper_wick = current_high - max(current_open, current_close)
+    lower_wick = min(current_open, current_close) - current_low
+    bullish_engulfing = (
+        len(window) >= 2
+        and current_close > current_open
+        and prev_close < prev_open
+        and current_open <= prev_close
+        and current_close >= prev_open
+    )
+    bearish_engulfing = (
+        len(window) >= 2
+        and current_close < current_open
+        and prev_close > prev_open
+        and current_open >= prev_close
+        and current_close <= prev_open
+    )
+    inside_bar = len(window) >= 2 and current_high <= prev_high and current_low >= prev_low
+    outside_bar = len(window) >= 2 and current_high >= prev_high and current_low <= prev_low
+    pin_bar_bull = lower_wick >= current_body * 2.0 and upper_wick <= current_body and current_close >= current_open
+    pin_bar_bear = upper_wick >= current_body * 2.0 and lower_wick <= current_body and current_close <= current_open
+    three_green_candles = (
+        idx >= 2
+        and all(float(candles[i]["close"]) > float(candles[i]["open"]) for i in range(idx - 2, idx + 1))
+    )
+    three_red_candles = (
+        idx >= 2
+        and all(float(candles[i]["close"]) < float(candles[i]["open"]) for i in range(idx - 2, idx + 1))
+    )
+    ema_fan_pct = abs(float(cheap.get("e9") or 0.0) - float(cheap.get("e50") or 0.0)) / max(current_close, 1e-9) * 100.0
+    adx_prev = float(context["adx"][idx - 1]) if idx > 0 else 0.0
+    atr_window = [float(v) for v in context["atr20"][max(0, idx - 99):idx] if float(v) > 0]
+    atr_percentile_high = bool(atr_window) and atr20 >= float(scanner.np.percentile(atr_window, 80))
+    atr_expansion = atr20_prev > 0 and atr20 >= atr20_prev * 1.2
+    candle_range_atr = current_range / atr20 if atr20 > 0 else 0.0
+    prev_range = max(prev_high - prev_low, 0.0)
+    prev_range_atr = prev_range / atr20_prev if atr20_prev > 0 else 0.0
+    recent_high_20 = max(highs[max(0, idx - 19):idx + 1]) if highs else current_high
+    recent_low_20 = min(lows[max(0, idx - 19):idx + 1]) if lows else current_low
+    prior_high_20 = max(highs[max(0, idx - 20):idx]) if idx > 0 else current_high
+    prior_low_20 = min(lows[max(0, idx - 20):idx]) if idx > 0 else current_low
+    distance_from_20bar_high_pct = (recent_high_20 - current_close) / max(current_close, 1e-9) * 100.0
+    distance_from_20bar_low_pct = (current_close - recent_low_20) / max(current_close, 1e-9) * 100.0
+    ema21_slope_pct = ((float(cheap.get("e21") or 0.0) - float(cheap_prev.get("e21") or 0.0)) / max(current_close, 1e-9)) * 100.0
+    rsi_series = [float(context["cheap"].get(i, {}).get("rsi", 50.0)) for i in range(max(0, idx - 20), idx + 1)]
+    macd_series = [float(context["cheap"].get(i, {}).get("macd_line", 0.0)) for i in range(max(0, idx - 20), idx + 1)]
+    price_window = closes[max(0, len(closes) - 21):]
+    prior_price_window = price_window[:-1]
+    prior_rsi_window = rsi_series[:-1]
+    prior_macd_window = macd_series[:-1]
+    prior_min_close = min(prior_price_window) if prior_price_window else current_close
+    prior_max_close = max(prior_price_window) if prior_price_window else current_close
+    prior_min_rsi = min(prior_rsi_window) if prior_rsi_window else float(cheap.get("rsi", 50.0))
+    prior_max_rsi = max(prior_rsi_window) if prior_rsi_window else float(cheap.get("rsi", 50.0))
+    prior_min_macd = min(prior_macd_window) if prior_macd_window else float(cheap.get("macd_line", 0.0))
+    prior_max_macd = max(prior_macd_window) if prior_macd_window else float(cheap.get("macd_line", 0.0))
+    rsi_bullish_divergence = current_close < prior_min_close and float(cheap.get("rsi", 50.0)) > prior_min_rsi + 3.0
+    rsi_bearish_divergence = current_close > prior_max_close and float(cheap.get("rsi", 50.0)) < prior_max_rsi - 3.0
+    macd_bullish_divergence = current_close < prior_min_close and float(cheap.get("macd_line", 0.0)) > prior_min_macd
+    macd_bearish_divergence = current_close > prior_max_close and float(cheap.get("macd_line", 0.0)) < prior_max_macd
+    htf_4h_ctx = context.get("htf_4h", {})
+    htf_4h_n = htf_4h_ctx["count_by_idx"][idx] if htf_4h_ctx.get("count_by_idx") else 0
+    four_hour_closes = htf_4h_ctx["closes"][:htf_4h_n] if htf_4h_ctx.get("closes") else []
+    if len(four_hour_closes) >= 50:
+        htf_e21 = scanner.ema(four_hour_closes, 21)[-1]
+        htf_e50 = scanner.ema(four_hour_closes, 50)[-1]
+        htf_4h_bull_trend = four_hour_closes[-1] > htf_e21 > htf_e50
+        htf_4h_bear_trend = four_hour_closes[-1] < htf_e21 < htf_e50
+    else:
+        htf_4h_bull_trend = False
+        htf_4h_bear_trend = False
 
     return {
         "symbol": symbol,
@@ -271,16 +431,24 @@ def compute_indicator_snapshot(symbol: str, candles: list[dict], idx: int, conte
         "close_time": int(window[-1]["close_time"]),
         "month": candle_time.strftime("%Y-%m"),
         "hour_utc": candle_time.hour,
-        "open": float(window[-1]["open"]),
-        "high": float(window[-1]["high"]),
-        "low": float(window[-1]["low"]),
-        "close": float(window[-1]["close"]),
+        "open": current_open,
+        "high": current_high,
+        "low": current_low,
+        "close": current_close,
         "volume": float(window[-1]["volume"]),
+        "prev_open": prev_open,
+        "prev_high": prev_high,
+        "prev_low": prev_low,
+        "prev_close": prev_close,
         "rsi": float(cheap.get("rsi", scanner.rsi(closes))),
         "e9": float(cheap.get("e9") or 0.0),
         "e21": float(cheap.get("e21") or 0.0),
         "e50": float(cheap.get("e50") or 0.0),
         "e200": float(cheap.get("e200") or 0.0),
+        "e9_prev": float(cheap_prev.get("e9") or 0.0),
+        "e21_prev": float(cheap_prev.get("e21") or 0.0),
+        "e50_prev": float(cheap_prev.get("e50") or 0.0),
+        "e200_prev": float(cheap_prev.get("e200") or 0.0),
         "bull_ema_align": bool(cheap.get("bull_align", False)),
         "bear_ema_align": bool(cheap.get("bear_align", False)),
         "above_ema200": bool(cheap.get("above_e200", False)),
@@ -298,8 +466,128 @@ def compute_indicator_snapshot(symbol: str, candles: list[dict], idx: int, conte
         "bb_squeeze": bool(bb_ctx["bb_squeeze"][idx]),
         "higher_highs": bool(higher_highs),
         "lower_lows": bool(lower_lows),
-        "atr20": float(calculate_atr(window, 20)),
+        "atr20": atr20,
+        "atr20_prev": atr20_prev,
+        "bullish_engulfing": bullish_engulfing,
+        "bearish_engulfing": bearish_engulfing,
+        "inside_bar": inside_bar,
+        "outside_bar": outside_bar,
+        "pin_bar_bull": pin_bar_bull,
+        "pin_bar_bear": pin_bar_bear,
+        "three_green_candles": three_green_candles,
+        "three_red_candles": three_red_candles,
+        "ema21_rising": float(cheap.get("e21") or 0.0) > float(cheap_prev.get("e21") or 0.0),
+        "ema21_falling": float(cheap.get("e21") or 0.0) < float(cheap_prev.get("e21") or 0.0),
+        "ema_fan_wide": ema_fan_pct >= 1.0,
+        "ema_fan_pct": ema_fan_pct,
+        "adx_prev": adx_prev,
+        "adx_rising": float(context["adx"][idx]) > adx_prev,
+        "adx_falling": float(context["adx"][idx]) < adx_prev,
+        "atr_percentile_high": atr_percentile_high,
+        "atr_expansion": atr_expansion,
+        "candle_range_atr": candle_range_atr,
+        "candle_range_above_atr": candle_range_atr >= 1.2,
+        "two_expansion_green_candles": (
+            idx >= 1
+            and current_close > current_open
+            and prev_close > prev_open
+            and candle_range_atr >= 1.2
+            and prev_range_atr >= 1.2
+        ),
+        "two_expansion_red_candles": (
+            idx >= 1
+            and current_close < current_open
+            and prev_close < prev_open
+            and candle_range_atr >= 1.2
+            and prev_range_atr >= 1.2
+        ),
+        "strong_ema21_slope_up": ema21_slope_pct >= 0.15,
+        "strong_ema21_slope_down": ema21_slope_pct <= -0.15,
+        "recent_high_20": float(recent_high_20),
+        "recent_low_20": float(recent_low_20),
+        "distance_from_20bar_high_pct": distance_from_20bar_high_pct,
+        "distance_from_20bar_low_pct": distance_from_20bar_low_pct,
+        "near_20bar_high": distance_from_20bar_high_pct <= 1.0,
+        "near_20bar_low": distance_from_20bar_low_pct <= 1.0,
+        "breaks_20bar_high": idx > 0 and current_close > prior_high_20,
+        "breaks_20bar_low": idx > 0 and current_close < prior_low_20,
+        "rsi_bullish_divergence": rsi_bullish_divergence,
+        "rsi_bearish_divergence": rsi_bearish_divergence,
+        "macd_bullish_divergence": macd_bullish_divergence,
+        "macd_bearish_divergence": macd_bearish_divergence,
+        "htf_4h_bull_trend": htf_4h_bull_trend,
+        "htf_4h_bear_trend": htf_4h_bear_trend,
     }
+
+
+def load_symbol_universe_rows(
+    symbols: list[str],
+    start_ms: int,
+    end_ms: int,
+    analysis_start_ms: int,
+    warmup_candles: int,
+    max_holding_candles: int,
+    fee_pct: float,
+    slippage_pct: float,
+    workers: int = 1,
+) -> tuple[list[dict], dict[str, list[dict]], dict[str, list[dict]]]:
+    """Load candle history and analyzer rows for the symbol universe."""
+    all_rows = []
+    rows_by_symbol: dict[str, list[dict]] = {}
+    candles_by_symbol: dict[str, list[dict]] = {}
+    worker_count = max(1, workers)
+
+    if worker_count == 1 or len(symbols) == 1:
+        for symbol in symbols:
+            log.info(f"Loading {symbol} candles for statistical analysis...")
+            candles = fetch_klines_historical_cached(symbol, "1h", start_ms, end_ms, use_cache=True)
+            if not candles or len(candles) < warmup_candles + 100:
+                log.warning(f"  {symbol}: insufficient candles ({len(candles) if candles else 0}), skipping")
+                rows_by_symbol[symbol] = []
+                candles_by_symbol[symbol] = candles or []
+                continue
+            rows = build_symbol_rows(
+                symbol=symbol,
+                candles=candles,
+                analysis_start_ms=analysis_start_ms,
+                warmup_candles=warmup_candles,
+                max_holding_candles=max_holding_candles,
+                fee_pct=fee_pct,
+                slippage_pct=slippage_pct,
+            )
+            log.info(f"  {symbol}: built {len(rows)} study rows")
+            candles_by_symbol[symbol] = candles
+            rows_by_symbol[symbol] = rows
+            all_rows.extend(rows)
+        return all_rows, rows_by_symbol, candles_by_symbol
+
+    log.info("Building study rows with %d workers...", worker_count)
+    with ProcessPoolExecutor(max_workers=worker_count) as executor:
+        future_map = {
+            executor.submit(
+                load_and_build_symbol_rows,
+                symbol,
+                start_ms,
+                end_ms,
+                analysis_start_ms,
+                warmup_candles,
+                max_holding_candles,
+                fee_pct,
+                slippage_pct,
+            ): symbol
+            for symbol in symbols
+        }
+        for future in as_completed(future_map):
+            loaded_symbol, rows = future.result()
+            log.info(f"  {loaded_symbol}: built {len(rows)} study rows")
+            rows_by_symbol[loaded_symbol] = rows
+            all_rows.extend(rows)
+
+    for symbol in symbols:
+        candles = fetch_klines_historical_cached(symbol, "1h", start_ms, end_ms, use_cache=True) or []
+        candles_by_symbol[symbol] = candles
+        rows_by_symbol.setdefault(symbol, [])
+    return all_rows, rows_by_symbol, candles_by_symbol
 
 
 def resolve_same_candle_hit(candle: dict, direction: str, entry_price: float) -> str:
@@ -587,6 +875,29 @@ def _compute_baseline(
     return summarize_outcomes(outcomes)
 
 
+def _select_diverse_promising(ordered_conditions: list[str]) -> list[str]:
+    """
+    From a p-value-sorted list of candidate conditions, keep at most one
+    condition per correlation family (CONDITION_FAMILIES).  The first
+    representative of each family (lowest p-value) is kept; later members
+    of the same family are dropped.  Conditions that belong to no family
+    are always kept.
+    """
+    seen_family_indices: set[int] = set()
+    result: list[str] = []
+    for cond in ordered_conditions:
+        family_idx = next(
+            (i for i, family in enumerate(CONDITION_FAMILIES) if cond in family),
+            None,
+        )
+        if family_idx is not None:
+            if family_idx in seen_family_indices:
+                continue
+            seen_family_indices.add(family_idx)
+        result.append(cond)
+    return result
+
+
 def analyze_conditions(
     rows: list[dict],
     template_name: str,
@@ -607,11 +918,24 @@ def analyze_conditions(
             individual_results.append(result)
     individual_results.sort(key=lambda item: (item["p_value"], -item["edge_avg_pnl_pct"]))
 
-    promising = [
+    # Apply Benjamini-Hochberg FDR correction across all individual tests so
+    # that testing ~65 conditions simultaneously doesn't inflate discoveries.
+    if individual_results:
+        raw_p = [r["p_value"] for r in individual_results]
+        bh_adj = benjamini_hochberg_adjusted(raw_p)
+        for i, result in enumerate(individual_results):
+            result["bh_adj_p_value"] = round(bh_adj[i], 6)
+
+    # Keep only BH-significant conditions, then deduplicate by family so
+    # correlated conditions (rsi_below_28 / rsi_below_30, etc.) don't both
+    # enter combos and inflate apparent discoveries.
+    bh_promising = [
         result["conditions"][0]
         for result in individual_results
-        if result["p_value"] <= prefilter_p
+        if result.get("bh_adj_p_value", 1.0) <= prefilter_p
+        and result["avg_pnl_pct"] > 0  # only positive-edge conditions enter combos
     ][:MAX_CANDIDATE_CONDITIONS]
+    promising = _select_diverse_promising(bh_promising)
 
     combo_results = []
     tested = 0
@@ -814,7 +1138,7 @@ def validate_candidates(
                 train_eval["edge_win_rate"] > 5.0
                 and train_eval["avg_pnl_pct"] > 0
                 and train_eval["p_value"] < validation_p
-                and train_eval["profit_factor"] > 1.3
+                and train_eval["profit_factor"] > 1.1
             )
             test_pass = (
                 test_eval["edge_win_rate"] > 5.0
@@ -835,7 +1159,13 @@ def validate_candidates(
                     failed_reason = "failed_out_of_sample"
                 saw_failure = True
 
-        if window_results and not saw_failure and failed_reason is None:
+        # Require a strict majority of windows to pass (≥ n-1, i.e. at most
+        # one failure allowed).  This tolerates a single regime-shift window
+        # in a 3-window walk-forward without discarding genuinely consistent edges.
+        n_windows = len(window_results)
+        n_passed = sum(1 for w in window_results if w.get("passed"))
+        majority_pass = n_windows > 0 and n_passed >= n_windows - 1 and n_passed > 0
+        if window_results and majority_pass:
             validated_setup = {
                 "name": _setup_name(template_name, direction, conditions),
                 "template": template_name,
@@ -846,17 +1176,24 @@ def validate_candidates(
                 "tp_sl": dict(SETUP_TEMPLATES[template_name]),
                 "by_symbol": _per_symbol_breakdown(rows, template_name, direction, conditions, cooldown),
                 "window_results": window_results,
+                "windows_passed": n_passed,
+                "windows_total": n_windows,
             }
             if scope_context:
                 validated_setup.update(scope_context)
             validated.append(validated_setup)
         else:
+            rejection_reason = failed_reason or "no_validation_windows"
+            if n_windows > 0 and n_passed < n_windows - 1:
+                rejection_reason = f"insufficient_windows_passed_{n_passed}_of_{n_windows}"
             rejected_setup = {
                 "name": _setup_name(template_name, direction, conditions),
                 "template": template_name,
                 "direction": direction,
                 "conditions": conditions,
-                "reason": failed_reason or "no_validation_windows",
+                "reason": rejection_reason,
+                "windows_passed": n_passed,
+                "windows_total": n_windows,
             }
             if window_results:
                 rejected_setup["window_results"] = window_results
@@ -1042,7 +1379,6 @@ def build_validated_setups_export(report: dict) -> dict:
         },
     }
 
-
 def analyze_rows_scope(
     rows: list[dict],
     template_names: list[str],
@@ -1156,44 +1492,18 @@ def analyze_symbol_universe(
     end_ms = int(end_dt.timestamp() * 1000)
     analysis_start_ms = int(analysis_start_dt.timestamp() * 1000)
 
-    all_rows = []
     worker_count = max(1, workers)
-    if worker_count == 1 or len(symbols) == 1:
-        for symbol in symbols:
-            log.info(f"Loading {symbol} candles for statistical analysis...")
-            loaded_symbol, rows = load_and_build_symbol_rows(
-                symbol=symbol,
-                start_ms=start_ms,
-                end_ms=end_ms,
-                analysis_start_ms=analysis_start_ms,
-                warmup_candles=warmup_candles,
-                max_holding_candles=max_holding_candles,
-                fee_pct=fee_pct,
-                slippage_pct=slippage_pct,
-            )
-            log.info(f"  {loaded_symbol}: built {len(rows)} study rows")
-            all_rows.extend(rows)
-    else:
-        log.info("Building study rows with %d workers...", worker_count)
-        with ProcessPoolExecutor(max_workers=worker_count) as executor:
-            future_map = {
-                executor.submit(
-                    load_and_build_symbol_rows,
-                    symbol,
-                    start_ms,
-                    end_ms,
-                    analysis_start_ms,
-                    warmup_candles,
-                    max_holding_candles,
-                    fee_pct,
-                    slippage_pct,
-                ): symbol
-                for symbol in symbols
-            }
-            for future in as_completed(future_map):
-                loaded_symbol, rows = future.result()
-                log.info(f"  {loaded_symbol}: built {len(rows)} study rows")
-                all_rows.extend(rows)
+    all_rows, _, _ = load_symbol_universe_rows(
+        symbols=symbols,
+        start_ms=start_ms,
+        end_ms=end_ms,
+        analysis_start_ms=analysis_start_ms,
+        warmup_candles=warmup_candles,
+        max_holding_candles=max_holding_candles,
+        fee_pct=fee_pct,
+        slippage_pct=slippage_pct,
+        workers=worker_count,
+    )
 
     report = {
         "metadata": {

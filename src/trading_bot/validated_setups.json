@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "metadata": {
-    "generated_at": "2026-04-01T21:46:53.943466+00:00",
-    "data_range": "2025-04 to 2026-03",
+    "generated_at": "2026-04-16T00:35:45.779065+00:00",
+    "data_range": "2025-04 to 2026-04",
     "symbols": [
       "BTCUSDT",
       "ETHUSDT",
@@ -31,1032 +31,14 @@
         "test_edge_win_rate": 3.0
       },
       "removed_counts": {
-        "long": 3,
-        "short": 35
+        "long": 0,
+        "short": 0
       }
     }
   },
   "validated_setups": {
-    "long": [
-      {
-        "name": "standard_long_rsi_above_70",
-        "template": "standard",
-        "direction": "LONG",
-        "conditions": [
-          "rsi_above_70"
-        ],
-        "tp_sl": {
-          "sl_atr_mult": 1.5,
-          "rr_ratio": 2.0
-        },
-        "train_stats": {
-          "conditions": [
-            "rsi_above_70"
-          ],
-          "direction": "LONG",
-          "template": "standard",
-          "count": 297,
-          "win_rate": 65.32,
-          "avg_pnl_pct": 1.0038,
-          "pnl_sum_pct": 298.1302,
-          "baseline_win_rate": 35.0,
-          "baseline_avg_pnl_pct": -0.149,
-          "edge_win_rate": 30.32,
-          "edge_avg_pnl_pct": 1.1528,
-          "profit_factor": 2.7286,
-          "p_value": 0.0,
-          "wilson_low": 59.74,
-          "wilson_high": 70.51
-        },
-        "test_stats": {
-          "conditions": [
-            "rsi_above_70"
-          ],
-          "direction": "LONG",
-          "template": "standard",
-          "count": 125,
-          "win_rate": 66.4,
-          "avg_pnl_pct": 1.034,
-          "pnl_sum_pct": 129.2483,
-          "baseline_win_rate": 28.22,
-          "baseline_avg_pnl_pct": -0.3414,
-          "edge_win_rate": 38.18,
-          "edge_avg_pnl_pct": 1.3754,
-          "profit_factor": 2.6632,
-          "p_value": 0.0,
-          "wilson_low": 57.74,
-          "wilson_high": 74.08
-        },
-        "by_symbol": {
-          "ADAUSDT": {
-            "trades": 56,
-            "win_rate": 58.93,
-            "avg_pnl_pct": 0.9637,
-            "profit_factor": 2.2474
-          },
-          "AVAXUSDT": {
-            "trades": 53,
-            "win_rate": 69.81,
-            "avg_pnl_pct": 1.3717,
-            "profit_factor": 3.173
-          },
-          "BNBUSDT": {
-            "trades": 60,
-            "win_rate": 70.0,
-            "avg_pnl_pct": 0.6956,
-            "profit_factor": 2.8373
-          },
-          "BTCUSDT": {
-            "trades": 57,
-            "win_rate": 64.91,
-            "avg_pnl_pct": 0.4634,
-            "profit_factor": 2.2082
-          },
-          "DOGEUSDT": {
-            "trades": 58,
-            "win_rate": 65.52,
-            "avg_pnl_pct": 1.1069,
-            "profit_factor": 2.392
-          },
-          "DOTUSDT": {
-            "trades": 48,
-            "win_rate": 64.58,
-            "avg_pnl_pct": 1.1607,
-            "profit_factor": 2.8769
-          },
-          "ETHUSDT": {
-            "trades": 64,
-            "win_rate": 68.75,
-            "avg_pnl_pct": 1.265,
-            "profit_factor": 3.8578
-          },
-          "LINKUSDT": {
-            "trades": 56,
-            "win_rate": 73.21,
-            "avg_pnl_pct": 1.865,
-            "profit_factor": 4.7232
-          },
-          "SOLUSDT": {
-            "trades": 57,
-            "win_rate": 61.4,
-            "avg_pnl_pct": 1.0617,
-            "profit_factor": 2.5911
-          },
-          "XRPUSDT": {
-            "trades": 57,
-            "win_rate": 63.16,
-            "avg_pnl_pct": 0.8452,
-            "profit_factor": 2.1754
-          }
-        }
-      },
-      {
-        "name": "standard_long_rsi_above_70_us_session",
-        "template": "standard",
-        "direction": "LONG",
-        "conditions": [
-          "rsi_above_70",
-          "us_session"
-        ],
-        "tp_sl": {
-          "sl_atr_mult": 1.5,
-          "rr_ratio": 2.0
-        },
-        "train_stats": {
-          "conditions": [
-            "rsi_above_70",
-            "us_session"
-          ],
-          "direction": "LONG",
-          "template": "standard",
-          "count": 237,
-          "win_rate": 62.87,
-          "avg_pnl_pct": 1.1106,
-          "pnl_sum_pct": 263.2102,
-          "baseline_win_rate": 35.0,
-          "baseline_avg_pnl_pct": -0.149,
-          "edge_win_rate": 27.87,
-          "edge_avg_pnl_pct": 1.2596,
-          "profit_factor": 2.9475,
-          "p_value": 0.0,
-          "wilson_low": 56.56,
-          "wilson_high": 68.77
-        },
-        "test_stats": {
-          "conditions": [
-            "rsi_above_70",
-            "us_session"
-          ],
-          "direction": "LONG",
-          "template": "standard",
-          "count": 95,
-          "win_rate": 69.47,
-          "avg_pnl_pct": 1.1596,
-          "pnl_sum_pct": 110.1594,
-          "baseline_win_rate": 28.22,
-          "baseline_avg_pnl_pct": -0.3414,
-          "edge_win_rate": 41.25,
-          "edge_avg_pnl_pct": 1.5009,
-          "profit_factor": 2.9421,
-          "p_value": 0.0,
-          "wilson_low": 59.61,
-          "wilson_high": 77.83
-        },
-        "by_symbol": {
-          "ADAUSDT": {
-            "trades": 40,
-            "win_rate": 67.5,
-            "avg_pnl_pct": 1.511,
-            "profit_factor": 3.5586
-          },
-          "AVAXUSDT": {
-            "trades": 40,
-            "win_rate": 67.5,
-            "avg_pnl_pct": 1.4475,
-            "profit_factor": 3.3614
-          },
-          "BNBUSDT": {
-            "trades": 47,
-            "win_rate": 65.96,
-            "avg_pnl_pct": 0.7284,
-            "profit_factor": 2.9466
-          },
-          "BTCUSDT": {
-            "trades": 48,
-            "win_rate": 64.58,
-            "avg_pnl_pct": 0.5743,
-            "profit_factor": 2.5665
-          },
-          "DOGEUSDT": {
-            "trades": 44,
-            "win_rate": 65.91,
-            "avg_pnl_pct": 1.4516,
-            "profit_factor": 3.2161
-          },
-          "DOTUSDT": {
-            "trades": 36,
-            "win_rate": 58.33,
-            "avg_pnl_pct": 1.0465,
-            "profit_factor": 2.5378
-          },
-          "ETHUSDT": {
-            "trades": 50,
-            "win_rate": 62.0,
-            "avg_pnl_pct": 1.0956,
-            "profit_factor": 3.023
-          },
-          "LINKUSDT": {
-            "trades": 43,
-            "win_rate": 69.77,
-            "avg_pnl_pct": 1.8506,
-            "profit_factor": 4.2304
-          },
-          "SOLUSDT": {
-            "trades": 46,
-            "win_rate": 67.39,
-            "avg_pnl_pct": 1.4843,
-            "profit_factor": 3.6944
-          },
-          "XRPUSDT": {
-            "trades": 46,
-            "win_rate": 67.39,
-            "avg_pnl_pct": 1.1487,
-            "profit_factor": 2.7589
-          }
-        }
-      },
-      {
-        "name": "wide_long_rsi_above_70",
-        "template": "wide",
-        "direction": "LONG",
-        "conditions": [
-          "rsi_above_70"
-        ],
-        "tp_sl": {
-          "sl_atr_mult": 2.0,
-          "rr_ratio": 2.5
-        },
-        "train_stats": {
-          "conditions": [
-            "rsi_above_70"
-          ],
-          "direction": "LONG",
-          "template": "wide",
-          "count": 297,
-          "win_rate": 54.88,
-          "avg_pnl_pct": 1.1825,
-          "pnl_sum_pct": 351.1962,
-          "baseline_win_rate": 30.43,
-          "baseline_avg_pnl_pct": -0.0881,
-          "edge_win_rate": 24.45,
-          "edge_avg_pnl_pct": 1.2706,
-          "profit_factor": 2.1924,
-          "p_value": 0.0,
-          "wilson_low": 49.2,
-          "wilson_high": 60.44
-        },
-        "test_stats": {
-          "conditions": [
-            "rsi_above_70"
-          ],
-          "direction": "LONG",
-          "template": "wide",
-          "count": 125,
-          "win_rate": 56.0,
-          "avg_pnl_pct": 1.2386,
-          "pnl_sum_pct": 154.831,
-          "baseline_win_rate": 23.78,
-          "baseline_avg_pnl_pct": -0.3454,
-          "edge_win_rate": 32.22,
-          "edge_avg_pnl_pct": 1.5841,
-          "profit_factor": 2.2338,
-          "p_value": 0.0,
-          "wilson_low": 47.25,
-          "wilson_high": 64.39
-        },
-        "by_symbol": {
-          "ADAUSDT": {
-            "trades": 56,
-            "win_rate": 46.43,
-            "avg_pnl_pct": 0.8232,
-            "profit_factor": 1.6105
-          },
-          "AVAXUSDT": {
-            "trades": 53,
-            "win_rate": 60.38,
-            "avg_pnl_pct": 1.8314,
-            "profit_factor": 2.7359
-          },
-          "BNBUSDT": {
-            "trades": 60,
-            "win_rate": 55.0,
-            "avg_pnl_pct": 0.7045,
-            "profit_factor": 2.0027
-          },
-          "BTCUSDT": {
-            "trades": 57,
-            "win_rate": 54.39,
-            "avg_pnl_pct": 0.5747,
-            "profit_factor": 1.9178
-          },
-          "DOGEUSDT": {
-            "trades": 58,
-            "win_rate": 50.0,
-            "avg_pnl_pct": 1.2657,
-            "profit_factor": 1.9508
-          },
-          "DOTUSDT": {
-            "trades": 48,
-            "win_rate": 56.25,
-            "avg_pnl_pct": 1.6133,
-            "profit_factor": 2.6238
-          },
-          "ETHUSDT": {
-            "trades": 64,
-            "win_rate": 62.5,
-            "avg_pnl_pct": 1.9652,
-            "profit_factor": 3.9216
-          },
-          "LINKUSDT": {
-            "trades": 56,
-            "win_rate": 57.14,
-            "avg_pnl_pct": 1.8555,
-            "profit_factor": 2.7107
-          },
-          "SOLUSDT": {
-            "trades": 57,
-            "win_rate": 52.63,
-            "avg_pnl_pct": 1.3982,
-            "profit_factor": 2.2992
-          },
-          "XRPUSDT": {
-            "trades": 57,
-            "win_rate": 49.12,
-            "avg_pnl_pct": 0.8976,
-            "profit_factor": 1.7986
-          }
-        }
-      }
-    ],
+    "long": [],
     "short": [
-      {
-        "name": "standard_short_rsi_below_28",
-        "template": "standard",
-        "direction": "SHORT",
-        "conditions": [
-          "rsi_below_28"
-        ],
-        "tp_sl": {
-          "sl_atr_mult": 1.5,
-          "rr_ratio": 2.0
-        },
-        "train_stats": {
-          "conditions": [
-            "rsi_below_28"
-          ],
-          "direction": "SHORT",
-          "template": "standard",
-          "count": 220,
-          "win_rate": 61.82,
-          "avg_pnl_pct": 1.0981,
-          "pnl_sum_pct": 241.5734,
-          "baseline_win_rate": 25.54,
-          "baseline_avg_pnl_pct": -0.5515,
-          "edge_win_rate": 36.27,
-          "edge_avg_pnl_pct": 1.6496,
-          "profit_factor": 2.4766,
-          "p_value": 0.0,
-          "wilson_low": 55.25,
-          "wilson_high": 67.98
-        },
-        "test_stats": {
-          "conditions": [
-            "rsi_below_28"
-          ],
-          "direction": "SHORT",
-          "template": "standard",
-          "count": 140,
-          "win_rate": 84.29,
-          "avg_pnl_pct": 1.8226,
-          "pnl_sum_pct": 255.1586,
-          "baseline_win_rate": 35.33,
-          "baseline_avg_pnl_pct": 0.0004,
-          "edge_win_rate": 48.95,
-          "edge_avg_pnl_pct": 1.8222,
-          "profit_factor": 7.9,
-          "p_value": 0.0,
-          "wilson_low": 77.35,
-          "wilson_high": 89.39
-        },
-        "by_symbol": {
-          "ADAUSDT": {
-            "trades": 46,
-            "win_rate": 80.43,
-            "avg_pnl_pct": 2.0225,
-            "profit_factor": 5.5286
-          },
-          "AVAXUSDT": {
-            "trades": 45,
-            "win_rate": 80.0,
-            "avg_pnl_pct": 2.1967,
-            "profit_factor": 6.7014
-          },
-          "BNBUSDT": {
-            "trades": 40,
-            "win_rate": 70.0,
-            "avg_pnl_pct": 0.8468,
-            "profit_factor": 3.0033
-          },
-          "BTCUSDT": {
-            "trades": 49,
-            "win_rate": 65.31,
-            "avg_pnl_pct": 0.6668,
-            "profit_factor": 2.8535
-          },
-          "DOGEUSDT": {
-            "trades": 49,
-            "win_rate": 73.47,
-            "avg_pnl_pct": 1.6431,
-            "profit_factor": 4.0993
-          },
-          "DOTUSDT": {
-            "trades": 42,
-            "win_rate": 66.67,
-            "avg_pnl_pct": 1.4935,
-            "profit_factor": 3.1271
-          },
-          "ETHUSDT": {
-            "trades": 47,
-            "win_rate": 59.57,
-            "avg_pnl_pct": 0.7914,
-            "profit_factor": 2.0419
-          },
-          "LINKUSDT": {
-            "trades": 42,
-            "win_rate": 73.81,
-            "avg_pnl_pct": 1.963,
-            "profit_factor": 4.7571
-          },
-          "SOLUSDT": {
-            "trades": 46,
-            "win_rate": 63.04,
-            "avg_pnl_pct": 1.0269,
-            "profit_factor": 2.266
-          },
-          "XRPUSDT": {
-            "trades": 47,
-            "win_rate": 72.34,
-            "avg_pnl_pct": 1.1669,
-            "profit_factor": 3.582
-          }
-        }
-      },
-      {
-        "name": "standard_short_rsi_below_30",
-        "template": "standard",
-        "direction": "SHORT",
-        "conditions": [
-          "rsi_below_30"
-        ],
-        "tp_sl": {
-          "sl_atr_mult": 1.5,
-          "rr_ratio": 2.0
-        },
-        "train_stats": {
-          "conditions": [
-            "rsi_below_30"
-          ],
-          "direction": "SHORT",
-          "template": "standard",
-          "count": 284,
-          "win_rate": 55.99,
-          "avg_pnl_pct": 0.8219,
-          "pnl_sum_pct": 233.4291,
-          "baseline_win_rate": 25.54,
-          "baseline_avg_pnl_pct": -0.5515,
-          "edge_win_rate": 30.44,
-          "edge_avg_pnl_pct": 1.3735,
-          "profit_factor": 1.9994,
-          "p_value": 0.0,
-          "wilson_low": 50.17,
-          "wilson_high": 61.64
-        },
-        "test_stats": {
-          "conditions": [
-            "rsi_below_30"
-          ],
-          "direction": "SHORT",
-          "template": "standard",
-          "count": 162,
-          "win_rate": 75.93,
-          "avg_pnl_pct": 1.4803,
-          "pnl_sum_pct": 239.8107,
-          "baseline_win_rate": 35.33,
-          "baseline_avg_pnl_pct": 0.0004,
-          "edge_win_rate": 40.59,
-          "edge_avg_pnl_pct": 1.4799,
-          "profit_factor": 4.5248,
-          "p_value": 0.0,
-          "wilson_low": 68.79,
-          "wilson_high": 81.86
-        },
-        "by_symbol": {
-          "ADAUSDT": {
-            "trades": 58,
-            "win_rate": 62.07,
-            "avg_pnl_pct": 1.1152,
-            "profit_factor": 2.4714
-          },
-          "AVAXUSDT": {
-            "trades": 59,
-            "win_rate": 64.41,
-            "avg_pnl_pct": 1.4194,
-            "profit_factor": 3.0475
-          },
-          "BNBUSDT": {
-            "trades": 54,
-            "win_rate": 64.81,
-            "avg_pnl_pct": 0.6322,
-            "profit_factor": 2.2893
-          },
-          "BTCUSDT": {
-            "trades": 57,
-            "win_rate": 64.91,
-            "avg_pnl_pct": 0.4816,
-            "profit_factor": 2.1556
-          },
-          "DOGEUSDT": {
-            "trades": 61,
-            "win_rate": 60.66,
-            "avg_pnl_pct": 1.1236,
-            "profit_factor": 2.501
-          },
-          "DOTUSDT": {
-            "trades": 56,
-            "win_rate": 64.29,
-            "avg_pnl_pct": 1.5549,
-            "profit_factor": 3.3406
-          },
-          "ETHUSDT": {
-            "trades": 60,
-            "win_rate": 56.67,
-            "avg_pnl_pct": 0.7192,
-            "profit_factor": 1.8973
-          },
-          "LINKUSDT": {
-            "trades": 51,
-            "win_rate": 60.78,
-            "avg_pnl_pct": 1.1765,
-            "profit_factor": 2.4162
-          },
-          "SOLUSDT": {
-            "trades": 53,
-            "win_rate": 69.81,
-            "avg_pnl_pct": 1.6309,
-            "profit_factor": 3.7664
-          },
-          "XRPUSDT": {
-            "trades": 60,
-            "win_rate": 66.67,
-            "avg_pnl_pct": 1.0396,
-            "profit_factor": 2.857
-          }
-        }
-      },
-      {
-        "name": "standard_short_rsi_below_32",
-        "template": "standard",
-        "direction": "SHORT",
-        "conditions": [
-          "rsi_below_32"
-        ],
-        "tp_sl": {
-          "sl_atr_mult": 1.5,
-          "rr_ratio": 2.0
-        },
-        "train_stats": {
-          "conditions": [
-            "rsi_below_32"
-          ],
-          "direction": "SHORT",
-          "template": "standard",
-          "count": 348,
-          "win_rate": 57.18,
-          "avg_pnl_pct": 0.8356,
-          "pnl_sum_pct": 290.7987,
-          "baseline_win_rate": 25.54,
-          "baseline_avg_pnl_pct": -0.5515,
-          "edge_win_rate": 31.64,
-          "edge_avg_pnl_pct": 1.3872,
-          "profit_factor": 2.0463,
-          "p_value": 0.0,
-          "wilson_low": 51.93,
-          "wilson_high": 62.28
-        },
-        "test_stats": {
-          "conditions": [
-            "rsi_below_32"
-          ],
-          "direction": "SHORT",
-          "template": "standard",
-          "count": 188,
-          "win_rate": 70.21,
-          "avg_pnl_pct": 1.2944,
-          "pnl_sum_pct": 243.35,
-          "baseline_win_rate": 35.33,
-          "baseline_avg_pnl_pct": 0.0004,
-          "edge_win_rate": 34.88,
-          "edge_avg_pnl_pct": 1.294,
-          "profit_factor": 3.3795,
-          "p_value": 0.0,
-          "wilson_low": 63.32,
-          "wilson_high": 76.29
-        },
-        "by_symbol": {
-          "ADAUSDT": {
-            "trades": 71,
-            "win_rate": 61.97,
-            "avg_pnl_pct": 1.2803,
-            "profit_factor": 2.7822
-          },
-          "AVAXUSDT": {
-            "trades": 71,
-            "win_rate": 59.15,
-            "avg_pnl_pct": 1.1644,
-            "profit_factor": 2.4906
-          },
-          "BNBUSDT": {
-            "trades": 62,
-            "win_rate": 62.9,
-            "avg_pnl_pct": 0.7654,
-            "profit_factor": 2.6352
-          },
-          "BTCUSDT": {
-            "trades": 68,
-            "win_rate": 63.24,
-            "avg_pnl_pct": 0.4592,
-            "profit_factor": 2.0851
-          },
-          "DOGEUSDT": {
-            "trades": 71,
-            "win_rate": 66.2,
-            "avg_pnl_pct": 1.3592,
-            "profit_factor": 2.8971
-          },
-          "DOTUSDT": {
-            "trades": 76,
-            "win_rate": 59.21,
-            "avg_pnl_pct": 1.0632,
-            "profit_factor": 2.2711
-          },
-          "ETHUSDT": {
-            "trades": 66,
-            "win_rate": 60.61,
-            "avg_pnl_pct": 0.8978,
-            "profit_factor": 2.2726
-          },
-          "LINKUSDT": {
-            "trades": 70,
-            "win_rate": 52.86,
-            "avg_pnl_pct": 0.7196,
-            "profit_factor": 1.7006
-          },
-          "SOLUSDT": {
-            "trades": 63,
-            "win_rate": 58.73,
-            "avg_pnl_pct": 0.9674,
-            "profit_factor": 2.2334
-          },
-          "XRPUSDT": {
-            "trades": 71,
-            "win_rate": 66.2,
-            "avg_pnl_pct": 0.9938,
-            "profit_factor": 2.5038
-          }
-        }
-      },
-      {
-        "name": "standard_short_rsi_below_40",
-        "template": "standard",
-        "direction": "SHORT",
-        "conditions": [
-          "rsi_below_40"
-        ],
-        "tp_sl": {
-          "sl_atr_mult": 1.5,
-          "rr_ratio": 2.0
-        },
-        "train_stats": {
-          "conditions": [
-            "rsi_below_40"
-          ],
-          "direction": "SHORT",
-          "template": "standard",
-          "count": 601,
-          "win_rate": 52.91,
-          "avg_pnl_pct": 0.7656,
-          "pnl_sum_pct": 460.1074,
-          "baseline_win_rate": 25.54,
-          "baseline_avg_pnl_pct": -0.5515,
-          "edge_win_rate": 27.37,
-          "edge_avg_pnl_pct": 1.3171,
-          "profit_factor": 1.8874,
-          "p_value": 0.0,
-          "wilson_low": 48.92,
-          "wilson_high": 56.87
-        },
-        "test_stats": {
-          "conditions": [
-            "rsi_below_40"
-          ],
-          "direction": "SHORT",
-          "template": "standard",
-          "count": 304,
-          "win_rate": 56.91,
-          "avg_pnl_pct": 0.7965,
-          "pnl_sum_pct": 242.1498,
-          "baseline_win_rate": 35.33,
-          "baseline_avg_pnl_pct": 0.0004,
-          "edge_win_rate": 21.57,
-          "edge_avg_pnl_pct": 0.7962,
-          "profit_factor": 2.0809,
-          "p_value": 0.0,
-          "wilson_low": 51.29,
-          "wilson_high": 62.35
-        },
-        "by_symbol": {
-          "ADAUSDT": {
-            "trades": 123,
-            "win_rate": 52.85,
-            "avg_pnl_pct": 0.7106,
-            "profit_factor": 1.6941
-          },
-          "AVAXUSDT": {
-            "trades": 116,
-            "win_rate": 53.45,
-            "avg_pnl_pct": 1.0023,
-            "profit_factor": 2.1425
-          },
-          "BNBUSDT": {
-            "trades": 111,
-            "win_rate": 54.05,
-            "avg_pnl_pct": 0.4556,
-            "profit_factor": 1.7727
-          },
-          "BTCUSDT": {
-            "trades": 112,
-            "win_rate": 55.36,
-            "avg_pnl_pct": 0.3805,
-            "profit_factor": 1.8305
-          },
-          "DOGEUSDT": {
-            "trades": 122,
-            "win_rate": 53.28,
-            "avg_pnl_pct": 0.808,
-            "profit_factor": 1.811
-          },
-          "DOTUSDT": {
-            "trades": 122,
-            "win_rate": 55.74,
-            "avg_pnl_pct": 1.0386,
-            "profit_factor": 2.1909
-          },
-          "ETHUSDT": {
-            "trades": 113,
-            "win_rate": 51.33,
-            "avg_pnl_pct": 0.5811,
-            "profit_factor": 1.693
-          },
-          "LINKUSDT": {
-            "trades": 117,
-            "win_rate": 50.43,
-            "avg_pnl_pct": 0.8088,
-            "profit_factor": 1.8252
-          },
-          "SOLUSDT": {
-            "trades": 119,
-            "win_rate": 51.26,
-            "avg_pnl_pct": 0.6592,
-            "profit_factor": 1.7234
-          },
-          "XRPUSDT": {
-            "trades": 118,
-            "win_rate": 56.78,
-            "avg_pnl_pct": 0.6613,
-            "profit_factor": 1.7873
-          }
-        }
-      },
-      {
-        "name": "standard_short_rsi_below_32_us_session",
-        "template": "standard",
-        "direction": "SHORT",
-        "conditions": [
-          "rsi_below_32",
-          "us_session"
-        ],
-        "tp_sl": {
-          "sl_atr_mult": 1.5,
-          "rr_ratio": 2.0
-        },
-        "train_stats": {
-          "conditions": [
-            "rsi_below_32",
-            "us_session"
-          ],
-          "direction": "SHORT",
-          "template": "standard",
-          "count": 295,
-          "win_rate": 47.12,
-          "avg_pnl_pct": 0.4622,
-          "pnl_sum_pct": 136.3613,
-          "baseline_win_rate": 25.54,
-          "baseline_avg_pnl_pct": -0.5515,
-          "edge_win_rate": 21.58,
-          "edge_avg_pnl_pct": 1.0138,
-          "profit_factor": 1.455,
-          "p_value": 0.0,
-          "wilson_low": 41.5,
-          "wilson_high": 52.82
-        },
-        "test_stats": {
-          "conditions": [
-            "rsi_below_32",
-            "us_session"
-          ],
-          "direction": "SHORT",
-          "template": "standard",
-          "count": 159,
-          "win_rate": 72.96,
-          "avg_pnl_pct": 1.5641,
-          "pnl_sum_pct": 248.6887,
-          "baseline_win_rate": 35.33,
-          "baseline_avg_pnl_pct": 0.0004,
-          "edge_win_rate": 37.62,
-          "edge_avg_pnl_pct": 1.5637,
-          "profit_factor": 4.3309,
-          "p_value": 0.0,
-          "wilson_low": 65.57,
-          "wilson_high": 79.26
-        },
-        "by_symbol": {
-          "ADAUSDT": {
-            "trades": 60,
-            "win_rate": 56.67,
-            "avg_pnl_pct": 1.1083,
-            "profit_factor": 2.3284
-          },
-          "AVAXUSDT": {
-            "trades": 60,
-            "win_rate": 55.0,
-            "avg_pnl_pct": 0.761,
-            "profit_factor": 1.799
-          },
-          "BNBUSDT": {
-            "trades": 45,
-            "win_rate": 62.22,
-            "avg_pnl_pct": 0.7295,
-            "profit_factor": 2.3921
-          },
-          "BTCUSDT": {
-            "trades": 53,
-            "win_rate": 62.26,
-            "avg_pnl_pct": 0.5659,
-            "profit_factor": 2.2841
-          },
-          "DOGEUSDT": {
-            "trades": 60,
-            "win_rate": 58.33,
-            "avg_pnl_pct": 1.0621,
-            "profit_factor": 2.2617
-          },
-          "DOTUSDT": {
-            "trades": 59,
-            "win_rate": 50.85,
-            "avg_pnl_pct": 0.7935,
-            "profit_factor": 1.804
-          },
-          "ETHUSDT": {
-            "trades": 53,
-            "win_rate": 62.26,
-            "avg_pnl_pct": 1.1001,
-            "profit_factor": 2.5558
-          },
-          "LINKUSDT": {
-            "trades": 54,
-            "win_rate": 51.85,
-            "avg_pnl_pct": 0.8011,
-            "profit_factor": 1.7612
-          },
-          "SOLUSDT": {
-            "trades": 55,
-            "win_rate": 60.0,
-            "avg_pnl_pct": 1.2909,
-            "profit_factor": 2.8548
-          },
-          "XRPUSDT": {
-            "trades": 57,
-            "win_rate": 63.16,
-            "avg_pnl_pct": 0.9929,
-            "profit_factor": 2.4145
-          }
-        }
-      },
-      {
-        "name": "standard_short_rsi_below_40_us_session",
-        "template": "standard",
-        "direction": "SHORT",
-        "conditions": [
-          "rsi_below_40",
-          "us_session"
-        ],
-        "tp_sl": {
-          "sl_atr_mult": 1.5,
-          "rr_ratio": 2.0
-        },
-        "train_stats": {
-          "conditions": [
-            "rsi_below_40",
-            "us_session"
-          ],
-          "direction": "SHORT",
-          "template": "standard",
-          "count": 530,
-          "win_rate": 50.19,
-          "avg_pnl_pct": 0.573,
-          "pnl_sum_pct": 303.7092,
-          "baseline_win_rate": 25.54,
-          "baseline_avg_pnl_pct": -0.5515,
-          "edge_win_rate": 24.65,
-          "edge_avg_pnl_pct": 1.1246,
-          "profit_factor": 1.582,
-          "p_value": 0.0,
-          "wilson_low": 45.95,
-          "wilson_high": 54.43
-        },
-        "test_stats": {
-          "conditions": [
-            "rsi_below_40",
-            "us_session"
-          ],
-          "direction": "SHORT",
-          "template": "standard",
-          "count": 268,
-          "win_rate": 64.93,
-          "avg_pnl_pct": 1.242,
-          "pnl_sum_pct": 332.8506,
-          "baseline_win_rate": 35.33,
-          "baseline_avg_pnl_pct": 0.0004,
-          "edge_win_rate": 29.59,
-          "edge_avg_pnl_pct": 1.2416,
-          "profit_factor": 3.2591,
-          "p_value": 0.0,
-          "wilson_low": 59.04,
-          "wilson_high": 70.39
-        },
-        "by_symbol": {
-          "ADAUSDT": {
-            "trades": 110,
-            "win_rate": 50.0,
-            "avg_pnl_pct": 0.6789,
-            "profit_factor": 1.6395
-          },
-          "AVAXUSDT": {
-            "trades": 97,
-            "win_rate": 56.7,
-            "avg_pnl_pct": 1.0117,
-            "profit_factor": 2.1648
-          },
-          "BNBUSDT": {
-            "trades": 93,
-            "win_rate": 53.76,
-            "avg_pnl_pct": 0.5203,
-            "profit_factor": 1.9273
-          },
-          "BTCUSDT": {
-            "trades": 100,
-            "win_rate": 53.0,
-            "avg_pnl_pct": 0.3088,
-            "profit_factor": 1.6047
-          },
-          "DOGEUSDT": {
-            "trades": 106,
-            "win_rate": 50.0,
-            "avg_pnl_pct": 0.6279,
-            "profit_factor": 1.5708
-          },
-          "DOTUSDT": {
-            "trades": 108,
-            "win_rate": 54.63,
-            "avg_pnl_pct": 1.0568,
-            "profit_factor": 2.1912
-          },
-          "ETHUSDT": {
-            "trades": 97,
-            "win_rate": 59.79,
-            "avg_pnl_pct": 1.0148,
-            "profit_factor": 2.4813
-          },
-          "LINKUSDT": {
-            "trades": 105,
-            "win_rate": 45.71,
-            "avg_pnl_pct": 0.2775,
-            "profit_factor": 1.2187
-          },
-          "SOLUSDT": {
-            "trades": 108,
-            "win_rate": 54.63,
-            "avg_pnl_pct": 0.9533,
-            "profit_factor": 2.1449
-          },
-          "XRPUSDT": {
-            "trades": 102,
-            "win_rate": 57.84,
-            "avg_pnl_pct": 0.8639,
-            "profit_factor": 2.1637
-          }
-        }
-      },
       {
         "name": "wide_short_rsi_below_28",
         "template": "wide",
@@ -1075,17 +57,17 @@
           "direction": "SHORT",
           "template": "wide",
           "count": 220,
-          "win_rate": 53.64,
-          "avg_pnl_pct": 1.6876,
-          "pnl_sum_pct": 371.2701,
+          "win_rate": 35.45,
+          "avg_pnl_pct": 0.3389,
+          "pnl_sum_pct": 74.5493,
           "baseline_win_rate": 23.8,
           "baseline_avg_pnl_pct": -0.4452,
-          "edge_win_rate": 29.83,
-          "edge_avg_pnl_pct": 2.1328,
-          "profit_factor": 2.5076,
-          "p_value": 0.0,
-          "wilson_low": 47.04,
-          "wilson_high": 60.11
+          "edge_win_rate": 11.65,
+          "edge_avg_pnl_pct": 0.784,
+          "profit_factor": 1.2033,
+          "p_value": 0.000405,
+          "wilson_low": 29.43,
+          "wilson_high": 41.98
         },
         "test_stats": {
           "conditions": [
@@ -1094,532 +76,662 @@
           "direction": "SHORT",
           "template": "wide",
           "count": 140,
-          "win_rate": 75.0,
-          "avg_pnl_pct": 2.486,
-          "pnl_sum_pct": 348.0395,
-          "baseline_win_rate": 36.22,
-          "baseline_avg_pnl_pct": 0.5076,
-          "edge_win_rate": 38.78,
-          "edge_avg_pnl_pct": 1.9784,
-          "profit_factor": 5.4398,
-          "p_value": 0.0,
-          "wilson_low": 67.22,
-          "wilson_high": 81.44
+          "win_rate": 52.14,
+          "avg_pnl_pct": 1.5209,
+          "pnl_sum_pct": 212.9232,
+          "baseline_win_rate": 36.44,
+          "baseline_avg_pnl_pct": 0.5039,
+          "edge_win_rate": 15.7,
+          "edge_avg_pnl_pct": 1.017,
+          "profit_factor": 2.5356,
+          "p_value": 0.000936,
+          "wilson_low": 43.92,
+          "wilson_high": 60.25
         },
         "by_symbol": {
           "ADAUSDT": {
             "trades": 46,
-            "win_rate": 65.22,
-            "avg_pnl_pct": 2.6255,
-            "profit_factor": 3.9509
+            "win_rate": 47.83,
+            "avg_pnl_pct": 1.432,
+            "profit_factor": 2.0392
           },
           "AVAXUSDT": {
-            "trades": 45,
-            "win_rate": 75.56,
-            "avg_pnl_pct": 3.6063,
-            "profit_factor": 7.1284
+            "trades": 44,
+            "win_rate": 56.82,
+            "avg_pnl_pct": 2.2008,
+            "profit_factor": 2.9305
           },
           "BNBUSDT": {
             "trades": 40,
-            "win_rate": 55.0,
-            "avg_pnl_pct": 0.8964,
-            "profit_factor": 2.1673
+            "win_rate": 32.5,
+            "avg_pnl_pct": -0.4127,
+            "profit_factor": 0.6942
           },
           "BTCUSDT": {
-            "trades": 49,
-            "win_rate": 53.06,
-            "avg_pnl_pct": 0.5356,
-            "profit_factor": 1.7618
-          },
-          "DOGEUSDT": {
-            "trades": 49,
-            "win_rate": 67.35,
-            "avg_pnl_pct": 2.6957,
-            "profit_factor": 4.4111
-          },
-          "DOTUSDT": {
-            "trades": 42,
-            "win_rate": 61.9,
-            "avg_pnl_pct": 2.7087,
-            "profit_factor": 3.8377
-          },
-          "ETHUSDT": {
             "trades": 47,
-            "win_rate": 59.57,
-            "avg_pnl_pct": 1.4626,
-            "profit_factor": 2.3972
-          },
-          "LINKUSDT": {
-            "trades": 42,
-            "win_rate": 57.14,
-            "avg_pnl_pct": 1.9207,
-            "profit_factor": 2.6429
-          },
-          "SOLUSDT": {
-            "trades": 46,
-            "win_rate": 58.7,
-            "avg_pnl_pct": 1.7267,
-            "profit_factor": 2.4813
-          },
-          "XRPUSDT": {
-            "trades": 47,
-            "win_rate": 61.7,
-            "avg_pnl_pct": 1.8072,
-            "profit_factor": 3.6203
-          }
-        }
-      },
-      {
-        "name": "wide_short_rsi_below_30",
-        "template": "wide",
-        "direction": "SHORT",
-        "conditions": [
-          "rsi_below_30"
-        ],
-        "tp_sl": {
-          "sl_atr_mult": 2.0,
-          "rr_ratio": 2.5
-        },
-        "train_stats": {
-          "conditions": [
-            "rsi_below_30"
-          ],
-          "direction": "SHORT",
-          "template": "wide",
-          "count": 284,
-          "win_rate": 50.7,
-          "avg_pnl_pct": 1.5029,
-          "pnl_sum_pct": 426.8181,
-          "baseline_win_rate": 23.8,
-          "baseline_avg_pnl_pct": -0.4452,
-          "edge_win_rate": 26.9,
-          "edge_avg_pnl_pct": 1.9481,
-          "profit_factor": 2.3159,
-          "p_value": 0.0,
-          "wilson_low": 44.92,
-          "wilson_high": 56.47
-        },
-        "test_stats": {
-          "conditions": [
-            "rsi_below_30"
-          ],
-          "direction": "SHORT",
-          "template": "wide",
-          "count": 162,
-          "win_rate": 67.9,
-          "avg_pnl_pct": 2.1017,
-          "pnl_sum_pct": 340.4806,
-          "baseline_win_rate": 36.22,
-          "baseline_avg_pnl_pct": 0.5076,
-          "edge_win_rate": 31.68,
-          "edge_avg_pnl_pct": 1.5941,
-          "profit_factor": 3.9065,
-          "p_value": 0.0,
-          "wilson_low": 60.37,
-          "wilson_high": 74.6
-        },
-        "by_symbol": {
-          "ADAUSDT": {
-            "trades": 58,
-            "win_rate": 58.62,
-            "avg_pnl_pct": 2.175,
-            "profit_factor": 3.1711
-          },
-          "AVAXUSDT": {
-            "trades": 59,
-            "win_rate": 61.02,
-            "avg_pnl_pct": 2.5977,
-            "profit_factor": 3.7789
-          },
-          "BNBUSDT": {
-            "trades": 54,
-            "win_rate": 50.0,
-            "avg_pnl_pct": 0.8013,
-            "profit_factor": 2.0144
-          },
-          "BTCUSDT": {
-            "trades": 57,
-            "win_rate": 57.89,
-            "avg_pnl_pct": 0.6455,
-            "profit_factor": 1.9828
+            "win_rate": 34.04,
+            "avg_pnl_pct": 0.236,
+            "profit_factor": 1.2729
           },
           "DOGEUSDT": {
-            "trades": 61,
-            "win_rate": 60.66,
-            "avg_pnl_pct": 2.1909,
-            "profit_factor": 3.2317
+            "trades": 49,
+            "win_rate": 38.78,
+            "avg_pnl_pct": 0.9135,
+            "profit_factor": 1.6146
           },
           "DOTUSDT": {
-            "trades": 56,
-            "win_rate": 57.14,
-            "avg_pnl_pct": 2.3861,
-            "profit_factor": 3.3657
+            "trades": 43,
+            "win_rate": 37.21,
+            "avg_pnl_pct": 0.722,
+            "profit_factor": 1.4254
           },
           "ETHUSDT": {
-            "trades": 60,
-            "win_rate": 56.67,
-            "avg_pnl_pct": 1.322,
-            "profit_factor": 2.1903
-          },
-          "LINKUSDT": {
-            "trades": 51,
-            "win_rate": 56.86,
-            "avg_pnl_pct": 2.129,
-            "profit_factor": 2.8547
-          },
-          "SOLUSDT": {
-            "trades": 53,
-            "win_rate": 56.6,
-            "avg_pnl_pct": 1.8667,
-            "profit_factor": 2.675
-          },
-          "XRPUSDT": {
-            "trades": 60,
-            "win_rate": 55.0,
-            "avg_pnl_pct": 1.5427,
-            "profit_factor": 2.7909
-          }
-        }
-      },
-      {
-        "name": "wide_short_rsi_below_32",
-        "template": "wide",
-        "direction": "SHORT",
-        "conditions": [
-          "rsi_below_32"
-        ],
-        "tp_sl": {
-          "sl_atr_mult": 2.0,
-          "rr_ratio": 2.5
-        },
-        "train_stats": {
-          "conditions": [
-            "rsi_below_32"
-          ],
-          "direction": "SHORT",
-          "template": "wide",
-          "count": 348,
-          "win_rate": 46.55,
-          "avg_pnl_pct": 1.1605,
-          "pnl_sum_pct": 403.8622,
-          "baseline_win_rate": 23.8,
-          "baseline_avg_pnl_pct": -0.4452,
-          "edge_win_rate": 22.75,
-          "edge_avg_pnl_pct": 1.6057,
-          "profit_factor": 1.9578,
-          "p_value": 0.0,
-          "wilson_low": 41.38,
-          "wilson_high": 51.8
-        },
-        "test_stats": {
-          "conditions": [
-            "rsi_below_32"
-          ],
-          "direction": "SHORT",
-          "template": "wide",
-          "count": 188,
-          "win_rate": 62.77,
-          "avg_pnl_pct": 1.8137,
-          "pnl_sum_pct": 340.9789,
-          "baseline_win_rate": 36.22,
-          "baseline_avg_pnl_pct": 0.5076,
-          "edge_win_rate": 26.54,
-          "edge_avg_pnl_pct": 1.3061,
-          "profit_factor": 3.0355,
-          "p_value": 0.0,
-          "wilson_low": 55.66,
-          "wilson_high": 69.36
-        },
-        "by_symbol": {
-          "ADAUSDT": {
-            "trades": 71,
-            "win_rate": 54.93,
-            "avg_pnl_pct": 2.01,
-            "profit_factor": 2.8841
-          },
-          "AVAXUSDT": {
-            "trades": 71,
-            "win_rate": 50.7,
-            "avg_pnl_pct": 1.7044,
-            "profit_factor": 2.4471
-          },
-          "BNBUSDT": {
-            "trades": 62,
-            "win_rate": 46.77,
-            "avg_pnl_pct": 0.7645,
-            "profit_factor": 1.9167
-          },
-          "BTCUSDT": {
-            "trades": 68,
-            "win_rate": 57.35,
-            "avg_pnl_pct": 0.8195,
-            "profit_factor": 2.3595
-          },
-          "DOGEUSDT": {
-            "trades": 71,
-            "win_rate": 54.93,
-            "avg_pnl_pct": 1.8877,
-            "profit_factor": 2.661
-          },
-          "DOTUSDT": {
-            "trades": 76,
-            "win_rate": 43.42,
-            "avg_pnl_pct": 1.0879,
-            "profit_factor": 1.7815
-          },
-          "ETHUSDT": {
-            "trades": 66,
-            "win_rate": 54.55,
-            "avg_pnl_pct": 1.1933,
-            "profit_factor": 2.0782
-          },
-          "LINKUSDT": {
-            "trades": 70,
-            "win_rate": 48.57,
-            "avg_pnl_pct": 1.4682,
-            "profit_factor": 2.0522
-          },
-          "SOLUSDT": {
-            "trades": 63,
-            "win_rate": 53.97,
-            "avg_pnl_pct": 1.6476,
-            "profit_factor": 2.4716
-          },
-          "XRPUSDT": {
-            "trades": 71,
-            "win_rate": 60.56,
-            "avg_pnl_pct": 1.4723,
-            "profit_factor": 2.455
-          }
-        }
-      },
-      {
-        "name": "wide_short_macd_hist_falling_rsi_below_30",
-        "template": "wide",
-        "direction": "SHORT",
-        "conditions": [
-          "macd_hist_falling",
-          "rsi_below_30"
-        ],
-        "tp_sl": {
-          "sl_atr_mult": 2.0,
-          "rr_ratio": 2.5
-        },
-        "train_stats": {
-          "conditions": [
-            "macd_hist_falling",
-            "rsi_below_30"
-          ],
-          "direction": "SHORT",
-          "template": "wide",
-          "count": 268,
-          "win_rate": 50.75,
-          "avg_pnl_pct": 1.5607,
-          "pnl_sum_pct": 418.2681,
-          "baseline_win_rate": 23.8,
-          "baseline_avg_pnl_pct": -0.4452,
-          "edge_win_rate": 26.94,
-          "edge_avg_pnl_pct": 2.0059,
-          "profit_factor": 2.3573,
-          "p_value": 0.0,
-          "wilson_low": 44.79,
-          "wilson_high": 56.68
-        },
-        "test_stats": {
-          "conditions": [
-            "macd_hist_falling",
-            "rsi_below_30"
-          ],
-          "direction": "SHORT",
-          "template": "wide",
-          "count": 153,
-          "win_rate": 68.63,
-          "avg_pnl_pct": 2.3264,
-          "pnl_sum_pct": 355.9336,
-          "baseline_win_rate": 36.22,
-          "baseline_avg_pnl_pct": 0.5076,
-          "edge_win_rate": 32.41,
-          "edge_avg_pnl_pct": 1.8188,
-          "profit_factor": 4.3134,
-          "p_value": 0.0,
-          "wilson_low": 60.89,
-          "wilson_high": 75.45
-        },
-        "by_symbol": {
-          "ADAUSDT": {
-            "trades": 57,
-            "win_rate": 59.65,
-            "avg_pnl_pct": 2.2899,
-            "profit_factor": 3.2812
-          },
-          "AVAXUSDT": {
-            "trades": 55,
-            "win_rate": 63.64,
-            "avg_pnl_pct": 2.7122,
-            "profit_factor": 3.954
-          },
-          "BNBUSDT": {
-            "trades": 46,
-            "win_rate": 52.17,
-            "avg_pnl_pct": 1.0121,
-            "profit_factor": 2.3798
-          },
-          "BTCUSDT": {
-            "trades": 55,
-            "win_rate": 54.55,
-            "avg_pnl_pct": 0.5499,
-            "profit_factor": 1.7871
-          },
-          "DOGEUSDT": {
-            "trades": 59,
-            "win_rate": 61.02,
-            "avg_pnl_pct": 2.3362,
-            "profit_factor": 3.4265
-          },
-          "DOTUSDT": {
-            "trades": 55,
-            "win_rate": 52.73,
-            "avg_pnl_pct": 2.0692,
-            "profit_factor": 2.879
-          },
-          "ETHUSDT": {
-            "trades": 58,
-            "win_rate": 56.9,
-            "avg_pnl_pct": 1.3737,
-            "profit_factor": 2.2875
-          },
-          "LINKUSDT": {
-            "trades": 50,
-            "win_rate": 58.0,
-            "avg_pnl_pct": 2.2323,
-            "profit_factor": 2.946
-          },
-          "SOLUSDT": {
-            "trades": 51,
-            "win_rate": 52.94,
-            "avg_pnl_pct": 1.5781,
-            "profit_factor": 2.2723
-          },
-          "XRPUSDT": {
-            "trades": 55,
-            "win_rate": 50.91,
-            "avg_pnl_pct": 1.4724,
-            "profit_factor": 2.6505
-          }
-        }
-      },
-      {
-        "name": "wide_short_rsi_below_32_us_session",
-        "template": "wide",
-        "direction": "SHORT",
-        "conditions": [
-          "rsi_below_32",
-          "us_session"
-        ],
-        "tp_sl": {
-          "sl_atr_mult": 2.0,
-          "rr_ratio": 2.5
-        },
-        "train_stats": {
-          "conditions": [
-            "rsi_below_32",
-            "us_session"
-          ],
-          "direction": "SHORT",
-          "template": "wide",
-          "count": 295,
-          "win_rate": 37.63,
-          "avg_pnl_pct": 0.5005,
-          "pnl_sum_pct": 147.6378,
-          "baseline_win_rate": 23.8,
-          "baseline_avg_pnl_pct": -0.4452,
-          "edge_win_rate": 13.82,
-          "edge_avg_pnl_pct": 0.9457,
-          "profit_factor": 1.3268,
-          "p_value": 3e-06,
-          "wilson_low": 32.29,
-          "wilson_high": 43.28
-        },
-        "test_stats": {
-          "conditions": [
-            "rsi_below_32",
-            "us_session"
-          ],
-          "direction": "SHORT",
-          "template": "wide",
-          "count": 159,
-          "win_rate": 64.15,
-          "avg_pnl_pct": 2.1472,
-          "pnl_sum_pct": 341.4014,
-          "baseline_win_rate": 36.22,
-          "baseline_avg_pnl_pct": 0.5076,
-          "edge_win_rate": 27.93,
-          "edge_avg_pnl_pct": 1.6396,
-          "profit_factor": 3.5979,
-          "p_value": 0.0,
-          "wilson_low": 56.44,
-          "wilson_high": 71.19
-        },
-        "by_symbol": {
-          "ADAUSDT": {
-            "trades": 60,
-            "win_rate": 48.33,
-            "avg_pnl_pct": 1.3712,
-            "profit_factor": 2.0225
-          },
-          "AVAXUSDT": {
-            "trades": 60,
-            "win_rate": 43.33,
-            "avg_pnl_pct": 1.0488,
-            "profit_factor": 1.7281
-          },
-          "BNBUSDT": {
             "trades": 45,
-            "win_rate": 51.11,
-            "avg_pnl_pct": 0.8746,
-            "profit_factor": 2.0087
-          },
-          "BTCUSDT": {
-            "trades": 53,
-            "win_rate": 56.6,
-            "avg_pnl_pct": 0.9546,
-            "profit_factor": 2.4936
-          },
-          "DOGEUSDT": {
-            "trades": 60,
-            "win_rate": 53.33,
-            "avg_pnl_pct": 1.7634,
-            "profit_factor": 2.4528
-          },
-          "DOTUSDT": {
-            "trades": 59,
-            "win_rate": 37.29,
-            "avg_pnl_pct": 0.7001,
-            "profit_factor": 1.4442
-          },
-          "ETHUSDT": {
-            "trades": 53,
-            "win_rate": 50.94,
-            "avg_pnl_pct": 1.0511,
-            "profit_factor": 1.8376
+            "win_rate": 33.33,
+            "avg_pnl_pct": -0.171,
+            "profit_factor": 0.8979
           },
           "LINKUSDT": {
-            "trades": 54,
-            "win_rate": 48.15,
-            "avg_pnl_pct": 1.5264,
-            "profit_factor": 2.0511
+            "trades": 42,
+            "win_rate": 40.48,
+            "avg_pnl_pct": 0.8488,
+            "profit_factor": 1.5167
           },
           "SOLUSDT": {
-            "trades": 55,
-            "win_rate": 52.73,
-            "avg_pnl_pct": 1.83,
-            "profit_factor": 2.6638
+            "trades": 45,
+            "win_rate": 37.78,
+            "avg_pnl_pct": 0.3045,
+            "profit_factor": 1.1751
           },
           "XRPUSDT": {
-            "trades": 57,
-            "win_rate": 54.39,
-            "avg_pnl_pct": 1.2583,
-            "profit_factor": 2.1094
+            "trades": 48,
+            "win_rate": 35.42,
+            "avg_pnl_pct": 0.2776,
+            "profit_factor": 1.2173
+          }
+        }
+      },
+      {
+        "name": "wide_short_higher_highs_outside_bar",
+        "template": "wide",
+        "direction": "SHORT",
+        "conditions": [
+          "higher_highs",
+          "outside_bar"
+        ],
+        "tp_sl": {
+          "sl_atr_mult": 2.0,
+          "rr_ratio": 2.5
+        },
+        "train_stats": {
+          "conditions": [
+            "higher_highs",
+            "outside_bar"
+          ],
+          "direction": "SHORT",
+          "template": "wide",
+          "count": 147,
+          "win_rate": 32.65,
+          "avg_pnl_pct": 0.3347,
+          "pnl_sum_pct": 49.2062,
+          "baseline_win_rate": 23.8,
+          "baseline_avg_pnl_pct": -0.4452,
+          "edge_win_rate": 8.85,
+          "edge_avg_pnl_pct": 0.7799,
+          "profit_factor": 1.2255,
+          "p_value": 0.021452,
+          "wilson_low": 25.6,
+          "wilson_high": 40.59
+        },
+        "test_stats": {
+          "conditions": [
+            "higher_highs",
+            "outside_bar"
+          ],
+          "direction": "SHORT",
+          "template": "wide",
+          "count": 44,
+          "win_rate": 45.45,
+          "avg_pnl_pct": 1.5659,
+          "pnl_sum_pct": 68.9015,
+          "baseline_win_rate": 36.44,
+          "baseline_avg_pnl_pct": 0.5039,
+          "edge_win_rate": 9.01,
+          "edge_avg_pnl_pct": 1.0621,
+          "profit_factor": 2.4235,
+          "p_value": 0.23805,
+          "wilson_low": 31.71,
+          "wilson_high": 59.93
+        },
+        "by_symbol": {
+          "ADAUSDT": {
+            "trades": 25,
+            "win_rate": 28.0,
+            "avg_pnl_pct": -0.3151,
+            "profit_factor": 0.8407
+          },
+          "AVAXUSDT": {
+            "trades": 21,
+            "win_rate": 23.81,
+            "avg_pnl_pct": -0.291,
+            "profit_factor": 0.8485
+          },
+          "BNBUSDT": {
+            "trades": 33,
+            "win_rate": 21.21,
+            "avg_pnl_pct": -0.3647,
+            "profit_factor": 0.6494
+          },
+          "BTCUSDT": {
+            "trades": 28,
+            "win_rate": 21.43,
+            "avg_pnl_pct": -0.351,
+            "profit_factor": 0.653
+          },
+          "DOGEUSDT": {
+            "trades": 20,
+            "win_rate": 35.0,
+            "avg_pnl_pct": 0.9858,
+            "profit_factor": 1.5613
+          },
+          "DOTUSDT": {
+            "trades": 29,
+            "win_rate": 41.38,
+            "avg_pnl_pct": 0.8344,
+            "profit_factor": 1.5453
+          },
+          "ETHUSDT": {
+            "trades": 27,
+            "win_rate": 40.74,
+            "avg_pnl_pct": 0.6066,
+            "profit_factor": 1.4547
+          },
+          "LINKUSDT": {
+            "trades": 21,
+            "win_rate": 28.57,
+            "avg_pnl_pct": -0.1909,
+            "profit_factor": 0.8988
+          },
+          "SOLUSDT": {
+            "trades": 31,
+            "win_rate": 41.94,
+            "avg_pnl_pct": 1.1585,
+            "profit_factor": 1.902
+          },
+          "XRPUSDT": {
+            "trades": 25,
+            "win_rate": 32.0,
+            "avg_pnl_pct": 0.6545,
+            "profit_factor": 1.4385
+          }
+        }
+      },
+      {
+        "name": "wide_short_outside_bar_three_green_candles",
+        "template": "wide",
+        "direction": "SHORT",
+        "conditions": [
+          "outside_bar",
+          "three_green_candles"
+        ],
+        "tp_sl": {
+          "sl_atr_mult": 2.0,
+          "rr_ratio": 2.5
+        },
+        "train_stats": {
+          "conditions": [
+            "outside_bar",
+            "three_green_candles"
+          ],
+          "direction": "SHORT",
+          "template": "wide",
+          "count": 225,
+          "win_rate": 30.67,
+          "avg_pnl_pct": 0.2414,
+          "pnl_sum_pct": 54.3074,
+          "baseline_win_rate": 23.8,
+          "baseline_avg_pnl_pct": -0.4452,
+          "edge_win_rate": 6.86,
+          "edge_avg_pnl_pct": 0.6866,
+          "profit_factor": 1.1619,
+          "p_value": 0.033459,
+          "wilson_low": 25.01,
+          "wilson_high": 36.97
+        },
+        "test_stats": {
+          "conditions": [
+            "outside_bar",
+            "three_green_candles"
+          ],
+          "direction": "SHORT",
+          "template": "wide",
+          "count": 101,
+          "win_rate": 41.58,
+          "avg_pnl_pct": 1.2064,
+          "pnl_sum_pct": 121.8418,
+          "baseline_win_rate": 36.44,
+          "baseline_avg_pnl_pct": 0.5039,
+          "edge_win_rate": 5.14,
+          "edge_avg_pnl_pct": 0.7025,
+          "profit_factor": 1.969,
+          "p_value": 0.334644,
+          "wilson_low": 32.45,
+          "wilson_high": 51.33
+        },
+        "by_symbol": {
+          "ADAUSDT": {
+            "trades": 43,
+            "win_rate": 34.88,
+            "avg_pnl_pct": 0.2915,
+            "profit_factor": 1.1713
+          },
+          "AVAXUSDT": {
+            "trades": 42,
+            "win_rate": 33.33,
+            "avg_pnl_pct": 0.3312,
+            "profit_factor": 1.2061
+          },
+          "BNBUSDT": {
+            "trades": 49,
+            "win_rate": 28.57,
+            "avg_pnl_pct": 0.1862,
+            "profit_factor": 1.1874
+          },
+          "BTCUSDT": {
+            "trades": 41,
+            "win_rate": 29.27,
+            "avg_pnl_pct": -0.0494,
+            "profit_factor": 0.9453
+          },
+          "DOGEUSDT": {
+            "trades": 45,
+            "win_rate": 35.56,
+            "avg_pnl_pct": 0.3771,
+            "profit_factor": 1.207
+          },
+          "DOTUSDT": {
+            "trades": 43,
+            "win_rate": 34.88,
+            "avg_pnl_pct": 0.2527,
+            "profit_factor": 1.1457
+          },
+          "ETHUSDT": {
+            "trades": 48,
+            "win_rate": 29.17,
+            "avg_pnl_pct": 0.016,
+            "profit_factor": 1.0112
+          },
+          "LINKUSDT": {
+            "trades": 41,
+            "win_rate": 36.59,
+            "avg_pnl_pct": 0.7472,
+            "profit_factor": 1.4531
+          },
+          "SOLUSDT": {
+            "trades": 52,
+            "win_rate": 30.77,
+            "avg_pnl_pct": 0.2581,
+            "profit_factor": 1.1693
+          },
+          "XRPUSDT": {
+            "trades": 45,
+            "win_rate": 37.78,
+            "avg_pnl_pct": 0.9486,
+            "profit_factor": 1.7429
+          }
+        }
+      },
+      {
+        "name": "wide_short_ema_fan_wide_higher_highs_price_near_upper_bb",
+        "template": "wide",
+        "direction": "SHORT",
+        "conditions": [
+          "ema_fan_wide",
+          "higher_highs",
+          "price_near_upper_bb"
+        ],
+        "tp_sl": {
+          "sl_atr_mult": 2.0,
+          "rr_ratio": 2.5
+        },
+        "train_stats": {
+          "conditions": [
+            "ema_fan_wide",
+            "higher_highs",
+            "price_near_upper_bb"
+          ],
+          "direction": "SHORT",
+          "template": "wide",
+          "count": 125,
+          "win_rate": 38.4,
+          "avg_pnl_pct": 0.9759,
+          "pnl_sum_pct": 121.9877,
+          "baseline_win_rate": 23.8,
+          "baseline_avg_pnl_pct": -0.4452,
+          "edge_win_rate": 14.6,
+          "edge_avg_pnl_pct": 1.4211,
+          "profit_factor": 1.697,
+          "p_value": 0.000447,
+          "wilson_low": 30.34,
+          "wilson_high": 47.15
+        },
+        "test_stats": {
+          "conditions": [
+            "ema_fan_wide",
+            "higher_highs",
+            "price_near_upper_bb"
+          ],
+          "direction": "SHORT",
+          "template": "wide",
+          "count": 39,
+          "win_rate": 51.28,
+          "avg_pnl_pct": 2.1409,
+          "pnl_sum_pct": 83.494,
+          "baseline_win_rate": 36.44,
+          "baseline_avg_pnl_pct": 0.5039,
+          "edge_win_rate": 14.84,
+          "edge_avg_pnl_pct": 1.637,
+          "profit_factor": 2.9328,
+          "p_value": 0.06653,
+          "wilson_low": 36.2,
+          "wilson_high": 66.14
+        },
+        "by_symbol": {
+          "ADAUSDT": {
+            "trades": 26,
+            "win_rate": 38.46,
+            "avg_pnl_pct": 0.8866,
+            "profit_factor": 1.5738
+          },
+          "AVAXUSDT": {
+            "trades": 26,
+            "win_rate": 26.92,
+            "avg_pnl_pct": 0.0035,
+            "profit_factor": 1.0019
+          },
+          "BNBUSDT": {
+            "trades": 23,
+            "win_rate": 21.74,
+            "avg_pnl_pct": -0.72,
+            "profit_factor": 0.5215
+          },
+          "BTCUSDT": {
+            "trades": 17,
+            "win_rate": 29.41,
+            "avg_pnl_pct": 0.0647,
+            "profit_factor": 1.0663
+          },
+          "DOGEUSDT": {
+            "trades": 20,
+            "win_rate": 40.0,
+            "avg_pnl_pct": 1.5106,
+            "profit_factor": 1.8731
+          },
+          "DOTUSDT": {
+            "trades": 22,
+            "win_rate": 45.45,
+            "avg_pnl_pct": 1.6919,
+            "profit_factor": 2.4096
+          },
+          "ETHUSDT": {
+            "trades": 14,
+            "win_rate": 35.71,
+            "avg_pnl_pct": 0.3858,
+            "profit_factor": 1.2759
+          },
+          "LINKUSDT": {
+            "trades": 18,
+            "win_rate": 50.0,
+            "avg_pnl_pct": 1.7797,
+            "profit_factor": 2.3913
+          },
+          "SOLUSDT": {
+            "trades": 30,
+            "win_rate": 43.33,
+            "avg_pnl_pct": 1.2753,
+            "profit_factor": 1.945
+          },
+          "XRPUSDT": {
+            "trades": 23,
+            "win_rate": 34.78,
+            "avg_pnl_pct": 1.4118,
+            "profit_factor": 2.0874
+          }
+        }
+      },
+      {
+        "name": "wide_short_ema_fan_wide_higher_highs_outside_bar",
+        "template": "wide",
+        "direction": "SHORT",
+        "conditions": [
+          "ema_fan_wide",
+          "higher_highs",
+          "outside_bar"
+        ],
+        "tp_sl": {
+          "sl_atr_mult": 2.0,
+          "rr_ratio": 2.5
+        },
+        "train_stats": {
+          "conditions": [
+            "ema_fan_wide",
+            "higher_highs",
+            "outside_bar"
+          ],
+          "direction": "SHORT",
+          "template": "wide",
+          "count": 82,
+          "win_rate": 34.15,
+          "avg_pnl_pct": 0.5227,
+          "pnl_sum_pct": 42.8645,
+          "baseline_win_rate": 23.8,
+          "baseline_avg_pnl_pct": -0.4452,
+          "edge_win_rate": 10.34,
+          "edge_avg_pnl_pct": 0.9679,
+          "profit_factor": 1.3193,
+          "p_value": 0.037327,
+          "wilson_low": 24.8,
+          "wilson_high": 44.91
+        },
+        "test_stats": {
+          "conditions": [
+            "ema_fan_wide",
+            "higher_highs",
+            "outside_bar"
+          ],
+          "direction": "SHORT",
+          "template": "wide",
+          "count": 26,
+          "win_rate": 53.85,
+          "avg_pnl_pct": 2.0207,
+          "pnl_sum_pct": 52.5392,
+          "baseline_win_rate": 36.44,
+          "baseline_avg_pnl_pct": 0.5039,
+          "edge_win_rate": 17.4,
+          "edge_avg_pnl_pct": 1.5169,
+          "profit_factor": 2.7487,
+          "p_value": 0.074574,
+          "wilson_low": 35.46,
+          "wilson_high": 71.24
+        },
+        "by_symbol": {
+          "ADAUSDT": {
+            "trades": 20,
+            "win_rate": 25.0,
+            "avg_pnl_pct": -0.7636,
+            "profit_factor": 0.6563
+          },
+          "AVAXUSDT": {
+            "trades": 14,
+            "win_rate": 21.43,
+            "avg_pnl_pct": -0.491,
+            "profit_factor": 0.7705
+          },
+          "BNBUSDT": {
+            "trades": 9,
+            "win_rate": 33.33,
+            "avg_pnl_pct": 0.0982,
+            "profit_factor": 1.0888
+          },
+          "BTCUSDT": {
+            "trades": 9,
+            "win_rate": 33.33,
+            "avg_pnl_pct": 1.049,
+            "profit_factor": 2.2823
+          },
+          "DOGEUSDT": {
+            "trades": 12,
+            "win_rate": 50.0,
+            "avg_pnl_pct": 2.5443,
+            "profit_factor": 2.6427
+          },
+          "DOTUSDT": {
+            "trades": 19,
+            "win_rate": 31.58,
+            "avg_pnl_pct": -0.2371,
+            "profit_factor": 0.87
+          },
+          "ETHUSDT": {
+            "trades": 16,
+            "win_rate": 43.75,
+            "avg_pnl_pct": 0.8956,
+            "profit_factor": 1.6168
+          },
+          "LINKUSDT": {
+            "trades": 11,
+            "win_rate": 27.27,
+            "avg_pnl_pct": -0.391,
+            "profit_factor": 0.8145
+          },
+          "SOLUSDT": {
+            "trades": 16,
+            "win_rate": 37.5,
+            "avg_pnl_pct": 1.0279,
+            "profit_factor": 1.6699
+          },
+          "XRPUSDT": {
+            "trades": 17,
+            "win_rate": 35.29,
+            "avg_pnl_pct": 1.1437,
+            "profit_factor": 1.7822
+          }
+        }
+      },
+      {
+        "name": "wide_short_outside_bar_price_near_upper_bb_three_green_candles",
+        "template": "wide",
+        "direction": "SHORT",
+        "conditions": [
+          "outside_bar",
+          "price_near_upper_bb",
+          "three_green_candles"
+        ],
+        "tp_sl": {
+          "sl_atr_mult": 2.0,
+          "rr_ratio": 2.5
+        },
+        "train_stats": {
+          "conditions": [
+            "outside_bar",
+            "price_near_upper_bb",
+            "three_green_candles"
+          ],
+          "direction": "SHORT",
+          "template": "wide",
+          "count": 104,
+          "win_rate": 34.62,
+          "avg_pnl_pct": 0.5391,
+          "pnl_sum_pct": 56.0665,
+          "baseline_win_rate": 23.8,
+          "baseline_avg_pnl_pct": -0.4452,
+          "edge_win_rate": 10.81,
+          "edge_avg_pnl_pct": 0.9843,
+          "profit_factor": 1.4419,
+          "p_value": 0.015669,
+          "wilson_low": 26.17,
+          "wilson_high": 44.16
+        },
+        "test_stats": {
+          "conditions": [
+            "outside_bar",
+            "price_near_upper_bb",
+            "three_green_candles"
+          ],
+          "direction": "SHORT",
+          "template": "wide",
+          "count": 44,
+          "win_rate": 43.18,
+          "avg_pnl_pct": 1.4524,
+          "pnl_sum_pct": 63.9062,
+          "baseline_win_rate": 36.44,
+          "baseline_avg_pnl_pct": 0.5039,
+          "edge_win_rate": 6.74,
+          "edge_avg_pnl_pct": 0.9485,
+          "profit_factor": 2.4378,
+          "p_value": 0.377104,
+          "wilson_low": 29.68,
+          "wilson_high": 57.78
+        },
+        "by_symbol": {
+          "ADAUSDT": {
+            "trades": 16,
+            "win_rate": 56.25,
+            "avg_pnl_pct": 1.9701,
+            "profit_factor": 3.1439
+          },
+          "AVAXUSDT": {
+            "trades": 16,
+            "win_rate": 43.75,
+            "avg_pnl_pct": 1.6363,
+            "profit_factor": 2.3609
+          },
+          "BNBUSDT": {
+            "trades": 29,
+            "win_rate": 31.03,
+            "avg_pnl_pct": 0.1137,
+            "profit_factor": 1.1306
+          },
+          "BTCUSDT": {
+            "trades": 24,
+            "win_rate": 25.0,
+            "avg_pnl_pct": -0.3901,
+            "profit_factor": 0.577
+          },
+          "DOGEUSDT": {
+            "trades": 17,
+            "win_rate": 47.06,
+            "avg_pnl_pct": 1.2007,
+            "profit_factor": 1.9106
+          },
+          "DOTUSDT": {
+            "trades": 18,
+            "win_rate": 33.33,
+            "avg_pnl_pct": 0.2443,
+            "profit_factor": 1.1846
+          },
+          "ETHUSDT": {
+            "trades": 25,
+            "win_rate": 24.0,
+            "avg_pnl_pct": -0.11,
+            "profit_factor": 0.9209
+          },
+          "LINKUSDT": {
+            "trades": 18,
+            "win_rate": 44.44,
+            "avg_pnl_pct": 1.6681,
+            "profit_factor": 2.3735
+          },
+          "SOLUSDT": {
+            "trades": 25,
+            "win_rate": 32.0,
+            "avg_pnl_pct": 0.4203,
+            "profit_factor": 1.2745
+          },
+          "XRPUSDT": {
+            "trades": 22,
+            "win_rate": 40.91,
+            "avg_pnl_pct": 0.544,
+            "profit_factor": 1.4699
           }
         }
       }

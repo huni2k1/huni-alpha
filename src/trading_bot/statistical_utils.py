@@ -153,6 +153,39 @@ def add_months(dt: datetime, months: int) -> datetime:
     return datetime(year, month, 1, tzinfo=timezone.utc)
 
 
+def benjamini_hochberg_adjusted(p_values: list[float]) -> list[float]:
+    """
+    Compute Benjamini-Hochberg FDR-adjusted p-values.
+
+    For m tests sorted by ascending p-value, the BH-adjusted p-value at
+    rank i (1-based) is: min(p_i * m / i, 1.0).  Monotonicity is then
+    enforced from the highest rank downward so that adjusted values cannot
+    decrease as raw p increases.
+
+    Returns adjusted p-values in the *original input order*.
+    """
+    n = len(p_values)
+    if n == 0:
+        return []
+
+    # Sort indices by ascending raw p-value
+    order = sorted(range(n), key=lambda i: p_values[i])
+
+    # Raw BH adjustment: p * n / rank
+    adjusted = [0.0] * n
+    for rank_0, orig_idx in enumerate(order):
+        rank = rank_0 + 1
+        adjusted[orig_idx] = min(p_values[orig_idx] * n / rank, 1.0)
+
+    # Enforce monotonicity: scan from highest rank to lowest, carry forward minimum
+    for rank_0 in range(n - 2, -1, -1):
+        orig_idx = order[rank_0]
+        next_orig_idx = order[rank_0 + 1]
+        adjusted[orig_idx] = min(adjusted[orig_idx], adjusted[next_orig_idx])
+
+    return adjusted
+
+
 def build_walk_forward_windows(
     month_starts: Sequence[datetime],
     train_months: int = 6,

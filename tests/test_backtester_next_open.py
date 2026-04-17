@@ -145,3 +145,105 @@ def test_next_open_reanchors_tp_sl_and_allows_position_size_above_old_hard_cap()
     assert trade["tp_price"] == 130.0
     assert trade["sl_price"] == 119.0
     assert trade["position_size"] == pytest.approx(2500.0, abs=0.01)
+
+
+def test_format_period_label_uses_exact_dates_when_provided():
+    label = bt._format_period_label(
+        6,
+        start_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        end_date=datetime(2025, 12, 31, tzinfo=timezone.utc),
+    )
+
+    assert label == "2025-01-01 to 2025-12-31"
+
+
+def test_print_summary_prefers_period_label_for_exact_date_runs(capsys):
+    results = {
+        "config": {
+            "symbols": ["ETHUSDT", "AVAXUSDT"],
+            "months": 6,
+            "period_label": "2025-01-01 to 2025-12-31",
+            "starting_account": 1000.0,
+            "risk_pct": 1.5,
+            "fee_pct": 0.06,
+            "slippage_pct": 0.05,
+            "trailing_stop": False,
+            "threshold_entry": 7.0,
+            "trend_threshold": 7.0,
+            "breakout_threshold": 6.0,
+            "max_positions": 3,
+            "cooldown_candles": 48,
+            "use_next_open": True,
+        },
+        "summary": {
+            "final_equity": 1080.25,
+            "total_pnl_usd": 80.25,
+            "total_return_pct": 8.03,
+            "max_drawdown_usd": 29.72,
+            "max_drawdown_pct": 2.9,
+            "total_fees_usd": 8.75,
+            "total_trades": 33,
+            "win_rate": 42.4,
+            "wins": 14,
+            "losses": 19,
+            "profit_factor": 1.58,
+            "avg_ev_per_trade_pct": 0.44,
+            "avg_ev_per_trade_usd": 2.43,
+            "avg_win_pct": 3.41,
+            "avg_loss_pct": -1.75,
+            "avg_win_usd": 15.61,
+            "avg_loss_usd": 7.28,
+            "payoff_ratio": 2.14,
+            "avg_r_multiple": 0.17,
+            "avg_win_r": 1.91,
+            "avg_loss_r": -1.11,
+            "avg_mfe_pct": 2.24,
+            "avg_mae_pct": 1.52,
+            "best_trade_pct": 5.27,
+            "worst_trade_pct": -3.22,
+            "max_consecutive_wins": 3,
+            "max_consecutive_losses": 3,
+            "tp_exits": 14,
+            "sl_exits": 19,
+            "trail_sl_exits": 0,
+            "timeout_exits": 0,
+            "long_trades": 0,
+            "long_win_rate": 0.0,
+            "short_trades": 33,
+            "short_win_rate": 42.4,
+            "avg_trades_per_month": 2.8,
+            "annualized_return_pct": 8.02,
+            "positive_months": 6,
+            "months_tested": 12,
+            "consistency_pct": 50.0,
+            "avg_monthly_return_pct": 0.66,
+            "best_month_return_pct": 3.02,
+            "worst_month_return_pct": -1.29,
+            "monthly_volatility_pct": 1.72,
+            "downside_volatility_pct": 0.22,
+            "sharpe_ratio": 1.33,
+            "sortino_ratio": 10.52,
+            "calmar_ratio": 2.78,
+            "recovery_factor": 2.78,
+            "avg_duration_hours": 12.3,
+            "avg_duration_tp_hours": 14.1,
+            "avg_duration_sl_hours": 11.0,
+            "avg_duration_long_hours": 0.0,
+            "avg_duration_short_hours": 12.3,
+        },
+        "monthly": [],
+        "rolling_returns": {},
+        "by_strategy_direction": {},
+        "by_exit_reason": {},
+        "by_symbol": {},
+        "by_regime": {},
+        "by_entry_weekday_utc": {},
+        "by_entry_hour_utc": {},
+        "rejection_counts": {},
+    }
+
+    bt.print_summary(results)
+    output = capsys.readouterr().out
+
+    assert "2025-01-01 to 2025-12-31 | ETH, AVAX" in output
+    assert "6 months | ETH, AVAX" not in output

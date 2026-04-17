@@ -123,6 +123,32 @@ def write_curated_scope_export(path):
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def write_long_crossover_scope_export(path):
+    payload = {
+        "schema_version": 1,
+        "metadata": {},
+        "validated_setups": {
+            "long": [
+                {
+                    "name": "standard_long_ema50_cross_above_200_price_near_upper_bb_link",
+                    "template": "standard",
+                    "direction": "LONG",
+                    "conditions": ["ema50_cross_above_200", "price_near_upper_bb"],
+                    "tp_sl": {"sl_atr_mult": 1.5, "rr_ratio": 2.0},
+                    "train_stats": {"count": 13, "win_rate": 69.2, "avg_pnl_pct": 3.6, "profit_factor": 2.4, "edge_win_rate": 20.0},
+                    "test_stats": {"count": 13, "win_rate": 69.2, "avg_pnl_pct": 3.6, "profit_factor": 2.4, "edge_win_rate": 20.0},
+                    "by_symbol": {"LINKUSDT": {"trades": 13, "win_rate": 69.2, "avg_pnl_pct": 3.6, "profit_factor": 2.4}},
+                    "scope_key": "symbol_LINKUSDT",
+                    "scope_type": "symbol",
+                    "scope_symbol": "LINKUSDT",
+                }
+            ],
+            "short": [],
+        },
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 def test_generate_signal_statistical_matches_validated_setup(tmp_path):
     validated_path = tmp_path / "validated_setups.json"
     write_validated_export(validated_path)
@@ -365,6 +391,41 @@ def test_generate_signal_statistical_curated_prefers_scoped_setup(tmp_path):
     assert signal["statistical_details"]["scope_type"] == "symbol"
     assert signal["statistical_details"]["scope_symbol"] == "AVAXUSDT"
     assert signal["statistical_details"]["scope_regime"] is None
+
+
+def test_generate_signal_statistical_curated_matches_new_long_crossover_setup(tmp_path):
+    validated_path = tmp_path / "long_crossover_setups.json"
+    write_long_crossover_scope_export(validated_path)
+    candles = make_trending_candles(220, "up")
+    with patch.object(
+        scanner,
+        "_build_statistical_snapshot",
+        return_value={
+            "rsi": 64,
+            "adx": 28,
+            "bb_squeeze": False,
+            "vol_ratio": 1.1,
+            "hour_utc": 12,
+            "close": 100.0,
+            "bb_upper": 100.5,
+            "e50": 101.0,
+            "e200": 100.0,
+            "e50_prev": 99.0,
+            "e200_prev": 100.0,
+        },
+    ):
+        signal = scanner.generate_signal(
+            "LINKUSDT",
+            candles,
+            current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
+            signal_model="statistical_curated",
+            validated_setups_path=str(validated_path),
+        )
+
+    assert signal is not None
+    assert signal["signal_model"] == "statistical_curated"
+    assert signal["direction"] == "LONG"
+    assert signal["statistical_setup"] == "standard_long_ema50_cross_above_200_price_near_upper_bb_link"
 
 
 def test_load_validated_setups_preserves_indicator_only_rules(tmp_path):

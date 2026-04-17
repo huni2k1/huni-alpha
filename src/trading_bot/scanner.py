@@ -96,6 +96,7 @@ VALID_SIGNAL_MODELS = {
     "statistical_curated",
     "statistical_wide_short_rsi28",
     "hybrid_technical_wide_short_rsi28",
+    "hybrid_technical_statistical",
 }
 VALIDATED_SETUPS_PATH = os.environ.get(
     "VALIDATED_SETUPS_PATH",
@@ -606,6 +607,8 @@ def precompute_indicators_for_all_candles(candles: list) -> dict:
         return {}
 
     closes = [c[3] for c in candles]
+    highs_all = [c[1] for c in candles]
+    lows_all = [c[2] for c in candles]
     volumes = [c[4] for c in candles]
 
     indicators_cache = {}
@@ -615,6 +618,24 @@ def precompute_indicators_for_all_candles(candles: list) -> dict:
     ema_21_series = ema(closes, 21)
     ema_50_series = ema(closes, 50)
     ema_200_series = ema(closes, min(800, len(closes)))
+
+    # Pre-compute ATR series (O(n) rolling average of true-range).
+    # Avoids the per-candle loop of ~100 full recomputes in _build_statistical_snapshot.
+    atr_period = 20
+    tr_series: list[float] = []
+    for i in range(1, len(candles)):
+        h, l, cp = highs_all[i], lows_all[i], closes[i - 1]
+        tr_series.append(max(h - l, abs(h - cp), abs(l - cp)))
+    # atr_series[i] = ATR at candle index i+1 (first candle has no TR)
+    atr_series: list[float] = [0.0]
+    _tr_window: list[float] = []
+    _tr_sum = 0.0
+    for tr in tr_series:
+        _tr_window.append(tr)
+        _tr_sum += tr
+        if len(_tr_window) > atr_period:
+            _tr_sum -= _tr_window.pop(0)
+        atr_series.append(_tr_sum / len(_tr_window))
 
     # Pre-compute RSI series (Wilder smoothing)
     rsi_series = []
@@ -683,10 +704,44 @@ def precompute_indicators_for_all_candles(candles: list) -> dict:
         e50 = ema_50_series[idx_e50] if 0 <= idx_e50 < len(ema_50_series) else None
         e200 = ema_200_series[idx_e200] if 0 <= idx_e200 < len(ema_200_series) else None
 
+        # Prev-candle EMA values — stored here so _build_statistical_snapshot can
+        # use O(1) lookups instead of recomputing the full EMA series each call.
+        e9_prev = ema_9_series[idx_e9 - 1] if 0 < idx_e9 < len(ema_9_series) else None
+        e21_prev = ema_21_series[idx_e21 - 1] if 0 < idx_e21 < len(ema_21_series) else None
+        e50_prev = ema_50_series[idx_e50 - 1] if 0 < idx_e50 < len(ema_50_series) else None
+        e200_prev = ema_200_series[idx_e200 - 1] if 0 < idx_e200 < len(ema_200_series) else None
+
         bull_align = e9 and e21 and e50 and (e9 > e21 > e50)
         bear_align = e9 and e21 and e50 and (e9 < e21 < e50)
         above_e200 = e200 and (closes[t] > e200)
         below_e200 = e200 and (closes[t] < e200)
+
+        # ATR at t and t-1 — read from precomputed series (O(1))
+        atr20_val = atr_series[t] if t < len(atr_series) else 0.0
+        atr20_prev_val = atr_series[t - 1] if t > 0 and (t - 1) < len(atr_series) else 0.0
+
+        # ATR percentile: is atr20_val in the top 20% of the last 100 ATR values?
+        lookback_start = max(0, t - 100)
+        recent_atrs = [atr_series[i] for i in range(lookback_start, t) if atr_series[i] > 0]
+        atr_pct_high = bool(recent_atrs) and atr20_val >= float(np.percentile(recent_atrs, 80))
+
+        # RSI and MACD line windows (last 21 values) for divergence detection.
+        # Stored as lists so _build_statistical_snapshot can avoid recomputing
+        # full RSI/MACD series for each of the 20 lookback positions.
+        rsi_win_size = 21
+        rsi_window = [
+            rsi_series[min(max(0, t - rsi_win_size + 1 + j), len(rsi_series) - 1)]
+            for j in range(rsi_win_size)
+        ]
+        macd_win_size = 21
+        macd_window = []
+        for j in range(macd_win_size):
+            raw_idx = t - macd_win_size + 1 + j
+            ml_idx = raw_idx - (len(closes) - len(macd_line_series))
+            if 0 <= ml_idx < len(macd_line_series):
+                macd_window.append(macd_line_series[ml_idx])
+            else:
+                macd_window.append(0.0)
 
         # Cache the pre-computed values
         indicators_cache[t] = {
@@ -699,10 +754,19 @@ def precompute_indicators_for_all_candles(candles: list) -> dict:
             'e21': e21,
             'e50': e50,
             'e200': e200,
+            'e9_prev': e9_prev,
+            'e21_prev': e21_prev,
+            'e50_prev': e50_prev,
+            'e200_prev': e200_prev,
             'bull_align': bull_align,
             'bear_align': bear_align,
             'above_e200': above_e200,
             'below_e200': below_e200,
+            'atr20': atr20_val,
+            'atr20_prev': atr20_prev_val,
+            'atr_percentile_high': atr_pct_high,
+            'rsi_window': rsi_window,
+            'macd_line_window': macd_window,
             # Note: ADX, Bollinger, Volume Ratio computed on-demand in score_technical
         }
 
@@ -1213,7 +1277,27 @@ def _build_statistical_snapshot(
     precomputed_indicators: dict = None,
 ) -> dict:
     """Build the latest-candle feature snapshot used by validated setup matching."""
+    def _atr_value(candles: list, period: int = 20) -> float:
+        if len(candles) < 2:
+            return 0.0
+        local_closes = [c[3] for c in candles]
+        local_highs = [c[1] for c in candles]
+        local_lows = [c[2] for c in candles]
+        tr_values = []
+        for i in range(1, len(local_closes)):
+            tr_values.append(
+                max(
+                    local_highs[i] - local_lows[i],
+                    abs(local_highs[i] - local_closes[i - 1]),
+                    abs(local_lows[i] - local_closes[i - 1]),
+                )
+            )
+        if not tr_values:
+            return 0.0
+        return sum(tr_values[-period:]) / min(period, len(tr_values))
+
     closes = [c[3] for c in candles_1h]
+    opens = [c[0] for c in candles_1h]
     volumes = [c[4] for c in candles_1h]
     highs = [c[1] for c in candles_1h]
     lows = [c[2] for c in candles_1h]
@@ -1254,6 +1338,20 @@ def _build_statistical_snapshot(
         above_e200 = closes[-1] > e200
         below_e200 = closes[-1] < e200
 
+    # Use precomputed prev-candle EMA values when available (O(1)) to avoid
+    # recomputing the full EMA series on every call (O(n) — Bug 7 in prior audit).
+    _fallback_prev = closes[-2] if len(closes) >= 2 else closes[-1]
+    if precomputed_indicators and precomputed_indicators.get('e9_prev') is not None:
+        e9_prev = precomputed_indicators['e9_prev']
+        e21_prev = precomputed_indicators.get('e21_prev') or _fallback_prev
+        e50_prev = precomputed_indicators.get('e50_prev') or _fallback_prev
+        e200_prev = precomputed_indicators.get('e200_prev') or _fallback_prev
+    else:
+        e9_prev = ema(closes[:-1], 9)[-1] if len(closes) >= 10 else _fallback_prev
+        e21_prev = ema(closes[:-1], 21)[-1] if len(closes) >= 22 else _fallback_prev
+        e50_prev = ema(closes[:-1], 50)[-1] if len(closes) >= 51 else _fallback_prev
+        e200_prev = ema(closes[:-1], min(800, len(closes) - 1))[-1] if len(closes) >= 3 else _fallback_prev
+
     if precomputed_indicators and 'adx' in precomputed_indicators:
         adx_val = precomputed_indicators['adx']
         vol_r = precomputed_indicators.get('vol_ratio', volume_ratio(volumes))
@@ -1269,13 +1367,121 @@ def _build_statistical_snapshot(
         bb_bw, bb_squeeze = bollinger_bandwidth(closes)
     higher_highs, lower_lows = market_structure(candles_1h)
     time_for_filter = current_time if current_time is not None else datetime.now(timezone.utc)
+    current_open = float(opens[-1])
+    current_high = float(highs[-1])
+    current_low = float(lows[-1])
+    current_close = float(closes[-1])
+    prev_open = float(opens[-2])
+    prev_high = float(highs[-2])
+    prev_low = float(lows[-2])
+    prev_close = float(closes[-2])
+    body = abs(current_close - current_open)
+    upper_wick = current_high - max(current_open, current_close)
+    lower_wick = min(current_open, current_close) - current_low
+    bullish_engulfing = (
+        current_close > current_open
+        and prev_close < prev_open
+        and current_open <= prev_close
+        and current_close >= prev_open
+    )
+    bearish_engulfing = (
+        current_close < current_open
+        and prev_close > prev_open
+        and current_open >= prev_close
+        and current_close <= prev_open
+    )
+    inside_bar = current_high <= prev_high and current_low >= prev_low
+    outside_bar = current_high >= prev_high and current_low <= prev_low
+    pin_bar_bull = lower_wick >= body * 2.0 and upper_wick <= body and current_close >= current_open
+    pin_bar_bear = upper_wick >= body * 2.0 and lower_wick <= body and current_close <= current_open
+    three_green_candles = len(closes) >= 3 and all(closes[-i] > opens[-i] for i in (1, 2, 3))
+    three_red_candles = len(closes) >= 3 and all(closes[-i] < opens[-i] for i in (1, 2, 3))
+    if precomputed_indicators and precomputed_indicators.get('atr20') is not None:
+        atr20 = float(precomputed_indicators['atr20'])
+        atr20_prev = float(precomputed_indicators.get('atr20_prev') or atr20)
+        atr_percentile_high = bool(precomputed_indicators.get('atr_percentile_high', False))
+    else:
+        atr20 = _atr_value(candles_1h, 20)
+        atr20_prev = _atr_value(candles_1h[:-1], 20) if len(candles_1h) >= 21 else atr20
+        recent_atr_values = [
+            _atr_value(candles_1h[:idx], 20)
+            for idx in range(max(21, len(candles_1h) - 100), len(candles_1h))
+        ]
+        recent_atr_values = [v for v in recent_atr_values if v > 0]
+        atr_percentile_high = bool(recent_atr_values) and atr20 >= float(np.percentile(recent_atr_values, 80))
+    atr_expansion = atr20_prev > 0 and atr20 >= atr20_prev * 1.2
+    candle_range_above_atr = atr20 > 0 and (current_high - current_low) / atr20 >= 1.2
+    current_range_atr = (current_high - current_low) / atr20 if atr20 > 0 else 0.0
+    prev_range = max(prev_high - prev_low, 0.0)
+    prev_range_atr = prev_range / atr20_prev if atr20_prev > 0 else 0.0
+    ema21_rising = float(e21) > float(e21_prev)
+    ema21_falling = float(e21) < float(e21_prev)
+    ema_fan_wide = abs(float(e9) - float(e50)) / max(abs(current_close), 1e-9) * 100.0 >= 1.0
+    ema21_slope_pct = ((float(e21) - float(e21_prev)) / max(abs(current_close), 1e-9)) * 100.0
+    adx_prev = adx(highs[:-1], lows[:-1], closes[:-1], period=14) if len(closes) >= 51 else float(adx_val)
+    adx_rising = float(adx_val) > float(adx_prev)
+    adx_falling = float(adx_val) < float(adx_prev)
+    recent_high_20 = max(highs[-20:])
+    recent_low_20 = min(lows[-20:])
+    prior_high_20 = max(highs[-21:-1]) if len(highs) >= 21 else recent_high_20
+    prior_low_20 = min(lows[-21:-1]) if len(lows) >= 21 else recent_low_20
+    near_20bar_high = (recent_high_20 - current_close) / max(abs(current_close), 1e-9) * 100.0 <= 1.0
+    near_20bar_low = (current_close - recent_low_20) / max(abs(current_close), 1e-9) * 100.0 <= 1.0
+    price_near_upper_bb = 0 < (float(bb_upper) - current_close) / max(abs(current_close), 1e-9) < 0.01
+    price_near_lower_bb = 0 < (current_close - float(bb_lower)) / max(abs(current_close), 1e-9) < 0.01
+    prior_price_window = closes[-21:-1] if len(closes) >= 21 else closes[:-1]
+    prior_min_close = min(prior_price_window) if prior_price_window else current_close
+    prior_max_close = max(prior_price_window) if prior_price_window else current_close
+    if precomputed_indicators and precomputed_indicators.get('rsi_window'):
+        _rsi_win = precomputed_indicators['rsi_window']
+        prior_min_rsi = min(_rsi_win[:-1]) if len(_rsi_win) > 1 else float(rsi_val)
+        prior_max_rsi = max(_rsi_win[:-1]) if len(_rsi_win) > 1 else float(rsi_val)
+    else:
+        _rsi_series = [rsi(closes[:i]) for i in range(max(15, len(closes) - 20), len(closes) + 1)]
+        _prior_rsi_window = _rsi_series[:-1]
+        prior_min_rsi = min(_prior_rsi_window) if _prior_rsi_window else float(rsi_val)
+        prior_max_rsi = max(_prior_rsi_window) if _prior_rsi_window else float(rsi_val)
+    if precomputed_indicators and precomputed_indicators.get('macd_line_window'):
+        _macd_win = precomputed_indicators['macd_line_window']
+        prior_min_macd = min(_macd_win[:-1]) if len(_macd_win) > 1 else float(macd_line_val)
+        prior_max_macd = max(_macd_win[:-1]) if len(_macd_win) > 1 else float(macd_line_val)
+    else:
+        _macd_series = [macd(closes[:i])[0] for i in range(max(27, len(closes) - 20), len(closes) + 1)]
+        _prior_macd_window = _macd_series[:-1]
+        prior_min_macd = min(_prior_macd_window) if _prior_macd_window else float(macd_line_val)
+        prior_max_macd = max(_prior_macd_window) if _prior_macd_window else float(macd_line_val)
+    rsi_bullish_divergence = current_close < prior_min_close and float(rsi_val) > prior_min_rsi + 3.0
+    rsi_bearish_divergence = current_close > prior_max_close and float(rsi_val) < prior_max_rsi - 3.0
+    macd_bullish_divergence = current_close < prior_min_close and float(macd_line_val) > prior_min_macd
+    macd_bearish_divergence = current_close > prior_max_close and float(macd_line_val) < prior_max_macd
+    four_hour_closes = closes[::4]
+    if len(four_hour_closes) >= 50:
+        htf_e21 = ema(four_hour_closes, 21)[-1]
+        htf_e50 = ema(four_hour_closes, 50)[-1]
+        htf_4h_bull_trend = four_hour_closes[-1] > htf_e21 > htf_e50
+        htf_4h_bear_trend = four_hour_closes[-1] < htf_e21 < htf_e50
+    else:
+        htf_4h_bull_trend = False
+        htf_4h_bear_trend = False
 
     return {
         "close": closes[-1],
+        "open": current_open,
+        "high": current_high,
+        "low": current_low,
+        "prev_open": prev_open,
+        "prev_high": prev_high,
+        "prev_low": prev_low,
+        "prev_close": prev_close,
         "rsi": float(rsi_val),
         "e9": float(e9),
         "e21": float(e21),
         "e50": float(e50),
+        "e200": float(e200),
+        "e9_prev": float(e9_prev),
+        "e21_prev": float(e21_prev),
+        "e50_prev": float(e50_prev),
+        "e200_prev": float(e200_prev),
         "above_ema200": bool(above_e200),
         "below_ema200": bool(below_e200),
         "macd_line": float(macd_line_val),
@@ -1289,8 +1495,52 @@ def _build_statistical_snapshot(
         "bb_lower": float(bb_lower),
         "bb_bandwidth": float(bb_bw),
         "bb_squeeze": bool(bb_squeeze),
+        "price_near_upper_bb": price_near_upper_bb,
+        "price_near_lower_bb": price_near_lower_bb,
         "higher_highs": bool(higher_highs),
         "lower_lows": bool(lower_lows),
+        "bullish_engulfing": bullish_engulfing,
+        "bearish_engulfing": bearish_engulfing,
+        "inside_bar": inside_bar,
+        "outside_bar": outside_bar,
+        "pin_bar_bull": pin_bar_bull,
+        "pin_bar_bear": pin_bar_bear,
+        "three_green_candles": three_green_candles,
+        "three_red_candles": three_red_candles,
+        "atr20": float(atr20),
+        "atr20_prev": float(atr20_prev),
+        "atr_percentile_high": atr_percentile_high,
+        "atr_expansion": atr_expansion,
+        "candle_range_above_atr": candle_range_above_atr,
+        "two_expansion_green_candles": (
+            current_close > current_open
+            and prev_close > prev_open
+            and current_range_atr >= 1.2
+            and prev_range_atr >= 1.2
+        ),
+        "two_expansion_red_candles": (
+            current_close < current_open
+            and prev_close < prev_open
+            and current_range_atr >= 1.2
+            and prev_range_atr >= 1.2
+        ),
+        "ema21_rising": ema21_rising,
+        "ema21_falling": ema21_falling,
+        "ema_fan_wide": ema_fan_wide,
+        "strong_ema21_slope_up": ema21_slope_pct >= 0.15,
+        "strong_ema21_slope_down": ema21_slope_pct <= -0.15,
+        "adx_rising": adx_rising,
+        "adx_falling": adx_falling,
+        "near_20bar_high": near_20bar_high,
+        "near_20bar_low": near_20bar_low,
+        "breaks_20bar_high": current_close > prior_high_20,
+        "breaks_20bar_low": current_close < prior_low_20,
+        "rsi_bullish_divergence": rsi_bullish_divergence,
+        "rsi_bearish_divergence": rsi_bearish_divergence,
+        "macd_bullish_divergence": macd_bullish_divergence,
+        "macd_bearish_divergence": macd_bearish_divergence,
+        "htf_4h_bull_trend": htf_4h_bull_trend,
+        "htf_4h_bear_trend": htf_4h_bear_trend,
         "hour_utc": time_for_filter.hour,
         "symbol": symbol,
     }
@@ -1640,6 +1890,78 @@ def _generate_hybrid_technical_wide_short_rsi28_signal(
     return result
 
 
+def _generate_hybrid_technical_statistical_signal(
+    symbol: str,
+    candles_1h: list,
+    state: dict = None,
+    current_time: Optional[datetime] = None,
+    precomputed_indicators: dict = None,
+    validated_setups_path: Optional[str] = None,
+) -> Optional[dict]:
+    """
+    Hybrid model: technical scoring OR any validated statistical setup, whichever fires.
+
+    Priority:
+      1. Statistical signal — if a validated setup matches, use it (most selective).
+      2. Technical signal — if technical score meets threshold with no statistical match.
+
+    Statistical setups are sourced from the full validated_setups.json (all directions
+    and templates, not just RSI-28 SHORT), so this model benefits from all setups
+    discovered by the analyzer.
+    """
+    _last_rejection_reason.pop(symbol, None)
+
+    statistical_signal = _generate_statistical_signal(
+        symbol,
+        candles_1h,
+        "statistical",
+        state=state,
+        current_time=current_time,
+        precomputed_indicators=precomputed_indicators,
+        validated_setups_path=validated_setups_path,
+    )
+    statistical_reason = _last_rejection_reason.get(symbol)
+    _last_rejection_reason.pop(symbol, None)
+
+    technical_signal = _generate_technical_signal(
+        symbol,
+        candles_1h,
+        state=state,
+        current_time=current_time,
+        precomputed_indicators=precomputed_indicators,
+    )
+    technical_reason = _last_rejection_reason.get(symbol)
+
+    selected_signal = statistical_signal or technical_signal
+    if selected_signal is None:
+        _last_rejection_reason[symbol] = (
+            f"Hybrid rejected (statistical: {statistical_reason or 'no validated setup'}; "
+            f"technical: {technical_reason or 'no signal'})"
+        )
+        return None
+
+    selected_source = "statistical" if statistical_signal else "technical"
+    result = dict(selected_signal)
+    result["signal_model"] = "hybrid_technical_statistical"
+    result["hybrid_details"] = {
+        "statistical": None if not statistical_signal else {
+            "direction": statistical_signal["direction"],
+            "setup": statistical_signal.get("statistical_setup"),
+            "conditions": statistical_signal.get("statistical_details", {}).get("conditions"),
+            "template": statistical_signal.get("statistical_details", {}).get("template"),
+        },
+        "statistical_reject_reason": statistical_reason if not statistical_signal else None,
+        "technical": None if not technical_signal else {
+            "direction": technical_signal["direction"],
+            "score": technical_signal["score"],
+            "strategy": technical_signal.get("strategy"),
+        },
+        "technical_reject_reason": technical_reason if not technical_signal else None,
+        "selected": {"source": selected_source},
+    }
+    return result
+
+
 # ─────────────────────────────────────────────────────────────────
 # GENERATE SIGNAL — THE SINGLE SOURCE OF TRUTH
 #
@@ -1696,6 +2018,15 @@ def generate_signal(symbol: str, candles_1h: list,
             state=state,
             current_time=current_time,
             precomputed_indicators=precomputed_indicators,
+        )
+    if resolved_signal_model == "hybrid_technical_statistical":
+        return _generate_hybrid_technical_statistical_signal(
+            symbol,
+            candles_1h,
+            state=state,
+            current_time=current_time,
+            precomputed_indicators=precomputed_indicators,
+            validated_setups_path=validated_setups_path,
         )
 
     return _generate_technical_signal(

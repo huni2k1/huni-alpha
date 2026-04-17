@@ -16,6 +16,29 @@ def test_two_proportion_ztest_detects_clear_difference():
     assert p_value < 0.01
 
 
+def test_benjamini_hochberg_adjusted_reduces_false_discoveries():
+    # 5 tests, only first two should survive at q=0.10
+    p_values = [0.001, 0.03, 0.06, 0.15, 0.40]
+    adj = stats_utils.benjamini_hochberg_adjusted(p_values)
+    assert len(adj) == 5
+    assert adj[0] <= 0.10  # survives
+    assert adj[1] <= 0.10  # survives
+    assert adj[2] <= 0.10  # survives (adj = 0.10 exactly)
+    assert adj[3] > 0.10   # rejected
+    assert adj[4] > 0.10   # rejected
+
+
+def test_benjamini_hochberg_adjusted_is_monotone():
+    p_values = [0.001, 0.03, 0.06, 0.15, 0.40]
+    adj = stats_utils.benjamini_hochberg_adjusted(p_values)
+    for i in range(len(adj) - 1):
+        assert adj[i] <= adj[i + 1], f"Not monotone at index {i}: {adj}"
+
+
+def test_benjamini_hochberg_adjusted_handles_empty():
+    assert stats_utils.benjamini_hochberg_adjusted([]) == []
+
+
 def test_build_walk_forward_windows_uses_rolling_calendar_months():
     months = [
         datetime(2025, 1, 1, tzinfo=timezone.utc),

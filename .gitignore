@@ -59,6 +59,9 @@ src/trading_bot/test.json
 data/trader-state.json
 data/*.pid
 
+# Research artifacts — generated outputs from analyzer runs
+research/
+
 # Playwright MCP artifacts
 .playwright-mcp/
 
