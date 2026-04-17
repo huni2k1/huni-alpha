@@ -33,6 +33,7 @@ from typing import Callable, Optional
 try:
     from . import scanner
     from .backtester import fetch_klines_historical_cached
+    from .regime import VALID_REGIMES, build_regime_lookup
     from .setup_conditions import ALL_CONDITIONS, matches_conditions, normalize_conditions
     from .statistical_utils import (
         SampleStats,
@@ -45,6 +46,7 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import scanner  # type: ignore
     from backtester import fetch_klines_historical_cached  # type: ignore
+    from regime import VALID_REGIMES, build_regime_lookup  # type: ignore
     from setup_conditions import ALL_CONDITIONS, matches_conditions, normalize_conditions  # type: ignore
     from statistical_utils import (  # type: ignore
         SampleStats,
@@ -92,7 +94,8 @@ MAX_COMBO_TESTS_DEFAULT = 50
 MAX_CANDIDATE_CONDITIONS = 8
 EVAL_COOLDOWN_CANDLES = 48
 DEFAULT_DISCOVERY_VARIANTS = ("pooled",)
-VALID_DISCOVERY_VARIANTS = ("pooled", "symbol_specific")
+VALID_DISCOVERY_VARIANTS = ("pooled", "symbol_specific", "regime")
+REGIME_BTC_SYMBOL = "BTCUSDT"
 DOMINANCE_THRESHOLDS = {
     "train_avg_pnl_pct": 0.15,
     "test_avg_pnl_pct": 0.15,
@@ -988,10 +991,15 @@ def _export_runtime_setup(setup: dict) -> dict:
 
     scope_type = setup.get("scope_type")
     scope_symbol = setup.get("scope_symbol")
+    scope_regime = setup.get("scope_regime")
     if scope_type == "symbol" and scope_symbol:
         exported["scope_key"] = setup.get("scope_key", f"symbol_{scope_symbol}")
         exported["scope_type"] = "symbol"
         exported["scope_symbol"] = scope_symbol
+    elif scope_type == "regime" and scope_regime:
+        exported["scope_key"] = setup.get("scope_key", f"regime_{scope_regime}")
+        exported["scope_type"] = "regime"
+        exported["scope_regime"] = scope_regime
 
     return exported
 
@@ -1043,6 +1051,21 @@ def _normalize_discovery_variants(discovery_variants: Optional[list[str]]) -> li
     return normalized or list(DEFAULT_DISCOVERY_VARIANTS)
 
 
+def tag_rows_with_regime(rows: list[dict], btc_candles: list[dict]) -> None:
+    """Tag each row with BTC regime at that row's timestamp (in place).
+
+    Rows whose close_time falls outside the BTC series or during EMA warmup
+    are tagged "unknown" and excluded from regime-conditioned views.
+    """
+    if not btc_candles:
+        for row in rows:
+            row.setdefault("regime", "unknown")
+        return
+    lookup = build_regime_lookup(btc_candles)
+    for row in rows:
+        row["regime"] = lookup.get(int(row.get("close_time", 0)), "unknown")
+
+
 def build_analysis_views(
     rows: list[dict],
     symbols: list[str],
@@ -1070,6 +1093,18 @@ def build_analysis_views(
                 "rows": subset,
                 "template_names": sorted(SETUP_TEMPLATES),
                 "scope": {"scope_key": key, "scope_type": "symbol", "scope_symbol": symbol},
+            }
+
+    if "regime" in variants:
+        for regime_name in VALID_REGIMES:
+            subset = [row for row in rows if row.get("regime") == regime_name]
+            if not subset:
+                continue
+            key = f"regime_{regime_name}"
+            views[key] = {
+                "rows": subset,
+                "template_names": sorted(SETUP_TEMPLATES),
+                "scope": {"scope_key": key, "scope_type": "regime", "scope_regime": regime_name},
             }
 
     return views
@@ -1347,9 +1382,17 @@ def dedupe_validated_setups(validated_setups: list[dict]) -> tuple[list[dict], l
 
 
 def build_validated_setups_export(report: dict) -> dict:
-    """Create the lightweight production-facing validated setup export."""
-    validated_long = report["validated_setups"]["long"]
-    validated_short = report["validated_setups"]["short"]
+    """Create the lightweight production-facing validated setup export.
+
+    Includes pooled setups plus any setups from discovery variants (symbol_specific,
+    regime). Variant setups carry their scope (scope_symbol or scope_regime) so the
+    scanner can gate them at runtime.
+    """
+    validated_long = list(report["validated_setups"]["long"])
+    validated_short = list(report["validated_setups"]["short"])
+    for variant_report in report.get("discovery_variants", {}).values():
+        validated_long.extend(variant_report.get("validated_setups", {}).get("long", []))
+        validated_short.extend(variant_report.get("validated_setups", {}).get("short", []))
     dedupe_removed = report.get("dedupe_removed_setups", {"long": [], "short": []})
 
     return {
@@ -1493,7 +1536,7 @@ def analyze_symbol_universe(
     analysis_start_ms = int(analysis_start_dt.timestamp() * 1000)
 
     worker_count = max(1, workers)
-    all_rows, _, _ = load_symbol_universe_rows(
+    all_rows, _, candles_by_symbol = load_symbol_universe_rows(
         symbols=symbols,
         start_ms=start_ms,
         end_ms=end_ms,
@@ -1504,6 +1547,17 @@ def analyze_symbol_universe(
         slippage_pct=slippage_pct,
         workers=worker_count,
     )
+
+    # Tag every row with the BTC regime at its timestamp so regime-conditioned
+    # discovery variants can filter rows later. Tagging is always safe; the
+    # tag is only consumed when the "regime" variant is requested.
+    btc_candles = candles_by_symbol.get(REGIME_BTC_SYMBOL, []) if candles_by_symbol else []
+    tag_rows_with_regime(all_rows, btc_candles)
+    if btc_candles:
+        regime_counts: dict[str, int] = {}
+        for row in all_rows:
+            regime_counts[row["regime"]] = regime_counts.get(row["regime"], 0) + 1
+        log.info("Regime row counts: %s", regime_counts)
 
     report = {
         "metadata": {
@@ -1601,7 +1655,7 @@ def main() -> int:
         nargs="+",
         choices=VALID_DISCOVERY_VARIANTS,
         default=list(DEFAULT_DISCOVERY_VARIANTS),
-        help="Additional research views to run: pooled, symbol_specific",
+        help="Additional research views to run: pooled, symbol_specific, regime",
     )
     parser.add_argument("--end-date", type=str, default=None, help="Optional UTC end date (YYYY-MM-DD) for reproducible cached analysis")
     parser.add_argument("--workers", type=int, default=min(4, os.cpu_count() or 1), help="Parallel workers for per-symbol row building")
@@ -1653,8 +1707,8 @@ def main() -> int:
     log.info(
         "Saved validated setups to %s (%d long validated, %d short validated)",
         args.validated_output,
-        len(report["validated_setups"]["long"]),
-        len(report["validated_setups"]["short"]),
+        len(validated_export["validated_setups"]["long"]),
+        len(validated_export["validated_setups"]["short"]),
     )
     return 0
 

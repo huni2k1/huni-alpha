@@ -56,6 +56,7 @@ try:
         CURATED_VALIDATED_SETUPS_PATH,
     )
     from .binance_client import BinanceClient
+    from .regime import classify_current_regime
 except ImportError:
     import scanner
     from scanner import (
@@ -70,6 +71,7 @@ except ImportError:
         CURATED_VALIDATED_SETUPS_PATH,
     )
     from binance_client import BinanceClient
+    from regime import classify_current_regime
 
 # ─────────────────────────────────────────────────────────────────
 # CONFIG
@@ -999,6 +1001,17 @@ def main():
         else:
             log.info(f"Scanning {len(SYMBOLS)} symbols ({open_count}/{cfg['max_positions']} positions open)...")
 
+            # Classify BTC regime once per cycle — gates any regime-scoped statistical setups.
+            current_regime: Optional[str] = None
+            try:
+                btc_candles = fetch_klines_cached("BTCUSDT", "1h", cfg["window_size"], use_cache=False)
+                if btc_candles and len(btc_candles) >= 220:
+                    btc_candle_dicts = [{"close": float(c[3])} for c in btc_candles]
+                    current_regime = classify_current_regime(btc_candle_dicts)
+                    log.info(f"BTC regime: {current_regime}")
+            except Exception as exc:
+                log.warning(f"Regime classification failed: {exc} — statistical setups will match any regime")
+
             for symbol in SYMBOLS:
                 if len(state["positions"]) >= cfg["max_positions"]:
                     break
@@ -1028,6 +1041,7 @@ def main():
                         current_time=now,
                         signal_model=signal_model,
                         validated_setups_path=validated_path,
+                        current_regime=current_regime,
                     )
                 except Exception as e:
                     log.error(f"  {symbol}: generate_signal error: {e}", exc_info=True)

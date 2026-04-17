@@ -104,6 +104,17 @@ generate_signal = scanner.generate_signal
 score_technical = scanner.score_technical
 suggest_tp_sl   = scanner.suggest_tp_sl
 
+# Regime classifier — dual-mode import (package or script)
+try:
+    from .regime import classify_regime_series
+except ImportError:
+    _regime_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "regime.py")
+    _regime_spec = importlib.util.spec_from_file_location("regime", _regime_path)
+    _regime_mod = importlib.util.module_from_spec(_regime_spec)
+    sys.modules.setdefault("scanner", scanner)  # regime.py falls back to `from scanner import ema`
+    _regime_spec.loader.exec_module(_regime_mod)
+    classify_regime_series = _regime_mod.classify_regime_series
+
 # Our own logger
 log = logging.getLogger("backtester")
 log.setLevel(logging.INFO)
@@ -850,6 +861,17 @@ def run_backtest(
         for sym, reason in skipped_symbols:
             log.warning(f"  - {sym}: {reason}")
 
+    # ── STEP 1a: BTC regime series (for regime-scoped validated setups) ──
+    # Classify BTC's regime at every candle; generate_signal() uses the lookup
+    # to gate setups that carry a scope_regime. When BTC data is missing,
+    # regime_series stays empty and every lookup returns None (no gating).
+    btc_candles_for_regime = all_candles.get("BTCUSDT", [])
+    btc_regime_series = classify_regime_series(btc_candles_for_regime) if btc_candles_for_regime else []
+    if btc_regime_series:
+        log.info(f"✅ BTC regime series computed ({len(btc_regime_series)} candles)")
+    else:
+        log.info("⚠️  No BTCUSDT in universe — regime filtering disabled")
+
     # ── STEP 1b: Pre-compute indicators for all symbols (once) ────
     precompute_start = time.time()
     all_indicators = {}
@@ -1175,12 +1197,19 @@ def run_backtest(
             # Use pre-computed indicators (RSI, EMA, MACD, ADX, Bollinger, volume ratio)
             indicators_at_t = all_indicators.get(symbol, {}).get(t)
 
+            # Regime at this candle (None = no regime gating, matches live scanner default).
+            # "unknown" (warmup) collapses to None so setups with no scope still fire.
+            current_regime = btc_regime_series[t] if t < len(btc_regime_series) else None
+            if current_regime == "unknown":
+                current_regime = None
+
             try:
                 signal = generate_signal(symbol, window_candles,
                                          current_time=candle_time,
                                          signal_model=signal_model,
                                          validated_setups_path=validated_setups_path,
-                                         precomputed_indicators=indicators_at_t)
+                                         precomputed_indicators=indicators_at_t,
+                                         current_regime=current_regime)
             except Exception as exc:
                 raise RuntimeError(
                     f"generate_signal failed for {symbol} at {candle_time.isoformat()} "

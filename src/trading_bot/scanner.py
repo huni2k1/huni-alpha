@@ -1218,7 +1218,7 @@ def load_validated_setups(validated_setups_path: Optional[str] = None) -> dict:
                     "scope_key": setup.get("scope_key", "pooled"),
                     "scope_type": setup.get("scope_type", "pooled"),
                     "scope_symbol": setup.get("scope_symbol"),
-                    "scope_regime": None,
+                    "scope_regime": setup.get("scope_regime"),
                 }
             )
 
@@ -1259,13 +1259,22 @@ def _setup_scope_specificity(setup: dict) -> int:
     scope_type = setup.get("scope_type", "pooled")
     if scope_type == "symbol":
         return 2
+    if scope_type == "regime":
+        return 1
     return 0
 
 
-def _setup_matches_scope(setup: dict, symbol: str) -> bool:
-    """Check whether a setup applies to the current symbol scope."""
+def _setup_matches_scope(setup: dict, symbol: str, current_regime: Optional[str] = None) -> bool:
+    """Check whether a setup applies to the current symbol + regime scope.
+
+    Regime filtering is skipped when `current_regime` is None (back-compat for
+    callers that don't classify regime yet, e.g. backtester paths mid-migration).
+    """
     scope_symbol = setup.get("scope_symbol")
     if scope_symbol and scope_symbol != symbol:
+        return False
+    scope_regime = setup.get("scope_regime")
+    if scope_regime and current_regime and scope_regime != current_regime:
         return False
     return True
 
@@ -1550,6 +1559,7 @@ def _find_matching_statistical_setups(
     symbol: str,
     snapshot: dict,
     validated_setups: dict,
+    current_regime: Optional[str] = None,
 ) -> list[dict]:
     """Return indicator-driven validated setups that match the latest snapshot."""
     matches = []
@@ -1558,7 +1568,7 @@ def _find_matching_statistical_setups(
         for setup in validated_setups.get(bucket, []):
             if setup.get("direction") != direction:
                 continue
-            if not _setup_matches_scope(setup, symbol):
+            if not _setup_matches_scope(setup, symbol, current_regime):
                 continue
             if not matches_conditions(snapshot, setup.get("conditions", [])):
                 continue
@@ -1596,6 +1606,7 @@ def _generate_statistical_signal(
     current_time: Optional[datetime] = None,
     precomputed_indicators: dict = None,
     validated_setups_path: Optional[str] = None,
+    current_regime: Optional[str] = None,
 ) -> Optional[dict]:
     """Generate a signal by matching the latest candle against validated setups."""
     snapshot = _build_statistical_snapshot(
@@ -1606,7 +1617,7 @@ def _generate_statistical_signal(
     )
     resolved_setups_path = _resolve_validated_setups_path(signal_model, validated_setups_path)
     validated_setups = load_validated_setups(resolved_setups_path)
-    matches = _find_matching_statistical_setups(symbol, snapshot, validated_setups)
+    matches = _find_matching_statistical_setups(symbol, snapshot, validated_setups, current_regime)
     if not matches:
         _last_rejection_reason[symbol] = "No validated setup"
         return None
@@ -1897,6 +1908,7 @@ def _generate_hybrid_technical_statistical_signal(
     current_time: Optional[datetime] = None,
     precomputed_indicators: dict = None,
     validated_setups_path: Optional[str] = None,
+    current_regime: Optional[str] = None,
 ) -> Optional[dict]:
     """
     Hybrid model: technical scoring OR any validated statistical setup, whichever fires.
@@ -1919,6 +1931,7 @@ def _generate_hybrid_technical_statistical_signal(
         current_time=current_time,
         precomputed_indicators=precomputed_indicators,
         validated_setups_path=validated_setups_path,
+        current_regime=current_regime,
     )
     statistical_reason = _last_rejection_reason.get(symbol)
     _last_rejection_reason.pop(symbol, None)
@@ -1973,7 +1986,8 @@ def generate_signal(symbol: str, candles_1h: list,
                     current_time: Optional[datetime] = None,
                     precomputed_indicators: dict = None,
                     signal_model: Optional[str] = None,
-                    validated_setups_path: Optional[str] = None) -> Optional[dict]:
+                    validated_setups_path: Optional[str] = None,
+                    current_regime: Optional[str] = None) -> Optional[dict]:
     """
     Generate a complete trade signal from candle data.
 
@@ -1982,6 +1996,8 @@ def generate_signal(symbol: str, candles_1h: list,
         candles_1h: OHLCV candles [[open, high, low, close, volume], ...]
         current_time: Time to use for session filter (defaults to now). Backtester passes candle timestamp
         precomputed_indicators: Optional dict of pre-computed indicators (optimization for backtester)
+        current_regime: Optional BTC regime ("bull"|"bear"|"chop"). Gates statistical
+            setups that have scope_regime set. None = no regime filtering (back-compat).
 
     Returns:
         Signal dict or None if no signal. Signal contains everything needed
@@ -2001,6 +2017,7 @@ def generate_signal(symbol: str, candles_1h: list,
             current_time=current_time,
             precomputed_indicators=precomputed_indicators,
             validated_setups_path=validated_setups_path,
+            current_regime=current_regime,
         )
     if resolved_signal_model == "statistical_wide_short_rsi28":
         return _generate_dedicated_wide_short_rsi28_signal(
@@ -2027,6 +2044,7 @@ def generate_signal(symbol: str, candles_1h: list,
             current_time=current_time,
             precomputed_indicators=precomputed_indicators,
             validated_setups_path=validated_setups_path,
+            current_regime=current_regime,
         )
 
     return _generate_technical_signal(
