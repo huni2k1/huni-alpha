@@ -149,13 +149,37 @@ def write_long_crossover_scope_export(path):
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def write_rsi28_short_rulebook(path):
+    payload = {
+        "schema_version": 1,
+        "metadata": {},
+        "validated_setups": {
+            "long": [],
+            "short": [
+                {
+                    "name": "wide_short_rsi_below_28",
+                    "template": "wide",
+                    "direction": "SHORT",
+                    "conditions": ["rsi_below_28"],
+                    "tp_sl": {"sl_atr_mult": 2.0, "rr_ratio": 2.5},
+                    "train_stats": {"count": 20, "win_rate": 60.0, "avg_pnl_pct": 1.0, "profit_factor": 1.8, "edge_win_rate": 20.0},
+                    "test_stats": {"count": 10, "win_rate": 60.0, "avg_pnl_pct": 1.0, "profit_factor": 1.8, "edge_win_rate": 20.0},
+                    "by_symbol": {},
+                    "filter": {},
+                }
+            ],
+        },
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
 def test_generate_signal_statistical_matches_validated_setup(tmp_path):
     validated_path = tmp_path / "validated_setups.json"
     write_validated_export(validated_path)
     candles = make_trending_candles(120, "up")
     with patch.object(
         scanner,
-        "_build_statistical_snapshot",
+        "_build_indicator_snapshot",
         return_value={"rsi": 72, "hour_utc": 12, "bb_squeeze": True, "vol_ratio": 1.6},
     ):
         signal = scanner.generate_signal(
@@ -167,9 +191,9 @@ def test_generate_signal_statistical_matches_validated_setup(tmp_path):
         )
 
     assert signal is not None
-    assert signal["signal_model"] == "statistical"
+    assert signal["signal_engine"] == "rule_match"
     assert signal["direction"] == "LONG"
-    assert signal["strategy"] == "statistical_wide"
+    assert signal["strategy"] == "rule_wide"
     assert signal["statistical_setup"] == "wide_long_rsi_above_70"
     assert signal["score"] == 1.3947
 
@@ -180,7 +204,7 @@ def test_generate_signal_statistical_returns_none_without_matching_setup(tmp_pat
     candles = make_trending_candles(120, "up")
     with patch.object(
         scanner,
-        "_build_statistical_snapshot",
+        "_build_indicator_snapshot",
         return_value={"rsi": 55, "hour_utc": 12, "bb_squeeze": True, "vol_ratio": 1.6},
     ):
         signal = scanner.generate_signal(
@@ -194,47 +218,53 @@ def test_generate_signal_statistical_returns_none_without_matching_setup(tmp_pat
     assert signal is None
 
 
-def test_generate_signal_dedicated_wide_short_rsi28_matches():
+def test_generate_signal_rule_match_wide_short_rsi28_matches(tmp_path):
+    rulebook_path = tmp_path / "rulebook.json"
+    write_rsi28_short_rulebook(rulebook_path)
     candles = make_trending_candles(120, "down")
     with patch.object(
         scanner,
-        "_build_statistical_snapshot",
+        "_build_indicator_snapshot",
         return_value={"rsi": 27.5, "hour_utc": 12},
     ):
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
             current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
-            signal_model="statistical_wide_short_rsi28",
+            signal_engine="rule_match",
+            rulebook_path=str(rulebook_path),
         )
 
     assert signal is not None
-    assert signal["signal_model"] == "statistical_wide_short_rsi28"
+    assert signal["signal_engine"] == "rule_match"
     assert signal["direction"] == "SHORT"
-    assert signal["strategy"] == "statistical_wide_short_rsi28"
+    assert signal["strategy"] == "rule_wide"
     assert signal["statistical_setup"] == "wide_short_rsi_below_28"
 
 
-def test_generate_signal_dedicated_wide_short_rsi28_returns_none_without_match():
+def test_generate_signal_rule_match_wide_short_rsi28_returns_none_without_match(tmp_path):
+    rulebook_path = tmp_path / "rulebook.json"
+    write_rsi28_short_rulebook(rulebook_path)
     candles = make_trending_candles(120, "down")
     with patch.object(
         scanner,
-        "_build_statistical_snapshot",
+        "_build_indicator_snapshot",
         return_value={"rsi": 29.0, "hour_utc": 12},
     ):
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
             current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
-            signal_model="statistical_wide_short_rsi28",
+            signal_engine="rule_match",
+            rulebook_path=str(rulebook_path),
         )
 
     assert signal is None
 
 
-def test_generate_signal_hybrid_exposes_both_evaluations_and_prefers_statistical_short():
+def test_generate_signal_combined_prefers_rule_match_short():
     candles = make_trending_candles(120, "down")
-    technical_signal = {
+    ta_signal = {
         "symbol": "BTCUSDT",
         "direction": "SHORT",
         "score": 7.4,
@@ -251,9 +281,9 @@ def test_generate_signal_hybrid_exposes_both_evaluations_and_prefers_statistical
         "regime": "breakout",
         "strategy": "breakout",
         "details": {"strategy": "breakout", "regime": "breakout"},
-        "signal_model": "technical",
+        "signal_engine": "ta_score",
     }
-    statistical_signal = {
+    rule_signal = {
         "symbol": "BTCUSDT",
         "direction": "SHORT",
         "score": 0.0,
@@ -267,34 +297,34 @@ def test_generate_signal_hybrid_exposes_both_evaluations_and_prefers_statistical
         "technical_score": 0.0,
         "long_score": 0.0,
         "short_score": 0.0,
-        "regime": "statistical",
-        "strategy": "statistical_wide_short_rsi28",
-        "details": {"strategy": "statistical_wide_short_rsi28", "regime": "statistical"},
-        "signal_model": "statistical_wide_short_rsi28",
+        "regime": "rule_match",
+        "strategy": "rule_wide",
+        "details": {"strategy": "rule_wide", "regime": "rule_match"},
+        "signal_engine": "rule_match",
         "statistical_setup": "wide_short_rsi_below_28",
         "statistical_details": {"conditions": ["rsi_below_28"], "template": "wide"},
     }
 
-    with patch.object(scanner, "_generate_technical_signal", return_value=technical_signal), \
-         patch.object(scanner, "_generate_dedicated_wide_short_rsi28_signal", return_value=statistical_signal):
+    with patch.object(scanner, "_generate_ta_score_signal", return_value=ta_signal), \
+         patch.object(scanner, "_generate_rule_match_signal", return_value=rule_signal):
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
             current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
-            signal_model="hybrid_technical_wide_short_rsi28",
+            signal_engine="combined",
         )
 
     assert signal is not None
-    assert signal["signal_model"] == "hybrid_technical_wide_short_rsi28"
-    assert signal["strategy"] == "statistical_wide_short_rsi28"
+    assert signal["signal_engine"] == "combined"
+    assert signal["strategy"] == "rule_wide"
     assert signal["hybrid_details"]["technical"]["strategy"] == "breakout"
     assert signal["hybrid_details"]["statistical"]["setup"] == "wide_short_rsi_below_28"
     assert signal["hybrid_details"]["selected"]["source"] == "statistical"
 
 
-def test_generate_signal_hybrid_keeps_technical_long_when_statistical_short_conflicts():
+def test_generate_signal_combined_falls_back_to_ta_when_no_rule_fires():
     candles = make_trending_candles(120, "up")
-    technical_signal = {
+    ta_signal = {
         "symbol": "BTCUSDT",
         "direction": "LONG",
         "score": 7.6,
@@ -311,37 +341,16 @@ def test_generate_signal_hybrid_keeps_technical_long_when_statistical_short_conf
         "regime": "trending",
         "strategy": "trend_pullback",
         "details": {"strategy": "trend_pullback", "regime": "trending"},
-        "signal_model": "technical",
-    }
-    statistical_signal = {
-        "symbol": "BTCUSDT",
-        "direction": "SHORT",
-        "score": 0.0,
-        "entry_price": 100.0,
-        "tp": 92.0,
-        "sl": 103.0,
-        "tp_pct": 8.0,
-        "sl_pct": 3.0,
-        "atr": 1.0,
-        "rr_ratio": 2.5,
-        "technical_score": 0.0,
-        "long_score": 0.0,
-        "short_score": 0.0,
-        "regime": "statistical",
-        "strategy": "statistical_wide_short_rsi28",
-        "details": {"strategy": "statistical_wide_short_rsi28", "regime": "statistical"},
-        "signal_model": "statistical_wide_short_rsi28",
-        "statistical_setup": "wide_short_rsi_below_28",
-        "statistical_details": {"conditions": ["rsi_below_28"], "template": "wide"},
+        "signal_engine": "ta_score",
     }
 
-    with patch.object(scanner, "_generate_technical_signal", return_value=technical_signal), \
-         patch.object(scanner, "_generate_dedicated_wide_short_rsi28_signal", return_value=statistical_signal):
+    with patch.object(scanner, "_generate_ta_score_signal", return_value=ta_signal), \
+         patch.object(scanner, "_generate_rule_match_signal", return_value=None):
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
             current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
-            signal_model="hybrid_technical_wide_short_rsi28",
+            signal_engine="combined",
         )
 
     assert signal is not None
@@ -350,17 +359,17 @@ def test_generate_signal_hybrid_keeps_technical_long_when_statistical_short_conf
     assert signal["hybrid_details"]["selected"]["source"] == "technical"
 
 
-def test_generate_signal_hybrid_reports_both_rejection_reasons_when_no_signal():
+def test_generate_signal_combined_reports_rejection_when_no_signal():
     candles = make_trending_candles(120, "up")
 
-    with patch.object(scanner, "_generate_technical_signal", return_value=None), \
-         patch.object(scanner, "_generate_dedicated_wide_short_rsi28_signal", return_value=None):
+    with patch.object(scanner, "_generate_ta_score_signal", return_value=None), \
+         patch.object(scanner, "_generate_rule_match_signal", return_value=None):
         scanner._last_rejection_reason["BTCUSDT"] = "No validated setup"
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
             current_time=datetime(2025, 1, 1, 12, 0, tzinfo=timezone.utc),
-            signal_model="hybrid_technical_wide_short_rsi28",
+            signal_engine="combined",
         )
 
     assert signal is None
@@ -373,7 +382,7 @@ def test_generate_signal_statistical_curated_prefers_scoped_setup(tmp_path):
     candles = make_trending_candles(120, "down")
     with patch.object(
         scanner,
-        "_build_statistical_snapshot",
+        "_build_indicator_snapshot",
         return_value={"rsi": 35, "adx": 21, "bb_squeeze": False, "vol_ratio": 1.0, "hour_utc": 12},
     ):
         signal = scanner.generate_signal(
@@ -385,12 +394,11 @@ def test_generate_signal_statistical_curated_prefers_scoped_setup(tmp_path):
         )
 
     assert signal is not None
-    assert signal["signal_model"] == "statistical_curated"
+    assert signal["signal_engine"] == "rule_match"
     assert signal["direction"] == "SHORT"
     assert signal["statistical_setup"] == "standard_short_rsi_below_40_avax_weak"
-    assert signal["statistical_details"]["scope_type"] == "symbol"
-    assert signal["statistical_details"]["scope_symbol"] == "AVAXUSDT"
-    assert signal["statistical_details"]["scope_regime"] is None
+    assert signal["statistical_details"]["filter"]["symbol"] == "AVAXUSDT"
+    assert signal["statistical_details"]["filter"]["regime"] is None
 
 
 def test_generate_signal_statistical_curated_matches_new_long_crossover_setup(tmp_path):
@@ -399,7 +407,7 @@ def test_generate_signal_statistical_curated_matches_new_long_crossover_setup(tm
     candles = make_trending_candles(220, "up")
     with patch.object(
         scanner,
-        "_build_statistical_snapshot",
+        "_build_indicator_snapshot",
         return_value={
             "rsi": 64,
             "adx": 28,
@@ -423,7 +431,7 @@ def test_generate_signal_statistical_curated_matches_new_long_crossover_setup(tm
         )
 
     assert signal is not None
-    assert signal["signal_model"] == "statistical_curated"
+    assert signal["signal_engine"] == "rule_match"
     assert signal["direction"] == "LONG"
     assert signal["statistical_setup"] == "standard_long_ema50_cross_above_200_price_near_upper_bb_link"
 
@@ -436,13 +444,13 @@ def test_load_validated_setups_preserves_indicator_only_rules(tmp_path):
 
     curated = scanner.load_validated_setups(str(curated_path))
     validated = scanner.load_validated_setups(str(validated_path))
-    avax_setup = next(setup for setup in curated["short"] if setup["scope_symbol"] == "AVAXUSDT")
-    pooled_trend_setup = next(setup for setup in curated["short"] if setup["scope_type"] == "pooled")
+    avax_setup = next(setup for setup in curated["short"] if setup["filter"]["symbol"] == "AVAXUSDT")
+    pooled_trend_setup = next(setup for setup in curated["short"] if not setup["filter"]["symbol"])
     breakout_setup = validated["short"][0]
 
     assert "adx_below_25" in avax_setup["conditions"]
-    assert avax_setup["scope_type"] == "symbol"
-    assert avax_setup["scope_regime"] is None
+    assert avax_setup["filter"]["symbol"] == "AVAXUSDT"
+    assert avax_setup["filter"]["regime"] is None
 
     assert "bb_squeeze" not in avax_setup["conditions"]
     assert "rsi_below_40" in pooled_trend_setup["conditions"]
@@ -458,7 +466,7 @@ def test_generate_signal_statistical_ignores_technical_neutral_gate(tmp_path):
     with patch.object(scanner, "score_technical", return_value={"direction": "NEUTRAL"}), \
          patch.object(
              scanner,
-             "_build_statistical_snapshot",
+             "_build_indicator_snapshot",
              return_value={"rsi": 72, "hour_utc": 12, "bb_squeeze": True, "vol_ratio": 1.6},
          ):
         signal = scanner.generate_signal(
@@ -480,7 +488,7 @@ def test_generate_signal_statistical_does_not_force_asia_session_rejection(tmp_p
 
     with patch.object(
         scanner,
-        "_build_statistical_snapshot",
+        "_build_indicator_snapshot",
         return_value={"rsi": 72, "hour_utc": 2, "bb_squeeze": True, "vol_ratio": 1.6},
     ):
         signal = scanner.generate_signal(
@@ -542,12 +550,12 @@ def test_run_backtest_raises_signal_generation_errors():
                 cooldown_candles=1,
                 use_next_open=True,
                 kelly_sizing=False,
-                signal_model="statistical",
-                validated_setups_path="/tmp/validated.json",
+                signal_engine="rule_match",
+                rulebook_path="/tmp/validated.json",
             )
         except RuntimeError as exc:
             assert "generate_signal failed" in str(exc)
-            assert "signal_model=statistical" in str(exc)
+            assert "signal_engine=rule_match" in str(exc)
         else:
             raise AssertionError("Expected backtest to fail fast on generate_signal errors")
 
@@ -576,7 +584,7 @@ def test_generate_signal_technical_path_still_builds_tp_sl():
         )
 
     assert signal is not None
-    assert signal["signal_model"] == "technical"
+    assert signal["signal_engine"] == "ta_score"
     assert signal["direction"] == "LONG"
     assert signal["tp"] > signal["entry_price"]
     assert signal["sl"] < signal["entry_price"]
@@ -614,7 +622,7 @@ def test_repo_default_curated_signal_mode_generates_signal():
 
     with patch.object(
         scanner,
-        "_build_statistical_snapshot",
+        "_build_indicator_snapshot",
         return_value=snapshot,
     ):
         signal = scanner.generate_signal(
@@ -626,25 +634,25 @@ def test_repo_default_curated_signal_mode_generates_signal():
         )
 
     assert signal is not None
-    assert signal["signal_model"] == "statistical_curated"
+    assert signal["signal_engine"] == "rule_match"
     assert signal["direction"] == "SHORT"
 
 
-def test_run_backtest_passes_statistical_signal_args():
+def test_run_backtest_passes_rule_match_signal_args():
     candles = make_flat_candles_dict(4082, price=100.0)
     signal = {
         "score": 6.5,
         "direction": "LONG",
-        "strategy": "breakout",
-        "regime": "breakout",
+        "strategy": "rule_wide",
+        "regime": "rule_match",
         "entry_price": 100.0,
         "tp": 110.0,
         "sl": 95.0,
         "tp_pct": 10.0,
         "sl_pct": 5.0,
         "atr": 1.0,
-        "details": {"strategy": "breakout", "regime": "breakout"},
-        "signal_model": "statistical",
+        "details": {"strategy": "rule_wide", "regime": "rule_match"},
+        "signal_engine": "rule_match",
     }
 
     with patch.object(backtester, "fetch_klines_historical_cached", return_value=candles), \
@@ -662,109 +670,30 @@ def test_run_backtest_passes_statistical_signal_args():
             cooldown_candles=1,
             use_next_open=True,
             kelly_sizing=False,
-            signal_model="statistical",
-            validated_setups_path="/tmp/validated.json",
+            signal_engine="rule_match",
+            rulebook_path="/tmp/validated.json",
         )
 
     kwargs = mock_generate.call_args.kwargs
-    assert kwargs["signal_model"] == "statistical"
-    assert kwargs["validated_setups_path"] == "/tmp/validated.json"
+    assert kwargs["signal_engine"] == "rule_match"
+    assert kwargs["rulebook_path"] == "/tmp/validated.json"
 
 
-def test_run_backtest_passes_curated_signal_args():
-    candles = make_flat_candles_dict(4082, price=100.0)
-    signal = {
-        "score": 6.8,
-        "direction": "SHORT",
-        "strategy": "trend_pullback_weak",
-        "regime": "weak_trend",
-        "entry_price": 100.0,
-        "tp": 95.0,
-        "sl": 102.0,
-        "tp_pct": 5.0,
-        "sl_pct": 2.0,
-        "atr": 1.0,
-        "details": {"strategy": "trend_pullback_weak", "regime": "weak_trend"},
-        "signal_model": "statistical_curated",
-    }
-
-    with patch.object(backtester, "fetch_klines_historical_cached", return_value=candles), \
-         patch.object(backtester, "validate_candle_completeness", return_value=(True, "ok")), \
-         patch.object(backtester.scanner, "precompute_indicators_for_all_candles", return_value={}), \
-         patch.object(backtester, "generate_signal", side_effect=[signal]) as mock_generate:
-        backtester.run_backtest(
-            symbols=["AVAXUSDT"],
-            months=1,
-            account=1000.0,
-            fee_pct=0.0,
-            slippage_pct=0.0,
-            fixed_size=100.0,
-            max_positions=1,
-            cooldown_candles=1,
-            use_next_open=True,
-            kelly_sizing=False,
-            signal_model="statistical_curated",
-            validated_setups_path="/tmp/curated.json",
-        )
-
-    kwargs = mock_generate.call_args.kwargs
-    assert kwargs["signal_model"] == "statistical_curated"
-    assert kwargs["validated_setups_path"] == "/tmp/curated.json"
-
-
-def test_run_backtest_passes_dedicated_signal_mode_args():
+def test_run_backtest_passes_combined_signal_args():
     candles = make_flat_candles_dict(4082, price=100.0)
     signal = {
         "score": 0.0,
         "direction": "SHORT",
-        "strategy": "statistical_wide_short_rsi28",
-        "regime": "statistical",
+        "strategy": "rule_wide",
+        "regime": "rule_match",
         "entry_price": 100.0,
         "tp": 92.0,
         "sl": 103.0,
         "tp_pct": 8.0,
         "sl_pct": 3.0,
         "atr": 1.0,
-        "details": {"strategy": "statistical_wide_short_rsi28", "regime": "statistical"},
-        "signal_model": "statistical_wide_short_rsi28",
-    }
-
-    with patch.object(backtester, "fetch_klines_historical_cached", return_value=candles), \
-         patch.object(backtester, "validate_candle_completeness", return_value=(True, "ok")), \
-         patch.object(backtester, "generate_signal", side_effect=[signal]) as mock_generate:
-        backtester.run_backtest(
-            symbols=["BTCUSDT"],
-            months=1,
-            account=1000.0,
-            fee_pct=0.0,
-            slippage_pct=0.0,
-            fixed_size=100.0,
-            max_positions=1,
-            cooldown_candles=1,
-            use_next_open=True,
-            kelly_sizing=False,
-            signal_model="statistical_wide_short_rsi28",
-        )
-
-    kwargs = mock_generate.call_args.kwargs
-    assert kwargs["signal_model"] == "statistical_wide_short_rsi28"
-
-
-def test_run_backtest_passes_hybrid_signal_mode_args():
-    candles = make_flat_candles_dict(4082, price=100.0)
-    signal = {
-        "score": 0.0,
-        "direction": "SHORT",
-        "strategy": "statistical_wide_short_rsi28",
-        "regime": "statistical",
-        "entry_price": 100.0,
-        "tp": 92.0,
-        "sl": 103.0,
-        "tp_pct": 8.0,
-        "sl_pct": 3.0,
-        "atr": 1.0,
-        "details": {"strategy": "statistical_wide_short_rsi28", "regime": "statistical"},
-        "signal_model": "hybrid_technical_wide_short_rsi28",
+        "details": {"strategy": "rule_wide", "regime": "rule_match"},
+        "signal_engine": "combined",
         "hybrid_details": {"selected": {"source": "statistical"}},
     }
 
@@ -782,8 +711,8 @@ def test_run_backtest_passes_hybrid_signal_mode_args():
             cooldown_candles=1,
             use_next_open=True,
             kelly_sizing=False,
-            signal_model="hybrid_technical_wide_short_rsi28",
+            signal_engine="combined",
         )
 
     kwargs = mock_generate.call_args.kwargs
-    assert kwargs["signal_model"] == "hybrid_technical_wide_short_rsi28"
+    assert kwargs["signal_engine"] == "combined"

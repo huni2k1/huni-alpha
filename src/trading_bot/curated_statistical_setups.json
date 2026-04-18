@@ -158,7 +158,8 @@
             "avg_pnl_pct": 1.0396,
             "profit_factor": 2.857
           }
-        }
+        },
+        "filter": {}
       },
       {
         "name": "standard_short_rsi_below_40_us_session",
@@ -273,7 +274,8 @@
             "avg_pnl_pct": 0.8639,
             "profit_factor": 2.1637
           }
-        }
+        },
+        "filter": {}
       },
       {
         "name": "standard_short_macd_line_below_signal_rsi_below_40",
@@ -388,7 +390,8 @@
             "avg_pnl_pct": 0.5845,
             "profit_factor": 1.6857
           }
-        }
+        },
+        "filter": {}
       },
       {
         "name": "wide_short_rsi_below_30",
@@ -502,7 +505,8 @@
             "avg_pnl_pct": 1.5427,
             "profit_factor": 2.7909
           }
-        }
+        },
+        "filter": {}
       },
       {
         "name": "wide_short_macd_hist_falling_rsi_below_30",
@@ -619,7 +623,8 @@
             "avg_pnl_pct": 1.4724,
             "profit_factor": 2.6505
           }
-        }
+        },
+        "filter": {}
       },
       {
         "name": "wide_short_ema_9_above_21_above_50_rsi_below_40",
@@ -736,7 +741,8 @@
             "avg_pnl_pct": 3.0688,
             "profit_factor": 6.2619
           }
-        }
+        },
+        "filter": {}
       }
     ]
   }

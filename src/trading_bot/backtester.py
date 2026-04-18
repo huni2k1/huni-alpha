@@ -775,8 +775,8 @@ def run_backtest(
     recovery_candles: int = 168,        # Circuit breaker: candles to wait before resuming
     partial_tp: bool = False,           # Close 50% at 1R, move SL to breakeven (disabled: degrades performance)
     kelly_sizing: bool = False,         # Kelly Criterion-based dynamic position sizing
-    signal_model: str = "technical",    # Signal engine mode: technical (default) or statistical
-    validated_setups_path: Optional[str] = None,  # Deduped validated_setups export for statistical mode
+    signal_engine: str = "ta_score",     # Signal engine: ta_score | rule_match | combined
+    rulebook_path: Optional[str] = None,  # Path to validated rules JSON (rule_match / combined)
     start_date: Optional[datetime] = None,  # Custom start date (overrides months parameter)
     end_date: Optional[datetime] = None,    # Custom end date (overrides months parameter)
     allowed_weekdays: Optional[set] = None,  # 0=Mon..6=Sun; None=all days allowed
@@ -1206,14 +1206,14 @@ def run_backtest(
             try:
                 signal = generate_signal(symbol, window_candles,
                                          current_time=candle_time,
-                                         signal_model=signal_model,
-                                         validated_setups_path=validated_setups_path,
+                                         signal_engine=signal_engine,
+                                         rulebook_path=rulebook_path,
                                          precomputed_indicators=indicators_at_t,
                                          current_regime=current_regime)
             except Exception as exc:
                 raise RuntimeError(
                     f"generate_signal failed for {symbol} at {candle_time.isoformat()} "
-                    f"using signal_model={signal_model}"
+                    f"using signal_engine={signal_engine}"
                 ) from exc
 
             if signal is None:
@@ -1232,17 +1232,12 @@ def run_backtest(
             # Strategy-specific threshold filtering.
             # Statistical mode uses validated setup membership as the primary gate.
             strategy = signal.get("strategy", "trend_pullback")
-            _statistical_models = {"statistical", "statistical_curated", "statistical_wide_short_rsi28"}
-            if signal_model in _statistical_models:
+            resolved_engine = scanner._ENGINE_COMPAT_ALIASES.get(signal_engine, signal_engine)
+            if resolved_engine == "rule_match":
                 required_threshold = None
-            elif signal_model in {"hybrid_technical_wide_short_rsi28", "hybrid_technical_statistical"}:
-                # Statistical leg bypasses score threshold; technical leg still requires it
-                is_stat_leg = (
-                    signal.get("strategy") == "statistical_wide_short_rsi28"
-                    or signal.get("signal_model") in _statistical_models
-                    or signal.get("hybrid_details", {}).get("selected", {}).get("source") == "statistical"
-                )
-                required_threshold = None if is_stat_leg else (
+            elif resolved_engine == "combined":
+                is_rule_leg = signal.get("hybrid_details", {}).get("selected", {}).get("source") == "statistical"
+                required_threshold = None if is_rule_leg else (
                     _breakout_thresh if "breakout" in strategy else _trend_thresh
                 )
             elif "breakout" in strategy:
@@ -1254,14 +1249,11 @@ def run_backtest(
                 continue
 
             # Determine tier
-            if signal_model in {"statistical", "statistical_curated", "statistical_wide_short_rsi28"}:
+            if resolved_engine == "rule_match":
                 tier = "ENTRY"
-            elif signal_model in {"hybrid_technical_wide_short_rsi28", "hybrid_technical_statistical"}:
-                is_stat_leg = (
-                    signal.get("strategy") == "statistical_wide_short_rsi28"
-                    or signal.get("hybrid_details", {}).get("selected", {}).get("source") == "statistical"
-                )
-                tier = "ENTRY" if is_stat_leg else (
+            elif resolved_engine == "combined":
+                is_rule_leg = signal.get("hybrid_details", {}).get("selected", {}).get("source") == "statistical"
+                tier = "ENTRY" if is_rule_leg else (
                     "HIGH_CONF" if score >= threshold_high else "ENTRY"
                 )
             elif score >= threshold_high:
@@ -1323,7 +1315,8 @@ def run_backtest(
                 # Dynamic risk based on Kelly Criterion (technical mode only).
                 # Statistical mode uses flat risk_pct — setup validation is the quality gate.
                 effective_risk_pct = risk_pct
-                is_statistical = signal_model in {"statistical", "statistical_curated", "statistical_wide_short_rsi28", "hybrid_technical_statistical"}
+                resolved_engine_ks = scanner._ENGINE_COMPAT_ALIASES.get(signal_engine, signal_engine)
+                is_statistical = resolved_engine_ks in {"rule_match", "combined"}
                 if kelly_sizing and not is_statistical:
                     kelly_multiplier = calculate_kelly_risk_multiplier(score)
                     effective_risk_pct = risk_pct * kelly_multiplier
@@ -1587,14 +1580,14 @@ def run_backtest(
             "trend_threshold": _trend_thresh,
             "breakout_threshold": _breakout_thresh,
             "threshold_high": threshold_high,
-            "signal_model": signal_model,
-            "validated_setups_path": validated_setups_path,
+            "signal_engine": signal_engine,
+            "rulebook_path": rulebook_path,
             "cooldown_candles": cooldown_candles,
             "max_positions": max_positions,
             "use_next_open": use_next_open,
             "fixed_size": fixed_size,
             "max_drawdown_pct": max_drawdown_pct,
-            "scoring": f"multi_regime ({signal_model})",
+            "scoring": f"multi_regime ({signal_engine})",
             "run_time": datetime.now(timezone.utc).isoformat(),
         },
         "summary": {
@@ -1878,8 +1871,8 @@ if __name__ == "__main__":
     parser.add_argument("--fixed-size", type=float, default=0.0, help="Fixed $ per trade (0=use risk%% sizing)")
     parser.add_argument("--partial-tp", action="store_true", default=False, help="Close 50%% at 1R, move SL to breakeven (default: disabled)")
     parser.add_argument("--no-kelly-sizing", action="store_false", dest="kelly_sizing", default=True, help="Disable Kelly sizing, use flat risk%% instead")
-    parser.add_argument("--signal-model", choices=["technical", "statistical", "statistical_curated", "statistical_wide_short_rsi28", "hybrid_technical_wide_short_rsi28", "hybrid_technical_statistical"], default="technical", help="Signal engine to use inside generate_signal()")
-    parser.add_argument("--validated-setups", type=str, default=None, help="Path to validated_setups.json for statistical mode")
+    parser.add_argument("--signal-engine", "--signal-model", choices=["ta_score", "rule_match", "combined", "technical", "statistical", "statistical_curated", "statistical_wide_short_rsi28", "hybrid_technical_wide_short_rsi28", "hybrid_technical_statistical"], default="ta_score", dest="signal_engine", help="Signal engine: ta_score | rule_match | combined")
+    parser.add_argument("--rulebook", "--validated-setups", type=str, default=None, dest="rulebook", help="Path to validated rules JSON (rule_match / combined engines)")
     parser.add_argument("--allowed-weekdays", nargs="+", default=None, metavar="DAY",
                         help="Only enter trades on these days (e.g. Thu Fri Sat Sun). Default: all days.")
     # Circuit breaker
@@ -1914,9 +1907,9 @@ if __name__ == "__main__":
     log.info(f"Thresholds: trend={args.trend_threshold} breakout={args.breakout_threshold}")
     log.info(f"Fees: {args.fee_pct}% RT | Slippage: {args.slippage_pct}% | Trailing Stop: {'ON' if args.trailing_stop else 'OFF'}")
     log.info(f"Max positions: {args.max_positions} | Cooldown: {args.cooldown}h | Entry: next candle open")
-    log.info(f"Signal model: {args.signal_model}")
-    if args.signal_model == "statistical" and args.validated_setups:
-        log.info(f"Validated setups: {args.validated_setups}")
+    log.info(f"Signal engine: {args.signal_engine}")
+    if args.signal_engine in {"rule_match", "combined"} and args.rulebook:
+        log.info(f"Rulebook: {args.rulebook}")
     log.info(f"Circuit breaker: {args.max_drawdown}% DD → pause {args.recovery_candles} candles")
 
     _day_name_to_int = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
@@ -1952,8 +1945,8 @@ if __name__ == "__main__":
         recovery_candles=args.recovery_candles,
         partial_tp=args.partial_tp,
         kelly_sizing=args.kelly_sizing,
-        signal_model=args.signal_model,
-        validated_setups_path=args.validated_setups,
+        signal_engine=args.signal_engine,
+        rulebook_path=args.rulebook,
         start_date=start_date,
         end_date=end_date,
         allowed_weekdays=allowed_weekdays,

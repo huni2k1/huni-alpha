@@ -989,17 +989,18 @@ def _export_runtime_setup(setup: dict) -> dict:
         "by_symbol": setup["by_symbol"],
     }
 
-    scope_type = setup.get("scope_type")
-    scope_symbol = setup.get("scope_symbol")
-    scope_regime = setup.get("scope_regime")
+    scope_context = setup.get("scope_context") or setup  # support both old and new layouts
+    scope_type = scope_context.get("scope_type") or setup.get("scope_type")
+    scope_symbol = scope_context.get("scope_symbol") or setup.get("scope_symbol")
+    scope_regime = scope_context.get("scope_regime") or setup.get("scope_regime")
     if scope_type == "symbol" and scope_symbol:
         exported["scope_key"] = setup.get("scope_key", f"symbol_{scope_symbol}")
-        exported["scope_type"] = "symbol"
-        exported["scope_symbol"] = scope_symbol
+        exported["filter"] = {"symbol": scope_symbol}
     elif scope_type == "regime" and scope_regime:
         exported["scope_key"] = setup.get("scope_key", f"regime_{scope_regime}")
-        exported["scope_type"] = "regime"
-        exported["scope_regime"] = scope_regime
+        exported["filter"] = {"regime": scope_regime}
+    else:
+        exported["filter"] = {}
 
     return exported
 
@@ -1080,7 +1081,7 @@ def build_analysis_views(
         views["pooled"] = {
             "rows": rows,
             "template_names": sorted(SETUP_TEMPLATES),
-            "scope": {"scope_key": "pooled", "scope_type": "pooled"},
+            "scope": {"scope_key": "pooled", "scope_type": "pooled", "filter": {}},
         }
 
     if "symbol_specific" in variants:
@@ -1092,7 +1093,8 @@ def build_analysis_views(
             views[key] = {
                 "rows": subset,
                 "template_names": sorted(SETUP_TEMPLATES),
-                "scope": {"scope_key": key, "scope_type": "symbol", "scope_symbol": symbol},
+                "scope": {"scope_key": key, "scope_type": "symbol", "scope_symbol": symbol,
+                          "filter": {"symbol": symbol}},
             }
 
     if "regime" in variants:
@@ -1104,7 +1106,8 @@ def build_analysis_views(
             views[key] = {
                 "rows": subset,
                 "template_names": sorted(SETUP_TEMPLATES),
-                "scope": {"scope_key": key, "scope_type": "regime", "scope_regime": regime_name},
+                "scope": {"scope_key": key, "scope_type": "regime", "scope_regime": regime_name,
+                          "filter": {"regime": regime_name}},
             }
 
     return views

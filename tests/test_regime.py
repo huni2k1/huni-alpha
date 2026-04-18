@@ -54,42 +54,42 @@ def test_build_regime_lookup_indexes_by_close_time():
 
 
 def test_setup_matches_scope_regime_gate_pass():
-    setup = {"scope_regime": "bull", "scope_symbol": None}
-    assert scanner._setup_matches_scope(setup, "BTCUSDT", current_regime="bull")
+    rule = {"filter": {"regime": "bull"}}
+    assert scanner._setup_matches_scope(rule, "BTCUSDT", current_regime="bull")
 
 
 def test_setup_matches_scope_regime_gate_reject():
-    setup = {"scope_regime": "bull", "scope_symbol": None}
-    assert not scanner._setup_matches_scope(setup, "BTCUSDT", current_regime="bear")
+    rule = {"filter": {"regime": "bull"}}
+    assert not scanner._setup_matches_scope(rule, "BTCUSDT", current_regime="bear")
 
 
 def test_setup_matches_scope_regime_null_matches_any():
-    setup = {"scope_regime": None, "scope_symbol": None}
-    assert scanner._setup_matches_scope(setup, "BTCUSDT", current_regime="bull")
-    assert scanner._setup_matches_scope(setup, "BTCUSDT", current_regime="bear")
-    assert scanner._setup_matches_scope(setup, "BTCUSDT", current_regime=None)
+    rule = {"filter": {}}
+    assert scanner._setup_matches_scope(rule, "BTCUSDT", current_regime="bull")
+    assert scanner._setup_matches_scope(rule, "BTCUSDT", current_regime="bear")
+    assert scanner._setup_matches_scope(rule, "BTCUSDT", current_regime=None)
 
 
 def test_setup_matches_scope_current_regime_none_bypasses_filter():
     """Back-compat: when caller doesn't classify regime, don't gate."""
-    setup = {"scope_regime": "bull", "scope_symbol": None}
-    assert scanner._setup_matches_scope(setup, "BTCUSDT", current_regime=None)
+    rule = {"filter": {"regime": "bull"}}
+    assert scanner._setup_matches_scope(rule, "BTCUSDT", current_regime=None)
 
 
 def test_setup_matches_scope_symbol_and_regime_combined():
-    setup = {"scope_regime": "bear", "scope_symbol": "ETHUSDT"}
-    assert scanner._setup_matches_scope(setup, "ETHUSDT", current_regime="bear")
-    assert not scanner._setup_matches_scope(setup, "BTCUSDT", current_regime="bear")  # wrong symbol
-    assert not scanner._setup_matches_scope(setup, "ETHUSDT", current_regime="bull")  # wrong regime
+    rule = {"filter": {"symbol": "ETHUSDT", "regime": "bear"}}
+    assert scanner._setup_matches_scope(rule, "ETHUSDT", current_regime="bear")
+    assert not scanner._setup_matches_scope(rule, "BTCUSDT", current_regime="bear")  # wrong symbol
+    assert not scanner._setup_matches_scope(rule, "ETHUSDT", current_regime="bull")  # wrong regime
 
 
 def test_setup_scope_specificity_ranking():
-    symbol_setup = {"scope_type": "symbol"}
-    regime_setup = {"scope_type": "regime"}
-    pooled_setup = {"scope_type": "pooled"}
+    symbol_rule = {"filter": {"symbol": "BTCUSDT"}}
+    regime_rule = {"filter": {"regime": "bull"}}
+    pooled_rule = {"filter": {}}
     # symbol > regime > pooled so most specific match wins sort
-    assert scanner._setup_scope_specificity(symbol_setup) > scanner._setup_scope_specificity(regime_setup)
-    assert scanner._setup_scope_specificity(regime_setup) > scanner._setup_scope_specificity(pooled_setup)
+    assert scanner._setup_scope_specificity(symbol_rule) > scanner._setup_scope_specificity(regime_rule)
+    assert scanner._setup_scope_specificity(regime_rule) > scanner._setup_scope_specificity(pooled_rule)
 
 
 # ── Analyzer row tagging ─────────────────────────────────────────

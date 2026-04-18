@@ -89,37 +89,28 @@ SIGNAL_THRESHOLD_BREAKOUT = 6.0     # Min score for breakout signals
 MAX_OPEN_POSITIONS = 3              # Maximum concurrent trades
 SIGNAL_COOLDOWN_CANDLES = 48        # Min 1h-candles between signals per symbol (48h = 2 days, prevents re-entry after SL)
 RISK_PER_TRADE_PCT = 1.5            # Risk percentage of account per trade (1.5% historically optimal)
-DEFAULT_SIGNAL_MODEL = os.environ.get("SIGNAL_MODEL", "technical").strip().lower()
-VALID_SIGNAL_MODELS = {
-    "technical",
-    "statistical",
-    "statistical_curated",
-    "statistical_wide_short_rsi28",
-    "hybrid_technical_wide_short_rsi28",
-    "hybrid_technical_statistical",
+VALID_SIGNAL_ENGINES = {"ta_score", "rule_match", "combined"}
+# Backward-compat aliases: old env-var / CLI values map to new engine names
+_ENGINE_COMPAT_ALIASES: dict[str, str] = {
+    "technical":                        "ta_score",
+    "statistical":                      "rule_match",
+    "statistical_curated":              "rule_match",
+    "statistical_wide_short_rsi28":     "rule_match",
+    "hybrid_technical_wide_short_rsi28": "combined",
+    "hybrid_technical_statistical":     "combined",
 }
-VALIDATED_SETUPS_PATH = os.environ.get(
-    "VALIDATED_SETUPS_PATH",
+RULEBOOK_PATH = os.environ.get(
+    "VALIDATED_SETUPS_PATH",  # env var name kept for backward compat
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "validated_setups.json"),
 )
-CURATED_VALIDATED_SETUPS_PATH = os.environ.get(
+CURATED_RULEBOOK_PATH = os.environ.get(
     "CURATED_VALIDATED_SETUPS_PATH",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "curated_statistical_setups.json"),
 )
-DEDICATED_WIDE_SHORT_RSI28_SETUP = {
-    "name": "wide_short_rsi_below_28",
-    "template": "wide",
-    "direction": "SHORT",
-    "conditions": ["rsi_below_28"],
-    "tp_sl": {"sl_atr_mult": 2.0, "rr_ratio": 2.5},
-    "train_stats": {},
-    "test_stats": {"profit_factor": 0.0},
-    "by_symbol": {},
-    "scope_key": "pooled",
-    "scope_type": "pooled",
-    "scope_symbol": None,
-    "scope_regime": None,
-}
+DEFAULT_SIGNAL_ENGINE = _ENGINE_COMPAT_ALIASES.get(
+    os.environ.get("SIGNAL_MODEL", "ta_score").strip().lower(),
+    "ta_score",
+)
 
 LOG_FILE        = os.environ.get("TRADING_BOT_LOG", "/tmp/trading-bot.log")
 DEBUG_LOG_FILE  = os.environ.get("TRADING_BOT_DEBUG_LOG", "/tmp/trading-bot-debug.log")
@@ -620,7 +611,7 @@ def precompute_indicators_for_all_candles(candles: list) -> dict:
     ema_200_series = ema(closes, min(800, len(closes)))
 
     # Pre-compute ATR series (O(n) rolling average of true-range).
-    # Avoids the per-candle loop of ~100 full recomputes in _build_statistical_snapshot.
+    # Avoids the per-candle loop of ~100 full recomputes in _build_indicator_snapshot.
     atr_period = 20
     tr_series: list[float] = []
     for i in range(1, len(candles)):
@@ -704,7 +695,7 @@ def precompute_indicators_for_all_candles(candles: list) -> dict:
         e50 = ema_50_series[idx_e50] if 0 <= idx_e50 < len(ema_50_series) else None
         e200 = ema_200_series[idx_e200] if 0 <= idx_e200 < len(ema_200_series) else None
 
-        # Prev-candle EMA values — stored here so _build_statistical_snapshot can
+        # Prev-candle EMA values — stored here so _build_indicator_snapshot can
         # use O(1) lookups instead of recomputing the full EMA series each call.
         e9_prev = ema_9_series[idx_e9 - 1] if 0 < idx_e9 < len(ema_9_series) else None
         e21_prev = ema_21_series[idx_e21 - 1] if 0 < idx_e21 < len(ema_21_series) else None
@@ -726,7 +717,7 @@ def precompute_indicators_for_all_candles(candles: list) -> dict:
         atr_pct_high = bool(recent_atrs) and atr20_val >= float(np.percentile(recent_atrs, 80))
 
         # RSI and MACD line windows (last 21 values) for divergence detection.
-        # Stored as lists so _build_statistical_snapshot can avoid recomputing
+        # Stored as lists so _build_indicator_snapshot can avoid recomputing
         # full RSI/MACD series for each of the 20 lookback positions.
         rsi_win_size = 21
         rsi_window = [
@@ -1160,126 +1151,131 @@ def score_technical(symbol: str, candles_1h: list, precomputed_indicators: dict 
         return {"score": short_pts, "direction": "SHORT", "long_score": long_pts, "short_score": short_pts, "details": details}
 
 
-_validated_setups_cache = {"path": None, "mtime": None, "data": None}
-_validated_setups_missing_warned = set()
+_rulebook_cache = {"path": None, "mtime": None, "data": None}
+_rulebook_missing_warned: set = set()
 
 
-def load_validated_setups(validated_setups_path: Optional[str] = None) -> dict:
-    """Load the deduped validated setups export, with basic caching."""
-    path = validated_setups_path or VALIDATED_SETUPS_PATH
+def load_rulebook(rulebook_path: Optional[str] = None) -> dict:
+    """Load the validated rules export from disk, with mtime-based caching."""
+    path = rulebook_path or RULEBOOK_PATH
     try:
         mtime = os.path.getmtime(path)
     except OSError:
-        if path not in _validated_setups_missing_warned:
-            dbg.debug(f"Validated setups file not found: {path}")
-            _validated_setups_missing_warned.add(path)
+        if path not in _rulebook_missing_warned:
+            dbg.debug(f"Rulebook not found: {path}")
+            _rulebook_missing_warned.add(path)
         return {"long": [], "short": []}
 
     cache_hit = (
-        _validated_setups_cache["path"] == path
-        and _validated_setups_cache["mtime"] == mtime
-        and _validated_setups_cache["data"] is not None
+        _rulebook_cache["path"] == path
+        and _rulebook_cache["mtime"] == mtime
+        and _rulebook_cache["data"] is not None
     )
     if cache_hit:
-        return _validated_setups_cache["data"]
+        return _rulebook_cache["data"]
 
     try:
         with open(path, encoding="utf-8") as handle:
             payload = json.load(handle)
     except Exception as exc:
-        log.warning(f"Could not load validated setups from {path}: {exc}")
+        log.warning(f"Could not load rulebook from {path}: {exc}")
         return {"long": [], "short": []}
 
-    validated = payload.get("validated_setups", payload)
-    normalized = {
-        "long": [],
-        "short": [],
-    }
+    raw = payload.get("validated_setups", payload)
+    normalized: dict[str, list] = {"long": [], "short": []}
     for bucket in ("long", "short"):
-        for setup in validated.get(bucket, []):
-            template = setup.get("template", setup.get("profile", "standard"))
-            normalized_conditions = normalize_conditions(setup.get("conditions", []))
-            unknown = [name for name in normalized_conditions if name not in ALL_CONDITIONS]
+        for rule in raw.get(bucket, []):
+            template = rule.get("template", rule.get("profile", "standard"))
+            normalized_conditions = normalize_conditions(rule.get("conditions", []))
+            unknown = [c for c in normalized_conditions if c not in ALL_CONDITIONS]
             if unknown:
                 raise ValueError(
-                    f"Validated setup '{setup.get('name', '')}' in {path} uses unknown condition(s): "
+                    f"Rule '{rule.get('name', '')}' in {path} uses unknown condition(s): "
                     + ", ".join(unknown)
                 )
+            # Scope filter — stored as nested dict; flat fields kept for backward compat
+            raw_filter = rule.get("filter") or {}
             normalized[bucket].append(
                 {
-                    "name": setup.get("name", ""),
+                    "name": rule.get("name", ""),
                     "template": "wide" if template == "breakout" else ("standard" if template == "trend" else template),
-                    "direction": setup.get("direction", bucket.upper()),
+                    "direction": rule.get("direction", bucket.upper()),
                     "conditions": normalized_conditions,
-                    "tp_sl": dict(setup.get("tp_sl", {})),
-                    "train_stats": dict(setup.get("train_stats", {})),
-                    "test_stats": dict(setup.get("test_stats", {})),
-                    "by_symbol": dict(setup.get("by_symbol", {})),
-                    "scope_key": setup.get("scope_key", "pooled"),
-                    "scope_type": setup.get("scope_type", "pooled"),
-                    "scope_symbol": setup.get("scope_symbol"),
-                    "scope_regime": setup.get("scope_regime"),
+                    "tp_sl": dict(rule.get("tp_sl", {})),
+                    "train_stats": dict(rule.get("train_stats", {})),
+                    "test_stats": dict(rule.get("test_stats", {})),
+                    "by_symbol": dict(rule.get("by_symbol", {})),
+                    "filter": {
+                        "symbol": raw_filter.get("symbol") or rule.get("scope_symbol"),
+                        "regime": raw_filter.get("regime") or rule.get("scope_regime"),
+                    },
                 }
             )
 
-    _validated_setups_cache.update({"path": path, "mtime": mtime, "data": normalized})
+    _rulebook_cache.update({"path": path, "mtime": mtime, "data": normalized})
     return normalized
 
 
-def _statistical_match_sort_key(setup: dict) -> tuple:
-    """Rank validated setups using their real out-of-sample stats."""
-    test_stats = setup.get("test_stats", {})
+# Keep old name as alias so external callers / tests don't break immediately
+load_validated_setups = load_rulebook
+
+
+def _rule_match_sort_key(rule: dict) -> tuple:
+    """Rank matching rules: most specific scope first, then by out-of-sample profit factor."""
+    test_stats = rule.get("test_stats", {})
     return (
-        -_setup_scope_specificity(setup),
+        -_rule_specificity(rule),
         -float(test_stats.get("profit_factor", 0.0) or 0.0),
         -float(test_stats.get("avg_pnl_pct", 0.0) or 0.0),
         -float(test_stats.get("edge_win_rate", 0.0) or 0.0),
         -int(test_stats.get("count", 0) or 0),
-        len(setup.get("conditions", [])),
-        setup.get("name", ""),
+        len(rule.get("conditions", [])),
+        rule.get("name", ""),
     )
 
 
-def _statistical_signal_score(setup: dict) -> float:
-    """Expose a real setup metric instead of mapping into technical score bands."""
-    return round(float(setup.get("test_stats", {}).get("profit_factor", 0.0) or 0.0), 4)
+def _rule_match_score(rule: dict) -> float:
+    """Score a matched rule by its out-of-sample profit factor."""
+    return round(float(rule.get("test_stats", {}).get("profit_factor", 0.0) or 0.0), 4)
 
 
-def _resolve_validated_setups_path(signal_model: str, validated_setups_path: Optional[str]) -> str:
-    """Choose the appropriate setup file for the requested signal mode."""
-    if validated_setups_path:
-        return validated_setups_path
-    if signal_model == "statistical_curated":
-        return CURATED_VALIDATED_SETUPS_PATH
-    return VALIDATED_SETUPS_PATH
+def _resolve_rulebook_path(signal_engine: str, rulebook_path: Optional[str]) -> str:
+    """Return the rulebook file path for the requested engine."""
+    if rulebook_path:
+        return rulebook_path
+    return RULEBOOK_PATH
 
 
-def _setup_scope_specificity(setup: dict) -> int:
-    """Rank setup specificity so curated/symbol-aware matches win ties."""
-    scope_type = setup.get("scope_type", "pooled")
-    if scope_type == "symbol":
+def _rule_specificity(rule: dict) -> int:
+    """Rank rule specificity: symbol-scoped > regime-scoped > pooled."""
+    f = rule.get("filter", {})
+    if f.get("symbol"):
         return 2
-    if scope_type == "regime":
+    if f.get("regime"):
         return 1
     return 0
 
 
-def _setup_matches_scope(setup: dict, symbol: str, current_regime: Optional[str] = None) -> bool:
-    """Check whether a setup applies to the current symbol + regime scope.
+def _rule_matches_context(rule: dict, symbol: str, current_regime: Optional[str] = None) -> bool:
+    """Return True if this rule applies to the current symbol and market regime.
 
-    Regime filtering is skipped when `current_regime` is None (back-compat for
-    callers that don't classify regime yet, e.g. backtester paths mid-migration).
+    Regime filtering is skipped when current_regime is None so callers that
+    don't classify regime yet still get pooled and symbol-scoped rules.
     """
-    scope_symbol = setup.get("scope_symbol")
-    if scope_symbol and scope_symbol != symbol:
+    f = rule.get("filter", {})
+    if f.get("symbol") and f["symbol"] != symbol:
         return False
-    scope_regime = setup.get("scope_regime")
-    if scope_regime and current_regime and scope_regime != current_regime:
+    if f.get("regime") and current_regime and f["regime"] != current_regime:
         return False
     return True
 
 
-def _build_statistical_snapshot(
+# Backward-compat aliases used by tests
+_setup_scope_specificity = _rule_specificity
+_setup_matches_scope = _rule_matches_context
+
+
+def _build_indicator_snapshot(
     symbol: str,
     candles_1h: list,
     current_time: Optional[datetime] = None,
@@ -1555,27 +1551,31 @@ def _build_statistical_snapshot(
     }
 
 
-def _find_matching_statistical_setups(
+def _find_matching_rules(
     symbol: str,
     snapshot: dict,
-    validated_setups: dict,
+    rulebook: dict,
     current_regime: Optional[str] = None,
 ) -> list[dict]:
-    """Return indicator-driven validated setups that match the latest snapshot."""
+    """Return rules from the rulebook whose conditions match the current candle snapshot."""
     matches = []
 
     for bucket, direction in (("long", "LONG"), ("short", "SHORT")):
-        for setup in validated_setups.get(bucket, []):
-            if setup.get("direction") != direction:
+        for rule in rulebook.get(bucket, []):
+            if rule.get("direction") != direction:
                 continue
-            if not _setup_matches_scope(setup, symbol, current_regime):
+            if not _rule_matches_context(rule, symbol, current_regime):
                 continue
-            if not matches_conditions(snapshot, setup.get("conditions", [])):
+            if not matches_conditions(snapshot, rule.get("conditions", [])):
                 continue
-            matches.append(dict(setup))
+            matches.append(dict(rule))
 
-    matches.sort(key=_statistical_match_sort_key)
+    matches.sort(key=_rule_match_sort_key)
     return matches
+
+
+# Backward-compat alias
+_find_matching_statistical_setups = _find_matching_rules
 
 
 def _suggest_tp_sl_for_setup(candles_1h: list, direction: str, matched_setup: dict) -> dict:
@@ -1598,36 +1598,34 @@ def _suggest_tp_sl_for_strategy(candles_1h: list, direction: str, strategy: str)
     return suggest_tp_sl(candles_1h, direction, multiplier_sl=1.5, rr_ratio=2.0)
 
 
-def _generate_statistical_signal(
+def _generate_rule_match_signal(
     symbol: str,
     candles_1h: list,
-    signal_model: str,
+    signal_engine: str,
     state: dict = None,
     current_time: Optional[datetime] = None,
     precomputed_indicators: dict = None,
-    validated_setups_path: Optional[str] = None,
+    rulebook_path: Optional[str] = None,
     current_regime: Optional[str] = None,
 ) -> Optional[dict]:
-    """Generate a signal by matching the latest candle against validated setups."""
-    snapshot = _build_statistical_snapshot(
+    """Match the current candle snapshot against the rulebook; return signal if a rule fires."""
+    snapshot = _build_indicator_snapshot(
         symbol,
         candles_1h,
         current_time=current_time,
         precomputed_indicators=precomputed_indicators,
     )
-    resolved_setups_path = _resolve_validated_setups_path(signal_model, validated_setups_path)
-    validated_setups = load_validated_setups(resolved_setups_path)
-    matches = _find_matching_statistical_setups(symbol, snapshot, validated_setups, current_regime)
+    resolved_path = _resolve_rulebook_path(signal_engine, rulebook_path)
+    rulebook = load_rulebook(resolved_path)
+    matches = _find_matching_rules(symbol, snapshot, rulebook, current_regime)
     if not matches:
-        _last_rejection_reason[symbol] = "No validated setup"
+        _last_rejection_reason[symbol] = "No matching rule"
         return None
 
-    matched_setup = matches[0]
-    direction = matched_setup["direction"]
-    template = matched_setup.get("template", "standard")
-    strategy = f"statistical_{template}"
-    regime = "statistical"
-    total_score = _statistical_signal_score(matched_setup)
+    matched_rule = matches[0]
+    direction = matched_rule["direction"]
+    template = matched_rule.get("template", "standard")
+    total_score = _rule_match_score(matched_rule)
     long_total = total_score if direction == "LONG" else 0.0
     short_total = total_score if direction == "SHORT" else 0.0
 
@@ -1636,18 +1634,17 @@ def _generate_statistical_signal(
         _last_rejection_reason[symbol] = "Whipsaw"
         return None
 
-    tp_sl = _suggest_tp_sl_for_setup(candles_1h, direction, matched_setup)
-    statistical_details = {
-        "matched_setup": matched_setup["name"],
-        "conditions": matched_setup["conditions"],
+    tp_sl = _suggest_tp_sl_for_setup(candles_1h, direction, matched_rule)
+    rule_filter = matched_rule.get("filter", {})
+    rule_details = {
+        "matched_rule": matched_rule["name"],
+        "conditions": matched_rule["conditions"],
         "template": template,
-        "scope_type": matched_setup.get("scope_type", "pooled"),
-        "scope_symbol": matched_setup.get("scope_symbol"),
-        "scope_regime": matched_setup.get("scope_regime"),
-        "test_stats": matched_setup.get("test_stats", {}),
-        "train_stats": matched_setup.get("train_stats", {}),
+        "filter": rule_filter,
+        "test_stats": matched_rule.get("test_stats", {}),
+        "train_stats": matched_rule.get("train_stats", {}),
         "candidate_count": len(matches),
-        "validated_setups_path": resolved_setups_path,
+        "rulebook_path": resolved_path,
     }
 
     return {
@@ -1664,96 +1661,32 @@ def _generate_statistical_signal(
         "technical_score": 0.0,
         "long_score": long_total,
         "short_score": short_total,
-        "regime": regime,
-        "strategy": strategy,
-        "details": {"regime": regime, "strategy": strategy, "template": template},
-        "signal_model": signal_model,
-        "statistical_setup": matched_setup["name"],
+        "regime": "rule_match",
+        "strategy": f"rule_{template}",
+        "details": {"regime": "rule_match", "strategy": f"rule_{template}", "template": template},
+        "signal_engine": signal_engine,
+        # Legacy field aliases kept for backward compat with downstream consumers
+        "signal_model": signal_engine,
+        "statistical_setup": matched_rule["name"],
         "statistical_score": total_score,
-        "statistical_details": statistical_details,
+        "statistical_details": rule_details,
     }
 
 
-def _generate_dedicated_wide_short_rsi28_signal(
-    symbol: str,
-    candles_1h: list,
-    signal_model: str,
-    state: dict = None,
-    current_time: Optional[datetime] = None,
-    precomputed_indicators: dict = None,
-) -> Optional[dict]:
-    """Generate a SHORT signal when 1h RSI < 28 (oversold condition)."""
-    snapshot = _build_statistical_snapshot(
-        symbol,
-        candles_1h,
-        current_time=current_time,
-        precomputed_indicators=precomputed_indicators,
-    )
-    if not snapshot:
-        _last_rejection_reason[symbol] = "No snapshot (insufficient data)"
-        return None
-
-    rsi_val = float(snapshot.get("rsi", 50.0))
-
-    # Simple condition: RSI must be below 28
-    if rsi_val >= 28.0:
-        _last_rejection_reason[symbol] = f"RSI={rsi_val:.1f} (need <28)"
-        return None
-
-    direction = "SHORT"
-
-    # Check for whipsaw (avoid rapid direction changes)
-    if state and is_whipsaw(state, symbol, direction):
-        dbg.debug(f"[{symbol}] REJECTED: whipsaw detected (direction change <5min)")
-        _last_rejection_reason[symbol] = "Whipsaw"
-        return None
-
-    # Calculate TP/SL using breakout multipliers (2.0x SL, 2.5 R:R)
-    tp_sl = suggest_tp_sl(candles_1h, direction, multiplier_sl=2.0, rr_ratio=2.5)
-
-    return {
-        "symbol": symbol,
-        "direction": direction,
-        "score": 0.0,
-        "entry_price": tp_sl["entry_price"],
-        "tp": tp_sl["suggested_tp"],
-        "sl": tp_sl["suggested_sl"],
-        "tp_pct": tp_sl["tp_pct"],
-        "sl_pct": tp_sl["sl_pct"],
-        "atr": tp_sl["atr"],
-        "rr_ratio": tp_sl["rr_ratio"],
-        "technical_score": 0.0,
-        "long_score": 0.0,
-        "short_score": 0.0,
-        "regime": "statistical",
-        "strategy": signal_model,
-        "details": {"regime": "statistical", "strategy": signal_model},
-        "signal_model": signal_model,
-        "statistical_setup": "wide_short_rsi_below_28",
-        "statistical_score": 0.0,
-        "statistical_details": {
-            "conditions": ["rsi_below_28"],
-            "template": "wide",
-            "rsi_value": float(rsi_val),
-        },
-    }
-
-
-def _generate_technical_signal(
+def _generate_ta_score_signal(
     symbol: str,
     candles_1h: list,
     state: dict = None,
     current_time: Optional[datetime] = None,
     precomputed_indicators: dict = None,
 ) -> Optional[dict]:
-    """Generate the legacy technical signal payload."""
+    """Score the current candle with TA indicators and return a signal if above threshold."""
     tech = score_technical(symbol, candles_1h, precomputed_indicators=precomputed_indicators)
     if tech["direction"] == "NEUTRAL":
         return None
 
     tech_long = tech["long_score"]
     tech_short = tech["short_score"]
-
     long_total = round(tech_long, 2)
     short_total = round(tech_short, 2)
 
@@ -1816,163 +1749,85 @@ def _generate_technical_signal(
         "regime": regime,
         "strategy": strategy,
         "details": tech["details"],
-        "signal_model": "technical",
+        "signal_engine": "ta_score",
+        "signal_model": "ta_score",  # legacy alias
     }
 
 
-def _generate_hybrid_technical_wide_short_rsi28_signal(
+def _generate_combined_signal(
     symbol: str,
     candles_1h: list,
     state: dict = None,
     current_time: Optional[datetime] = None,
     precomputed_indicators: dict = None,
-) -> Optional[dict]:
-    """Evaluate both technical and dedicated statistical short setup, then choose one."""
-    _last_rejection_reason.pop(symbol, None)
-    technical_signal = _generate_technical_signal(
-        symbol,
-        candles_1h,
-        state=state,
-        current_time=current_time,
-        precomputed_indicators=precomputed_indicators,
-    )
-    technical_reason = _last_rejection_reason.get(symbol)
-    _last_rejection_reason.pop(symbol, None)  # Clear before statistical to avoid inheriting technical's reason
-    statistical_signal = _generate_dedicated_wide_short_rsi28_signal(
-        symbol,
-        candles_1h,
-        "statistical_wide_short_rsi28",
-        state=state,
-        current_time=current_time,
-        precomputed_indicators=precomputed_indicators,
-    )
-    statistical_reason = _last_rejection_reason.get(symbol)
-
-    if not technical_signal and not statistical_signal:
-        _last_rejection_reason[symbol] = (
-            f"Hybrid rejected (technical: {technical_reason or 'no signal'}; "
-            f"statistical: {statistical_reason or 'no validated setup'})"
-        )
-        return None
-
-    selected_signal = technical_signal
-    selected_source = "technical" if technical_signal else "statistical"
-    selected_reason = "technical signal available" if technical_signal else "technical signal absent"
-
-    if statistical_signal and (not technical_signal or technical_signal["direction"] == "SHORT"):
-        selected_signal = statistical_signal
-        selected_source = "statistical"
-        selected_reason = (
-            "dedicated short setup matched with no technical signal"
-            if not technical_signal
-            else "dedicated short setup overrides technical short"
-        )
-
-    hybrid_details = {
-        "technical": None if technical_signal is None else {
-            "direction": technical_signal["direction"],
-            "score": technical_signal["score"],
-            "strategy": technical_signal["strategy"],
-            "long_score": technical_signal["long_score"],
-            "short_score": technical_signal["short_score"],
-        },
-        "technical_reject_reason": technical_reason if technical_signal is None else None,
-        "statistical": None if statistical_signal is None else {
-            "direction": statistical_signal["direction"],
-            "setup": statistical_signal["statistical_setup"],
-            "conditions": statistical_signal["statistical_details"]["conditions"],
-            "template": statistical_signal["statistical_details"]["template"],
-        },
-        "statistical_reject_reason": statistical_reason if statistical_signal is None else None,
-        "selected": {
-            "source": selected_source,
-            "reason": selected_reason,
-        },
-    }
-
-    dbg.debug(
-        f"[{symbol}] Hybrid eval | technical="
-        f"{hybrid_details['technical']} | statistical={hybrid_details['statistical']} | selected={hybrid_details['selected']}"
-    )
-
-    result = dict(selected_signal)
-    result["signal_model"] = "hybrid_technical_wide_short_rsi28"
-    result["hybrid_details"] = hybrid_details
-    return result
-
-
-def _generate_hybrid_technical_statistical_signal(
-    symbol: str,
-    candles_1h: list,
-    state: dict = None,
-    current_time: Optional[datetime] = None,
-    precomputed_indicators: dict = None,
-    validated_setups_path: Optional[str] = None,
+    rulebook_path: Optional[str] = None,
     current_regime: Optional[str] = None,
 ) -> Optional[dict]:
-    """
-    Hybrid model: technical scoring OR any validated statistical setup, whichever fires.
+    """Run rule_match and ta_score in parallel; prefer rule_match when it fires.
 
     Priority:
-      1. Statistical signal — if a validated setup matches, use it (most selective).
-      2. Technical signal — if technical score meets threshold with no statistical match.
-
-    Statistical setups are sourced from the full validated_setups.json (all directions
-    and templates, not just RSI-28 SHORT), so this model benefits from all setups
-    discovered by the analyzer.
+      1. Rule match — if a rulebook rule matches, use it (bypasses score threshold).
+      2. TA score — fallback if no rule fires.
     """
     _last_rejection_reason.pop(symbol, None)
 
-    statistical_signal = _generate_statistical_signal(
+    rule_signal = _generate_rule_match_signal(
         symbol,
         candles_1h,
-        "statistical",
+        "rule_match",
         state=state,
         current_time=current_time,
         precomputed_indicators=precomputed_indicators,
-        validated_setups_path=validated_setups_path,
+        rulebook_path=rulebook_path,
         current_regime=current_regime,
     )
-    statistical_reason = _last_rejection_reason.get(symbol)
+    rule_reason = _last_rejection_reason.get(symbol)
     _last_rejection_reason.pop(symbol, None)
 
-    technical_signal = _generate_technical_signal(
+    ta_signal = _generate_ta_score_signal(
         symbol,
         candles_1h,
         state=state,
         current_time=current_time,
         precomputed_indicators=precomputed_indicators,
     )
-    technical_reason = _last_rejection_reason.get(symbol)
+    ta_reason = _last_rejection_reason.get(symbol)
 
-    selected_signal = statistical_signal or technical_signal
+    selected_signal = rule_signal or ta_signal
     if selected_signal is None:
         _last_rejection_reason[symbol] = (
-            f"Hybrid rejected (statistical: {statistical_reason or 'no validated setup'}; "
-            f"technical: {technical_reason or 'no signal'})"
+            f"Hybrid rejected (statistical: {rule_reason or 'no matching rule'}; "
+            f"technical: {ta_reason or 'no signal'})"
         )
         return None
 
-    selected_source = "statistical" if statistical_signal else "technical"
+    selected_source = "statistical" if rule_signal else "technical"
     result = dict(selected_signal)
-    result["signal_model"] = "hybrid_technical_statistical"
+    result["signal_engine"] = "combined"
+    result["signal_model"] = "combined"  # legacy alias
     result["hybrid_details"] = {
-        "statistical": None if not statistical_signal else {
-            "direction": statistical_signal["direction"],
-            "setup": statistical_signal.get("statistical_setup"),
-            "conditions": statistical_signal.get("statistical_details", {}).get("conditions"),
-            "template": statistical_signal.get("statistical_details", {}).get("template"),
+        "statistical": None if not rule_signal else {
+            "direction": rule_signal["direction"],
+            "setup": rule_signal.get("statistical_setup"),
+            "conditions": rule_signal.get("statistical_details", {}).get("conditions"),
+            "template": rule_signal.get("statistical_details", {}).get("template"),
         },
-        "statistical_reject_reason": statistical_reason if not statistical_signal else None,
-        "technical": None if not technical_signal else {
-            "direction": technical_signal["direction"],
-            "score": technical_signal["score"],
-            "strategy": technical_signal.get("strategy"),
+        "statistical_reject_reason": rule_reason if not rule_signal else None,
+        "technical": None if not ta_signal else {
+            "direction": ta_signal["direction"],
+            "score": ta_signal["score"],
+            "strategy": ta_signal.get("strategy"),
         },
-        "technical_reject_reason": technical_reason if not technical_signal else None,
+        "technical_reject_reason": ta_reason if not ta_signal else None,
         "selected": {"source": selected_source},
     }
     return result
+
+
+# Backward-compat aliases for callers that still reference old function names
+_generate_statistical_signal = _generate_rule_match_signal
+_generate_technical_signal = _generate_ta_score_signal
+_generate_hybrid_technical_statistical_signal = _generate_combined_signal
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -1985,73 +1840,45 @@ def generate_signal(symbol: str, candles_1h: list,
                     state: dict = None,
                     current_time: Optional[datetime] = None,
                     precomputed_indicators: dict = None,
+                    signal_engine: Optional[str] = None,
+                    rulebook_path: Optional[str] = None,
+                    current_regime: Optional[str] = None,
+                    # Backward-compat param aliases — callers using old names still work
                     signal_model: Optional[str] = None,
-                    validated_setups_path: Optional[str] = None,
-                    current_regime: Optional[str] = None) -> Optional[dict]:
-    """
-    Generate a complete trade signal from candle data.
+                    validated_setups_path: Optional[str] = None) -> Optional[dict]:
+    """Generate a complete trade signal from candle data.
 
     Args:
         symbol: Trading pair (e.g. "BTCUSDT")
-        candles_1h: OHLCV candles [[open, high, low, close, volume], ...]
-        current_time: Time to use for session filter (defaults to now). Backtester passes candle timestamp
-        precomputed_indicators: Optional dict of pre-computed indicators (optimization for backtester)
-        current_regime: Optional BTC regime ("bull"|"bear"|"chop"). Gates statistical
-            setups that have scope_regime set. None = no regime filtering (back-compat).
-
-    Returns:
-        Signal dict or None if no signal. Signal contains everything needed
-        to execute the trade — the backtester just simulates fills against
-        the tp/sl this function returns.
+        candles_1h: OHLCV candles (closed candles only)
+        signal_engine: "ta_score" | "rule_match" | "combined" (default: DEFAULT_SIGNAL_ENGINE)
+        rulebook_path: Path to validated rules JSON (rule_match / combined engines only)
+        current_regime: BTC regime "bull"|"bear"|"chop"; gates regime-scoped rules.
+            None = no regime filtering (backward compat).
     """
-    resolved_signal_model = (signal_model or DEFAULT_SIGNAL_MODEL).strip().lower()
-    if resolved_signal_model not in VALID_SIGNAL_MODELS:
-        resolved_signal_model = "technical"
+    raw = signal_engine or signal_model or DEFAULT_SIGNAL_ENGINE
+    resolved = _ENGINE_COMPAT_ALIASES.get(raw.strip().lower(), raw.strip().lower())
+    if resolved not in VALID_SIGNAL_ENGINES:
+        resolved = "ta_score"
+    rbook = rulebook_path or validated_setups_path
 
-    if resolved_signal_model in {"statistical", "statistical_curated"}:
-        return _generate_statistical_signal(
-            symbol,
-            candles_1h,
-            resolved_signal_model,
-            state=state,
-            current_time=current_time,
+    if resolved == "rule_match":
+        return _generate_rule_match_signal(
+            symbol, candles_1h, resolved,
+            state=state, current_time=current_time,
             precomputed_indicators=precomputed_indicators,
-            validated_setups_path=validated_setups_path,
-            current_regime=current_regime,
+            rulebook_path=rbook, current_regime=current_regime,
         )
-    if resolved_signal_model == "statistical_wide_short_rsi28":
-        return _generate_dedicated_wide_short_rsi28_signal(
-            symbol,
-            candles_1h,
-            resolved_signal_model,
-            state=state,
-            current_time=current_time,
+    if resolved == "combined":
+        return _generate_combined_signal(
+            symbol, candles_1h,
+            state=state, current_time=current_time,
             precomputed_indicators=precomputed_indicators,
+            rulebook_path=rbook, current_regime=current_regime,
         )
-    if resolved_signal_model == "hybrid_technical_wide_short_rsi28":
-        return _generate_hybrid_technical_wide_short_rsi28_signal(
-            symbol,
-            candles_1h,
-            state=state,
-            current_time=current_time,
-            precomputed_indicators=precomputed_indicators,
-        )
-    if resolved_signal_model == "hybrid_technical_statistical":
-        return _generate_hybrid_technical_statistical_signal(
-            symbol,
-            candles_1h,
-            state=state,
-            current_time=current_time,
-            precomputed_indicators=precomputed_indicators,
-            validated_setups_path=validated_setups_path,
-            current_regime=current_regime,
-        )
-
-    return _generate_technical_signal(
-        symbol,
-        candles_1h,
-        state=state,
-        current_time=current_time,
+    return _generate_ta_score_signal(
+        symbol, candles_1h,
+        state=state, current_time=current_time,
         precomputed_indicators=precomputed_indicators,
     )
 
@@ -2143,15 +1970,13 @@ _cycle_results = []
 _last_rejection_reason = {}  # Track rejection reasons for each symbol
 
 
-def _signal_model_banner(model: str) -> str:
+def _signal_engine_banner(engine: str) -> str:
     labels = {
-        "technical": "Technical scoring",
-        "statistical": "Validated setup bundle",
-        "statistical_curated": "Curated validated setups",
-        "statistical_wide_short_rsi28": "Dedicated statistical short: wide_short_rsi_below_28",
-        "hybrid_technical_wide_short_rsi28": "Hybrid: technical + wide_short_rsi_below_28",
+        "ta_score": "TA scoring (RSI/EMA/MACD/ADX)",
+        "rule_match": "Rulebook pattern matching",
+        "combined": "Combined: rulebook + TA score fallback",
     }
-    return labels.get(model, model)
+    return labels.get(engine, engine)
 
 
 def scan_symbol(symbol: str, state: dict):
@@ -2188,7 +2013,7 @@ def scan_symbol(symbol: str, state: dict):
             'coin': symbol.replace('USDT', ''), 'price': completed_candles[-1][3],
             'dir': '-', 'tech': 0, 'total': 0,
             'filter_reason': reason, 'tp': 0, 'sl': 0, 'rr_ratio': 0,
-            'signal_model': DEFAULT_SIGNAL_MODEL if DEFAULT_SIGNAL_MODEL in VALID_SIGNAL_MODELS else "technical",
+            'signal_engine': DEFAULT_SIGNAL_ENGINE,
             'strategy': '-',
             'selected_source': 'rejected',
         })
@@ -2197,17 +2022,13 @@ def scan_symbol(symbol: str, state: dict):
     direction = signal["direction"]
     total     = signal["score"]
     tech_pts  = signal["technical_score"]
-    signal_model = signal.get("signal_model", DEFAULT_SIGNAL_MODEL)
+    signal_engine = signal.get("signal_engine", DEFAULT_SIGNAL_ENGINE)
     selected_strategy = signal.get("strategy", "?")
     selected_source = signal.get("hybrid_details", {}).get("selected", {}).get("source")
-    uses_dedicated_setup = (
-        signal_model == "statistical_wide_short_rsi28"
-        or selected_strategy == "statistical_wide_short_rsi28"
-    )
     display_total = total
-    if uses_dedicated_setup and total <= 0:
+    if signal_engine == "rule_match" and total <= 0:
         display_total = ALERT_THRESHOLD_OPTB
-    model_suffix = f" | model={signal_model}"
+    model_suffix = f" | engine={signal_engine}"
     if selected_source:
         model_suffix += f" | selected={selected_source}"
 
@@ -2228,7 +2049,7 @@ def scan_symbol(symbol: str, state: dict):
         'sl_pct': signal['sl_pct'],
         'atr': signal['atr'],
         'rr_ratio': signal['rr_ratio'],
-        'signal_model': signal_model,
+        'signal_engine': signal_engine,
         'strategy': selected_strategy,
         'selected_source': selected_source,
         'filter_reason': None  # None = signal passed all filters
@@ -2272,11 +2093,11 @@ def scan_symbol(symbol: str, state: dict):
 
 
 def main():
-    active_model = DEFAULT_SIGNAL_MODEL if DEFAULT_SIGNAL_MODEL in VALID_SIGNAL_MODELS else "technical"
-    active_banner = _signal_model_banner(active_model)
+    active_engine = DEFAULT_SIGNAL_ENGINE
+    active_banner = _signal_engine_banner(active_engine)
     log.info("=" * 50)
     log.info(f"Market Scanner Multi-Regime Starting… (PID: {os.getpid()})")
-    log.info(f"Signal model: {active_model}")
+    log.info(f"Signal engine: {active_engine}")
     log.info(f"Mode detail: {active_banner}")
     log.info(f"Symbols: {', '.join(SYMBOLS)}")
     log.info(f"Scan interval: {SCAN_INTERVAL}s")
@@ -2287,7 +2108,7 @@ def main():
 
     send_telegram(
         f"🤖 <b>Market Scanner Multi-Regime Online</b> (PID: {os.getpid()})\n"
-        f"🧠 Signal model: <b>{active_model}</b>\n"
+        f"🧠 Signal engine: <b>{active_engine}</b>\n"
         f"📌 Mode: {active_banner}\n"
         f"📋 Scanning: {', '.join(s.replace('USDT','') for s in SYMBOLS)}\n"
         f"⏱ Interval: every 5 minutes\n"
@@ -2298,7 +2119,7 @@ def main():
         cycle_start = time.time()
         log.info(
             f"\n{'─'*40}\nScan cycle @ {datetime.now(timezone.utc).strftime('%H:%M:%S')} "
-            f"| model={active_model} | {active_banner}"
+            f"| engine={active_engine} | {active_banner}"
         )
 
         _cycle_results.clear()
@@ -2316,7 +2137,7 @@ def main():
 
         # Summary table - show ALL computed signals + rejected ones
         log.info(f"\n{'─'*120}")
-        log.info(f"Scanner mode summary: model={active_model} | {active_banner}")
+        log.info(f"Scanner mode summary: engine={active_engine} | {active_banner}")
         log.info(f"{'Coin':<6} {'Price':>10}  {'Dir':<5} {'Tech':>5} {'Total':>6} {'Source':<11} {'Strategy':<30} {'Status':<20}")
         log.info(f"{'─'*120}")
 

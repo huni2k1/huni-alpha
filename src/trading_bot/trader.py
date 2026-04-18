@@ -23,7 +23,7 @@ Config (env vars or config/trader.json):
   BINANCE_API_SECRET    Futures API secret
   BINANCE_TESTNET       "true" (default) | "false" for live
   DRY_RUN               "true" (default) | "false" to execute real orders
-  SIGNAL_MODEL          technical | statistical | statistical_curated
+  SIGNAL_MODEL          ta_score | rule_match | combined (or legacy: technical | statistical | hybrid_technical_statistical)
   RISK_PER_TRADE_PCT    default 1.5
   MAX_POSITIONS         default 3
   SCAN_INTERVAL_SEC     default 300 (5 minutes)
@@ -51,9 +51,10 @@ try:
         SYMBOLS,
         SIGNAL_THRESHOLD_TREND,
         SIGNAL_THRESHOLD_BREAKOUT,
-        VALID_SIGNAL_MODELS,
-        VALIDATED_SETUPS_PATH,
-        CURATED_VALIDATED_SETUPS_PATH,
+        VALID_SIGNAL_ENGINES,
+        RULEBOOK_PATH,
+        CURATED_RULEBOOK_PATH,
+        _ENGINE_COMPAT_ALIASES,
     )
     from .binance_client import BinanceClient
     from .regime import classify_current_regime
@@ -66,9 +67,10 @@ except ImportError:
         SYMBOLS,
         SIGNAL_THRESHOLD_TREND,
         SIGNAL_THRESHOLD_BREAKOUT,
-        VALID_SIGNAL_MODELS,
-        VALIDATED_SETUPS_PATH,
-        CURATED_VALIDATED_SETUPS_PATH,
+        VALID_SIGNAL_ENGINES,
+        RULEBOOK_PATH,
+        CURATED_RULEBOOK_PATH,
+        _ENGINE_COMPAT_ALIASES,
     )
     from binance_client import BinanceClient
     from regime import classify_current_regime
@@ -120,7 +122,7 @@ def _load_config() -> dict:
 
     return {
         "dry_run":           _bool(_get("DRY_RUN", True)),
-        "signal_model":      _get("SIGNAL_MODEL", "technical").strip().lower(),
+        "signal_engine":     _ENGINE_COMPAT_ALIASES.get(_get("SIGNAL_MODEL", "ta_score").strip().lower(), _get("SIGNAL_MODEL", "ta_score").strip().lower()),
         "risk_pct":          float(_get("RISK_PER_TRADE_PCT", 1.5)),
         "max_positions":     int(_get("MAX_POSITIONS", 3)),
         "scan_interval":     int(_get("SCAN_INTERVAL_SEC", 300)),
@@ -209,7 +211,7 @@ def _write_position_state(
     quantity: float,
     score: float,
     strategy: str,
-    signal_model: str,
+    signal_engine: str,
     price_precision: int,
     tp_price: Optional[float] = None,
     sl_price: Optional[float] = None,
@@ -230,7 +232,7 @@ def _write_position_state(
         "sl_order_id": sl_order_id,
         "score": score,
         "strategy": strategy,
-        "signal_model": signal_model,
+        "signal_engine": signal_engine,
         "protection_status": protection_status,
     }
     save_state(state)
@@ -296,7 +298,7 @@ def _recover_position_state_from_binance(state: dict, live_position: dict, clien
         "sl_order_id": sl_order_id,
         "score": None,
         "strategy": "recovered_from_binance",
-        "signal_model": "recovered",
+        "signal_engine": "recovered",
         "protection_status": protection_status,
         "recovered_from_binance": True,
     }
@@ -354,17 +356,13 @@ def size_position(
 # ─────────────────────────────────────────────────────────────────
 # THRESHOLD  (mirrors backtester logic)
 # ─────────────────────────────────────────────────────────────────
-_STATISTICAL_MODELS = {"statistical", "statistical_curated", "statistical_wide_short_rsi28"}
-
-
-def _required_threshold(signal_model: str, strategy: str) -> Optional[float]:
-    """Return minimum score threshold, or None to bypass (setup membership is the gate)."""
-    if signal_model in _STATISTICAL_MODELS:
+def _required_threshold(signal_engine: str, strategy: str) -> Optional[float]:
+    """Return minimum score threshold, or None to bypass (rule match is the gate)."""
+    if signal_engine == "rule_match":
         return None
-    # Hybrid model: statistical signals bypass threshold, technical signals need score gate
-    if signal_model == "hybrid_technical_wide_short_rsi28":
-        if "statistical" in strategy or "rsi28" in strategy:
-            return None  # Statistical side: setup membership is the gate
+    if signal_engine == "combined":
+        if "rule_" in strategy or "statistical" in strategy:
+            return None  # Rule-match leg: rulebook membership is the gate
         if "breakout" in strategy:
             return SIGNAL_THRESHOLD_BREAKOUT
         return SIGNAL_THRESHOLD_TREND
@@ -614,7 +612,7 @@ def execute_entry(
             quantity=quantity,
             score=score,
             strategy=strategy,
-            signal_model=cfg["signal_model"],
+            signal_engine=cfg["signal_engine"],
             price_precision=price_prec,
             protection_status="pending",
         )
@@ -668,7 +666,7 @@ def execute_entry(
         quantity=quantity,
         score=score,
         strategy=strategy,
-        signal_model=cfg["signal_model"],
+        signal_engine=cfg["signal_engine"],
         price_precision=price_prec if not dry_run else 4,
         tp_price=tp_p,
         sl_price=sl_p,
@@ -880,13 +878,13 @@ def _handle_exit_signal(signum, frame):
     raise SystemExit(0)
 
 
-def _build_startup_banner(cfg: dict, signal_model: str, mode_tag: str, version: str) -> list[str]:
+def _build_startup_banner(cfg: dict, signal_engine: str, mode_tag: str, version: str) -> list[str]:
     """Build startup banner lines for consistent logging and tests."""
     return [
         "=" * 60,
         f"Trader {mode_tag}starting (PID: {os.getpid()})",
         f"Version:        {version}",
-        f"Signal model:   {signal_model}",
+        f"Signal engine:  {signal_engine}",
         f"Risk per trade: {cfg['risk_pct']}%",
         f"Max positions:  {cfg['max_positions']}",
         f"Cooldown:       {cfg['cooldown_hours']}h",
@@ -911,19 +909,15 @@ def main():
     cfg = _load_config()
     dry_run = cfg["dry_run"]
 
-    signal_model = cfg["signal_model"]
-    if signal_model not in VALID_SIGNAL_MODELS:
-        signal_model = "technical"
+    signal_engine = cfg["signal_engine"]
+    if signal_engine not in VALID_SIGNAL_ENGINES:
+        signal_engine = "ta_score"
     app_version = get_app_version()
 
-    validated_path = (
-        CURATED_VALIDATED_SETUPS_PATH
-        if signal_model == "statistical_curated"
-        else VALIDATED_SETUPS_PATH
-    )
+    validated_path = RULEBOOK_PATH
 
     mode_tag = "[DRY RUN] " if dry_run else "[LIVE] "
-    for line in _build_startup_banner(cfg, signal_model, mode_tag, app_version):
+    for line in _build_startup_banner(cfg, signal_engine, mode_tag, app_version):
         log.info(line)
 
     # Init Binance client
@@ -945,7 +939,7 @@ def main():
     send_telegram(
         f"🤖 <b>Trader Online {mode_tag}</b>\n"
         f"Version: {app_version}\n"
-        f"Model: {signal_model} | Risk: {cfg['risk_pct']}% | Max pos: {cfg['max_positions']}\n"
+        f"Engine: {signal_engine} | Risk: {cfg['risk_pct']}% | Max pos: {cfg['max_positions']}\n"
         f"Symbols: {', '.join(s.replace('USDT','') for s in SYMBOLS)}\n"
         f"Testnet: {client.testnet}"
     )
@@ -1039,8 +1033,8 @@ def main():
                         symbol,
                         candles,
                         current_time=now,
-                        signal_model=signal_model,
-                        validated_setups_path=validated_path,
+                        signal_engine=signal_engine,
+                        rulebook_path=validated_path,
                         current_regime=current_regime,
                     )
                 except Exception as e:
@@ -1058,7 +1052,7 @@ def main():
 
                 score    = trade_signal["score"]
                 strategy = trade_signal.get("strategy", "trend_pullback")
-                threshold = _required_threshold(signal_model, strategy)
+                threshold = _required_threshold(signal_engine, strategy)
 
                 # ── Log signal details ──
                 d = trade_signal.get("details", {})
@@ -1066,12 +1060,12 @@ def main():
                 l_score   = trade_signal.get("long_score", 0)
                 s_score   = trade_signal.get("short_score", 0)
                 regime    = trade_signal.get("regime") or d.get("regime", "?")
-                sig_model = trade_signal.get("signal_model", signal_model)
+                sig_engine = trade_signal.get("signal_engine", signal_engine)
                 hybrid_d  = trade_signal.get("hybrid_details")
 
                 log.info(
                     f"  {symbol}: ${entry_p:,.2f} | {trade_signal['direction']} "
-                    f"score={score:.2f} | model={sig_model} strategy={strategy}"
+                    f"score={score:.2f} | engine={sig_engine} strategy={strategy}"
                 )
 
                 # ── Technical side ──

@@ -41,7 +41,7 @@ def _patch_common_startup(monkeypatch, cfg, state, client_cls):
 def test_live_trader_startup_logs_version_and_reconcile_on_balance_failure(monkeypatch):
     cfg = {
         "dry_run": False,
-        "signal_model": "hybrid_technical_wide_short_rsi28",
+        "signal_engine": "combined",
         "risk_pct": 1.5,
         "max_positions": 3,
         "scan_interval": 300,
@@ -83,7 +83,7 @@ def test_live_trader_startup_logs_version_and_reconcile_on_balance_failure(monke
 def test_live_trader_skips_scan_when_already_at_max_positions(monkeypatch):
     cfg = {
         "dry_run": True,
-        "signal_model": "technical",
+        "signal_engine": "ta_score",
         "risk_pct": 1.5,
         "max_positions": 3,
         "scan_interval": 300,

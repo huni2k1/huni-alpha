@@ -363,7 +363,7 @@ class TestStatisticalSnapshot:
     def test_snapshot_fields_present(self):
         """Snapshot should contain all required fields."""
         candles = make_trending_candles(200)
-        snapshot = scanner._build_statistical_snapshot("BTCUSDT", candles)
+        snapshot = scanner._build_indicator_snapshot("BTCUSDT", candles)
         required_fields = [
             "close", "rsi", "e9", "e21", "e50", "above_ema200", "below_ema200",
             "macd_line", "macd_signal", "macd_hist", "macd_hist_prev",
@@ -377,13 +377,13 @@ class TestStatisticalSnapshot:
     def test_snapshot_rsi_in_range(self):
         """RSI should be between 0 and 100."""
         candles = make_trending_candles(200)
-        snapshot = scanner._build_statistical_snapshot("BTCUSDT", candles)
+        snapshot = scanner._build_indicator_snapshot("BTCUSDT", candles)
         assert 0 <= snapshot["rsi"] <= 100
 
     def test_snapshot_adx_in_range(self):
         """ADX should be between 0 and 100."""
         candles = make_trending_candles(200)
-        snapshot = scanner._build_statistical_snapshot("BTCUSDT", candles)
+        snapshot = scanner._build_indicator_snapshot("BTCUSDT", candles)
         assert 0 <= snapshot["adx"] <= 100
 
 
@@ -448,9 +448,9 @@ class TestTraderVersionLogging:
             "max_positions": 3,
             "cooldown_hours": 24,
         }
-        banner = trader._build_startup_banner(cfg, "hybrid_technical_wide_short_rsi28", "[LIVE] ", "18cad23")
+        banner = trader._build_startup_banner(cfg, "combined", "[LIVE] ", "18cad23")
         assert any("Version:        18cad23" == line for line in banner)
-        assert any("Signal model:   hybrid_technical_wide_short_rsi28" == line for line in banner)
+        assert any("Signal engine:  combined" == line for line in banner)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -561,7 +561,7 @@ class TestTraderEntryRecovery:
         cfg = {
             "risk_pct": 1.5,
             "max_positions": 3,
-            "signal_model": "hybrid_technical_wide_short_rsi28",
+            "signal_engine": "combined",
         }
 
         with pytest.raises(RuntimeError, match="crash after fill"):

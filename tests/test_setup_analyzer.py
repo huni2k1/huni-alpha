@@ -370,6 +370,7 @@ def test_build_validated_setups_export_creates_lightweight_schema():
     symbol_scoped_short["scope_key"] = "symbol_BTCUSDT"
     symbol_scoped_short["scope_type"] = "symbol"
     symbol_scoped_short["scope_symbol"] = "BTCUSDT"
+    symbol_scoped_short["filter"] = {"symbol": "BTCUSDT"}
     report = {
         "metadata": {
             "generated_at": "2026-03-30T00:00:00+00:00",
@@ -397,8 +398,7 @@ def test_build_validated_setups_export_creates_lightweight_schema():
     assert exported["validated_setups"]["long"][0]["conditions"] == ["rsi_above_70"]
     assert exported["validated_setups"]["short"][0]["template"] == "wide"
     assert exported["validated_setups"]["short"][0]["conditions"] == ["rsi_below_30"]
-    assert exported["validated_setups"]["short"][0]["scope_type"] == "symbol"
-    assert exported["validated_setups"]["short"][0]["scope_symbol"] == "BTCUSDT"
+    assert exported["validated_setups"]["short"][0]["filter"] == {"symbol": "BTCUSDT"}
     assert "window_results" not in exported["validated_setups"]["long"][0]
 
 

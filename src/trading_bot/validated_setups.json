@@ -149,7 +149,8 @@
             "avg_pnl_pct": 0.2776,
             "profit_factor": 1.2173
           }
-        }
+        },
+        "filter": {}
       },
       {
         "name": "wide_short_higher_highs_outside_bar",
@@ -264,7 +265,8 @@
             "avg_pnl_pct": 0.6545,
             "profit_factor": 1.4385
           }
-        }
+        },
+        "filter": {}
       },
       {
         "name": "wide_short_outside_bar_three_green_candles",
@@ -379,7 +381,8 @@
             "avg_pnl_pct": 0.9486,
             "profit_factor": 1.7429
           }
-        }
+        },
+        "filter": {}
       },
       {
         "name": "wide_short_ema_fan_wide_higher_highs_price_near_upper_bb",
@@ -497,7 +500,8 @@
             "avg_pnl_pct": 1.4118,
             "profit_factor": 2.0874
           }
-        }
+        },
+        "filter": {}
       },
       {
         "name": "wide_short_ema_fan_wide_higher_highs_outside_bar",
@@ -615,7 +619,8 @@
             "avg_pnl_pct": 1.1437,
             "profit_factor": 1.7822
           }
-        }
+        },
+        "filter": {}
       },
       {
         "name": "wide_short_outside_bar_price_near_upper_bb_three_green_candles",
@@ -733,7 +738,8 @@
             "avg_pnl_pct": 0.544,
             "profit_factor": 1.4699
           }
-        }
+        },
+        "filter": {}
       }
     ]
   }
