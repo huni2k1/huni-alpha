@@ -746,6 +746,14 @@ def _record_reconciled_close(state: dict, client: BinanceClient, symbol: str) ->
     if exit_reason == "UNKNOWN" and sl_id:
         if client.get_order_status(symbol, sl_id) == "FILLED":
             exit_reason = "SL"
+    # Fallback: algo order records expire on Binance — infer from price proximity
+    if exit_reason == "UNKNOWN" and exit_price is not None:
+        tp_price = pos.get("tp_price")
+        sl_price = pos.get("sl_price")
+        if tp_price and sl_price:
+            dist_tp = abs(exit_price - float(tp_price))
+            dist_sl = abs(exit_price - float(sl_price))
+            exit_reason = "TP" if dist_tp < dist_sl else "SL"
 
     if exit_price is not None and pnl_usd is not None:
         pnl_pct = (pnl_usd / position_size * 100) if position_size > 0 else 0.0
