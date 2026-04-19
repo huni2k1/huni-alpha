@@ -1325,7 +1325,9 @@
             "profit_factor": 1.2415
           }
         },
-        "filter": {}
+        "filter": {
+          "regime": "bear"
+        }
       },
       {
         "name": "wide_short_rsi_below_30",
@@ -1438,7 +1440,9 @@
             "profit_factor": 1.0794
           }
         },
-        "filter": {}
+        "filter": {
+          "regime": "bear"
+        }
       },
       {
         "name": "wide_short_higher_highs_outside_bar",
@@ -1554,7 +1558,9 @@
             "profit_factor": 1.4385
           }
         },
-        "filter": {}
+        "filter": {
+          "regime": "bear"
+        }
       },
       {
         "name": "wide_short_outside_bar_three_green_candles",
@@ -1670,7 +1676,9 @@
             "profit_factor": 1.7429
           }
         },
-        "filter": {}
+        "filter": {
+          "regime": "bear"
+        }
       },
       {
         "name": "wide_short_adx_above_25_outside_bar_three_green_candles",
@@ -1789,7 +1797,9 @@
             "profit_factor": 1.9325
           }
         },
-        "filter": {}
+        "filter": {
+          "regime": "bear"
+        }
       },
       {
         "name": "wide_short_rsi_below_32",
