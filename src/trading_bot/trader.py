@@ -641,6 +641,7 @@ def execute_entry(
                 log.error(f"  {symbol}: EMERGENCY CLOSE ALSO FAILED — position open without TP/SL!")
                 send_telegram(f"🚨 {symbol} EMERGENCY CLOSE FAILED — manual intervention needed!")
             state["positions"].pop(symbol, None)
+            _set_cooldown(state, symbol)  # prevent re-entry on next scan cycle
             save_state(state)
             return False
 
@@ -654,6 +655,7 @@ def execute_entry(
                 log.error(f"  {symbol}: EMERGENCY CLOSE ALSO FAILED — position has TP but no SL!")
                 send_telegram(f"🚨 {symbol} EMERGENCY CLOSE FAILED — has TP but no SL! Manual intervention needed!")
             state["positions"].pop(symbol, None)
+            _set_cooldown(state, symbol)  # prevent re-entry on next scan cycle
             save_state(state)
             return False
 
@@ -1080,7 +1082,7 @@ def main():
                     bb_sq    = d.get("bb_squeeze", False)
                     log.info(
                         f"    [TECHNICAL] {tech_h['direction']} score={tech_h['score']:.2f} "
-                        f"L={tech_h.get('long_score', 0):.2f} S={tech_h.get('short_score', 0):.2f} | "
+                        f"L={tech_h['long_score']:.2f} S={tech_h['short_score']:.2f} | "
                         f"RSI={rsi_val} ADX={adx_val} vol={vol_r} "
                         f"EMA200={'above' if above200 else 'below'} "
                         f"bull={ema_bull} bear={ema_bear} squeeze={bb_sq} regime={regime}"

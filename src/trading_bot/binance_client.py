@@ -21,7 +21,7 @@ from typing import Optional
 from uuid import uuid4
 from requests.exceptions import RequestException
 
-log = logging.getLogger("trader.binance")
+log = logging.getLogger("trading-bot.binance")
 
 BASE_URL_LIVE    = "https://fapi.binance.com"
 BASE_URL_TESTNET = "https://testnet.binancefuture.com"

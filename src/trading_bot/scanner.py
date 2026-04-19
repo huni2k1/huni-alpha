@@ -1816,6 +1816,8 @@ def _generate_combined_signal(
         "technical": None if not ta_signal else {
             "direction": ta_signal["direction"],
             "score": ta_signal["score"],
+            "long_score": ta_signal.get("long_score", 0.0),
+            "short_score": ta_signal.get("short_score", 0.0),
             "strategy": ta_signal.get("strategy"),
         },
         "technical_reject_reason": ta_reason if not ta_signal else None,
