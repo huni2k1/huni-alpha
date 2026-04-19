@@ -1005,7 +1005,6 @@ def run_backtest(
     last_signal_idx = {sym: -999 for sym in all_candles.keys()}
     sym_trades_map = {}  # {symbol: [trades]}
     peak_equity = account
-    circuit_breaker_until = -1  # Candle index when trading resumes
 
     # Timing counters
     signal_count = 0
@@ -1125,18 +1124,8 @@ def run_backtest(
                 candle_month = candle_dt.strftime("%Y-%m")
                 break
         if candle_month is not None and candle_month != current_calendar_month:
-            if reset_monthly and current_calendar_month is not None:
-                # Monthly reset: circuit breaker from last month doesn't carry over.
-                # Sizing already uses flat `account` value (not current_equity), so
-                # a bad month doesn't shrink position sizes in the next month.
-                circuit_breaker_until = -1
             current_calendar_month = candle_month
             monthly_start_equity.setdefault(candle_month, round(total_equity, 2))
-
-        if current_dd_pct >= max_drawdown_pct and max_drawdown_pct < 100:
-            if t >= circuit_breaker_until:  # Not already paused
-                circuit_breaker_until = t + recovery_candles
-                log.warning(f"CIRCUIT BREAKER: {current_dd_pct:.1f}% drawdown at candle {t}, pausing {recovery_candles} candles")
 
         # Record daily equity snapshot (every 24 candles) with true equity
         if t % 24 == 0:
@@ -1148,11 +1137,10 @@ def run_backtest(
                     break
 
         # ── STEP B: Check for new entries at candle t ──────────────
-        # Skip entries if circuit breaker active or liquidated
-        if t < circuit_breaker_until or current_equity <= 0:
-            if current_equity <= 0 and not any(open_positions):
+        if current_equity <= 0:
+            if not any(open_positions):
                 log.warning(f"Account liquidated at ${current_equity:.2f}, stopping trades")
-            continue  # Skip to next candle
+            continue
 
         # Skip entries if at max concurrent positions
         if len(open_positions) >= max_positions:
@@ -1910,7 +1898,7 @@ if __name__ == "__main__":
     log.info(f"Signal engine: {args.signal_engine}")
     if args.signal_engine in {"rule_match", "combined"} and args.rulebook:
         log.info(f"Rulebook: {args.rulebook}")
-    log.info(f"Circuit breaker: {args.max_drawdown}% DD → pause {args.recovery_candles} candles")
+    log.info(f"Max drawdown tracked: {args.max_drawdown}% (circuit breaker disabled)")
 
     _day_name_to_int = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
     allowed_weekdays = None
