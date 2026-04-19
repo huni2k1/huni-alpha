@@ -4,7 +4,7 @@
   "DRY_RUN": false,
   "SIGNAL_MODEL": "hybrid_technical_wide_short_rsi28",
   "RISK_PER_TRADE_PCT": 1.5,
-  "MAX_POSITIONS": 3,
+  "MAX_POSITIONS": 5,
   "SCAN_INTERVAL_SEC": 300,
   "COOLDOWN_HOURS": 24,
   "TIMEOUT_HOURS": 180,
