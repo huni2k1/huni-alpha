@@ -1080,7 +1080,7 @@ def main():
                     bb_sq    = d.get("bb_squeeze", False)
                     log.info(
                         f"    [TECHNICAL] {tech_h['direction']} score={tech_h['score']:.2f} "
-                        f"L={tech_h['long_score']:.2f} S={tech_h['short_score']:.2f} | "
+                        f"L={tech_h.get('long_score', 0):.2f} S={tech_h.get('short_score', 0):.2f} | "
                         f"RSI={rsi_val} ADX={adx_val} vol={vol_r} "
                         f"EMA200={'above' if above200 else 'below'} "
                         f"bull={ema_bull} bear={ema_bear} squeeze={bb_sq} regime={regime}"
