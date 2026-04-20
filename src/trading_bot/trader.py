@@ -23,7 +23,9 @@ Config (env vars or config/trader.json):
   BINANCE_API_SECRET    Futures API secret
   BINANCE_TESTNET       "true" (default) | "false" for live
   DRY_RUN               "true" (default) | "false" to execute real orders
-  SIGNAL_MODEL          ta_score | rule_match | combined (or legacy: technical | statistical | hybrid_technical_statistical)
+  SIGNAL_MODEL          ta_score | rule_match | combined | combined_validated_rulebook
+                        (legacy aliases still supported: technical | statistical |
+                         hybrid_technical_statistical)
   RISK_PER_TRADE_PCT    default 1.5
   MAX_POSITIONS         default 3
   SCAN_INTERVAL_SEC     default 300 (5 minutes)
@@ -34,6 +36,7 @@ import sys
 import json
 import time
 import atexit
+import html
 import logging
 import requests
 import signal
@@ -218,6 +221,9 @@ def _write_position_state(
     tp_order_id: Optional[str] = None,
     sl_order_id: Optional[str] = None,
     protection_status: str = "pending",
+    selected_source: Optional[str] = None,
+    setup_name: Optional[str] = None,
+    market_regime: Optional[str] = None,
 ):
     state["positions"][symbol] = {
         "symbol": symbol,
@@ -234,8 +240,87 @@ def _write_position_state(
         "strategy": strategy,
         "signal_engine": signal_engine,
         "protection_status": protection_status,
+        "selected_source": selected_source,
+        "setup_name": setup_name,
+        "market_regime": market_regime,
     }
     save_state(state)
+
+
+def _signal_audit_context(signal: dict, default_engine: Optional[str] = None) -> dict:
+    """Extract a compact audit context for logs, state, and Telegram alerts."""
+    hybrid_details = signal.get("hybrid_details") or {}
+    selected = hybrid_details.get("selected") or {}
+
+    engine = signal.get("signal_engine") or default_engine or "unknown"
+    source = signal.get("selected_source") or selected.get("source")
+    if not source:
+        if signal.get("statistical_setup") or engine == "rule_match":
+            source = "statistical"
+        elif engine in {"ta_score", "technical"}:
+            source = "technical"
+        else:
+            source = engine
+
+    setup_name = (
+        signal.get("setup_name")
+        or signal.get("statistical_setup")
+        or (hybrid_details.get("statistical") or {}).get("setup")
+        or signal.get("strategy")
+        or "unknown"
+    )
+    market_regime = (
+        signal.get("market_regime")
+        or signal.get("current_regime")
+        or signal.get("regime")
+        or (signal.get("details") or {}).get("regime")
+        or "unknown"
+    )
+
+    return {
+        "engine": engine,
+        "source": source,
+        "setup_name": setup_name,
+        "market_regime": market_regime,
+    }
+
+
+def _position_audit_context(position: dict) -> dict:
+    return {
+        "engine": position.get("signal_engine") or "unknown",
+        "source": position.get("selected_source") or "unknown",
+        "setup_name": position.get("setup_name") or position.get("strategy") or "unknown",
+        "market_regime": position.get("market_regime") or "unknown",
+        "protection_status": position.get("protection_status") or "unknown",
+    }
+
+
+def _format_telegram_audit_lines(
+    *,
+    engine: str,
+    source: str,
+    setup_name: str,
+    market_regime: str,
+    protection_status: Optional[str] = None,
+) -> str:
+    lines = [
+        f"Engine: <code>{html.escape(str(engine))}</code>",
+        f"Source: <code>{html.escape(str(source))}</code>",
+        f"Setup: <code>{html.escape(str(setup_name))}</code>",
+        f"Regime: <code>{html.escape(str(market_regime))}</code>",
+    ]
+    if protection_status is not None:
+        lines.append(f"Protection: <code>{html.escape(str(protection_status))}</code>")
+    return "\n".join(lines)
+
+
+def _bump_rejection_count(rejection_counts: dict[str, int], reason: str) -> None:
+    rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
+
+
+def _format_rejection_summary(rejection_counts: dict[str, int]) -> str:
+    ordered = sorted(rejection_counts.items(), key=lambda item: (-item[1], item[0]))
+    return " | ".join(f"{reason}={count}" for reason, count in ordered)
 
 
 def _recover_position_state_from_binance(state: dict, live_position: dict, client: BinanceClient):
@@ -478,6 +563,7 @@ def monitor_positions(state: dict, client: BinanceClient, cfg: dict, dry_run: bo
             if exit_price:
                 entry = pos["entry_price"]
                 direction = pos["direction"]
+                audit = _position_audit_context(pos)
                 if direction == "LONG":
                     pnl_pct = (exit_price - entry) / entry * 100
                 else:
@@ -507,7 +593,8 @@ def monitor_positions(state: dict, client: BinanceClient, cfg: dict, dry_run: bo
                     f"{'LONG' if direction == 'LONG' else 'SHORT'}\n"
                     f"Entry: <code>${entry:,.4f}</code> → Exit: <code>${exit_price:,.4f}</code>\n"
                     f"PnL: <b>{pnl_pct:+.2f}%</b> (${pnl_usd:+.2f})\n"
-                    f"Age: {age_hours:.1f}h"
+                    f"Age: {age_hours:.1f}h\n"
+                    f"{_format_telegram_audit_lines(**audit)}"
                 )
 
             closed.append(symbol)
@@ -552,6 +639,7 @@ def execute_entry(
     tp_pct    = abs(signal["tp_pct"])
     strategy  = signal.get("strategy", "trend_pullback")
     score     = signal.get("score", 0)
+    audit = _signal_audit_context(signal, cfg.get("signal_engine"))
 
     entry_side = "BUY" if direction == "LONG" else "SELL"
     close_side = "SELL" if direction == "LONG" else "BUY"
@@ -615,6 +703,9 @@ def execute_entry(
             signal_engine=cfg["signal_engine"],
             price_precision=price_prec,
             protection_status="pending",
+            selected_source=audit["source"],
+            setup_name=audit["setup_name"],
+            market_regime=audit["market_regime"],
         )
 
         # 3. Re-anchor TP/SL to actual fill price (same ATR distance)
@@ -675,6 +766,9 @@ def execute_entry(
         tp_order_id=tp_order_id,
         sl_order_id=sl_order_id,
         protection_status="armed",
+        selected_source=audit["source"],
+        setup_name=audit["setup_name"],
+        market_regime=audit["market_regime"],
     )
     _set_cooldown(state, symbol)
     save_state(state)
@@ -688,7 +782,8 @@ def execute_entry(
         f"TP: <code>${tp_p:,.4f}</code> (+{tp_pct:.2f}%)\n"
         f"SL: <code>${sl_p:,.4f}</code> (-{sl_pct:.2f}%)\n"
         f"Size: ${position_usdt:.0f} ({quantity} {symbol.replace('USDT','')})\n"
-        f"Score: {score:.2f} | Strategy: {strategy}"
+        f"Score: {score:.2f} | Strategy: {strategy}\n"
+        f"{_format_telegram_audit_lines(**audit, protection_status='armed')}"
     )
 
     return True
@@ -709,6 +804,7 @@ def _record_reconciled_close(state: dict, client: BinanceClient, symbol: str) ->
         return
 
     direction = pos["direction"]
+    audit = _position_audit_context(pos)
     entry_price = float(pos["entry_price"])
     quantity = float(pos["quantity"])
     position_size = float(pos.get("position_size_usdt") or (entry_price * quantity))
@@ -787,7 +883,8 @@ def _record_reconciled_close(state: dict, client: BinanceClient, symbol: str) ->
             f"{emoji} <b>{exit_reason}</b> {dir_emoji} {symbol.replace('USDT','')} "
             f"{direction} <i>(reconciled)</i>\n"
             f"Entry: <code>${entry_price:,.4f}</code> → Exit: <code>${exit_price:,.4f}</code>\n"
-            f"PnL: <b>{pnl_pct:+.2f}%</b> (${pnl_usd:+.2f})"
+            f"PnL: <b>{pnl_pct:+.2f}%</b> (${pnl_usd:+.2f})\n"
+            f"{_format_telegram_audit_lines(**audit)}"
         )
     else:
         log.warning(
@@ -1004,6 +1101,7 @@ def main():
             log.info(f"At max positions ({open_count}/{cfg['max_positions']}), skipping scan")
         else:
             log.info(f"Scanning {len(SYMBOLS)} symbols ({open_count}/{cfg['max_positions']} positions open)...")
+            rejection_counts: dict[str, int] = {}
 
             # Classify BTC regime once per cycle — gates any regime-scoped statistical setups.
             current_regime: Optional[str] = None
@@ -1058,7 +1156,13 @@ def main():
                     # Get rejection reason from scanner
                     rejection_reason = scanner._last_rejection_reason.get(symbol, "Unknown")
                     log.info(f"  {symbol}: ✗ {rejection_reason}")
+                    _bump_rejection_count(rejection_counts, rejection_reason)
                     continue
+
+                trade_signal["market_regime"] = current_regime or trade_signal.get("market_regime")
+                audit = _signal_audit_context(trade_signal, signal_engine)
+                trade_signal.setdefault("selected_source", audit["source"])
+                trade_signal.setdefault("setup_name", audit["setup_name"])
 
                 score    = trade_signal["score"]
                 strategy = trade_signal.get("strategy", "trend_pullback")
@@ -1151,6 +1255,7 @@ def main():
                         f"  {symbol}: ✗ score {score:.2f} < {threshold:.0f} "
                         f"| {regime} | RSI={rsi} ADX={adx}"
                     )
+                    _bump_rejection_count(rejection_counts, "Score below threshold")
                     continue
 
                 log.info(
@@ -1165,6 +1270,9 @@ def main():
                     log.info(f"  {symbol}: position opened")
                 else:
                     log.warning(f"  {symbol}: entry failed")
+
+            if rejection_counts:
+                log.info(f"Rejection summary: {_format_rejection_summary(rejection_counts)}")
 
         # ── Summary ────────────────────────────────────────────────
         elapsed = time.time() - cycle_start

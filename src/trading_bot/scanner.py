@@ -96,7 +96,7 @@ _ENGINE_COMPAT_ALIASES: dict[str, str] = {
     "statistical":                      "rule_match",
     "statistical_curated":              "rule_match",
     "statistical_wide_short_rsi28":     "rule_match",
-    "hybrid_technical_wide_short_rsi28": "combined",
+    "combined_validated_rulebook":      "combined",
     "hybrid_technical_statistical":     "combined",
 }
 RULEBOOK_PATH = os.environ.get(
@@ -1897,7 +1897,7 @@ def send_telegram(text: str):
     try:
         r = requests.post(url, json=payload, timeout=10)
         r.raise_for_status()
-        log.info("Telegram message sent.")
+        log.debug("Telegram message sent.")
     except Exception as e:
         log.error(f"Telegram error: {e}")
 
@@ -2149,7 +2149,7 @@ def main():
                     status = "✅ ACTIVE" if r.get('filter_reason') is None else f"⚠️  {r.get('filter_reason', 'SKIPPED')}"
                 else:
                     status = f"⚠️  {r.get('filter_reason', 'NO SIGNAL')}"
-                selected_source = r.get('selected_source') or r.get('signal_model', active_model)
+                selected_source = r.get('selected_source') or r.get('signal_model') or active_engine
                 log.info(
                     f"{r['coin']:<6} ${r['price']:>9,.3f}  {r['dir']:<5} "
                     f"{r['tech']:>5.1f} {r['total']:>6.1f} "
