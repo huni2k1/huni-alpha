@@ -2,7 +2,7 @@
   "_comment": "Trader config. All fields can also be set via env vars (env vars take precedence).",
 
   "DRY_RUN": false,
-  "SIGNAL_MODEL": "hybrid_technical_wide_short_rsi28",
+  "SIGNAL_MODEL": "combined_validated_rulebook",
   "RISK_PER_TRADE_PCT": 1.5,
   "MAX_POSITIONS": 5,
   "SCAN_INTERVAL_SEC": 300,

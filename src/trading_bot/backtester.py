@@ -1859,7 +1859,7 @@ if __name__ == "__main__":
     parser.add_argument("--fixed-size", type=float, default=0.0, help="Fixed $ per trade (0=use risk%% sizing)")
     parser.add_argument("--partial-tp", action="store_true", default=False, help="Close 50%% at 1R, move SL to breakeven (default: disabled)")
     parser.add_argument("--no-kelly-sizing", action="store_false", dest="kelly_sizing", default=True, help="Disable Kelly sizing, use flat risk%% instead")
-    parser.add_argument("--signal-engine", "--signal-model", choices=["ta_score", "rule_match", "combined", "technical", "statistical", "statistical_curated", "statistical_wide_short_rsi28", "hybrid_technical_wide_short_rsi28", "hybrid_technical_statistical"], default="ta_score", dest="signal_engine", help="Signal engine: ta_score | rule_match | combined")
+    parser.add_argument("--signal-engine", "--signal-model", choices=["ta_score", "rule_match", "combined", "combined_validated_rulebook", "technical", "statistical", "statistical_curated", "statistical_wide_short_rsi28", "hybrid_technical_statistical"], default="ta_score", dest="signal_engine", help="Signal engine: ta_score | rule_match | combined (recommended alias: combined_validated_rulebook)")
     parser.add_argument("--rulebook", "--validated-setups", type=str, default=None, dest="rulebook", help="Path to validated rules JSON (rule_match / combined engines)")
     parser.add_argument("--allowed-weekdays", nargs="+", default=None, metavar="DAY",
                         help="Only enter trades on these days (e.g. Thu Fri Sat Sun). Default: all days.")
