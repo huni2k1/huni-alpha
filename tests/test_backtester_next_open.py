@@ -100,7 +100,7 @@ def test_next_open_entry_uses_actual_entry_candle_time_and_index():
     assert trade["duration_hours"] == 0
 
 
-def test_next_open_reanchors_tp_sl_and_allows_position_size_above_old_hard_cap():
+def test_next_open_reanchors_tp_sl_and_caps_position_size():
     candles = make_flat_candles_dict(4082, price=100.0)
     entry_idx = 4081
     candles[entry_idx]["open"] = 120.0
@@ -132,7 +132,7 @@ def test_next_open_reanchors_tp_sl_and_allows_position_size_above_old_hard_cap()
             fee_pct=0.0,
             slippage_pct=0.0,
             fixed_size=0.0,
-            max_positions=1,
+            max_positions=2,
             cooldown_candles=1,
             use_next_open=True,
             kelly_sizing=False,

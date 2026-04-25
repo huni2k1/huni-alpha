@@ -1307,7 +1307,7 @@ def run_backtest(
 
                 risk_amount = equity_for_sizing * (effective_risk_pct / 100)
                 position_size = risk_amount / (sl_pct_sig / 100) if sl_pct_sig > 0 else risk_amount
-                position_size = min(position_size, equity_for_sizing * 0.5)
+                position_size = min(position_size, equity_for_sizing / max_positions)
 
             # Capital constraint: check if we have enough total equity (free + locked + unrealized P&L)
             # This prevents liquidation when positions are underwater
