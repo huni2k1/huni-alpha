@@ -587,6 +587,9 @@ def monitor_positions(state: dict, client: BinanceClient, cfg: dict, dry_run: bo
                     "pnl_usd": round(pnl_usd, 2),
                     "score": pos.get("score"),
                     "strategy": pos.get("strategy"),
+                    "setup_name": pos.get("setup_name"),
+                    "market_regime": pos.get("market_regime"),
+                    "selected_source": pos.get("selected_source"),
                 }
                 state["trade_log"].append(trade_record)
 
@@ -875,6 +878,9 @@ def _record_reconciled_close(state: dict, client: BinanceClient, symbol: str) ->
             "pnl_usd": round(pnl_usd, 2),
             "score": pos.get("score"),
             "strategy": pos.get("strategy"),
+            "setup_name": pos.get("setup_name"),
+            "market_regime": pos.get("market_regime"),
+            "selected_source": pos.get("selected_source"),
             "reconciled": True,
         }
         state["trade_log"].append(trade_record)
