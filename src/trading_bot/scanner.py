@@ -159,9 +159,18 @@ log.addHandler(_dfh)
 def load_state() -> dict:
     try:
         with open(STATE_FILE) as f:
-            return json.load(f)
+            state = json.load(f)
     except Exception:
+        state = {"alerts": {}}
+    if not isinstance(state, dict):
         return {"alerts": {}}
+    alerts = state.get("alerts")
+    if not isinstance(alerts, dict):
+        state["alerts"] = {}
+    signal_history = state.get("signal_history")
+    if signal_history is not None and not isinstance(signal_history, dict):
+        state["signal_history"] = {}
+    return state
 
 def save_state(state: dict):
     with open(STATE_FILE, "w") as f:
@@ -169,12 +178,14 @@ def save_state(state: dict):
 
 def can_alert(state: dict, symbol: str, direction: str, tier: str = "ENTRY") -> bool:
     """Check if alert can fire (separate cooldown for WATCH vs ENTRY)."""
+    state.setdefault("alerts", {})
     key = f"{symbol}_{direction}_{tier}"
     last = state["alerts"].get(key, 0)
     return (time.time() - last) > ALERT_COOLDOWN
 
 def mark_alert(state: dict, symbol: str, direction: str, tier: str = "ENTRY"):
     """Mark alert as fired (separate tracking for WATCH vs ENTRY)."""
+    state.setdefault("alerts", {})
     state["alerts"][f"{symbol}_{direction}_{tier}"] = time.time()
 
 def is_whipsaw(state: dict, symbol: str, new_direction: str) -> bool:
@@ -1802,6 +1813,10 @@ def _generate_combined_signal(
         return None
 
     selected_source = "statistical" if rule_signal else "technical"
+    if rule_signal:
+        selected_reason = "rule matched"
+    else:
+        selected_reason = f"technical fallback ({rule_reason or 'no matching rule'})"
     result = dict(selected_signal)
     result["signal_engine"] = "combined"
     result["signal_model"] = "combined"  # legacy alias
@@ -1821,7 +1836,7 @@ def _generate_combined_signal(
             "strategy": ta_signal.get("strategy"),
         },
         "technical_reject_reason": ta_reason if not ta_signal else None,
-        "selected": {"source": selected_source},
+        "selected": {"source": selected_source, "reason": selected_reason},
     }
     return result
 

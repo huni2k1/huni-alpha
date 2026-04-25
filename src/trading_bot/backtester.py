@@ -80,13 +80,9 @@ logging.handlers.RotatingFileHandler = lambda *a, **kw: logging.NullHandler()
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import importlib.util
-_scanner_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scanner", "market-scanner.py")
+_scanner_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scanner.py")
 if not os.path.exists(_scanner_path):
-    # Fallback: look for scanner.py in same directory
-    _scanner_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scanner.py")
-if not os.path.exists(_scanner_path):
-    # Fallback: look for market-scanner.py in same directory
-    _scanner_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "market-scanner.py")
+    raise FileNotFoundError(f"scanner.py not found at expected path: {_scanner_path}")
 
 spec = importlib.util.spec_from_file_location("scanner", _scanner_path)
 scanner = importlib.util.module_from_spec(spec)

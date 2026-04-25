@@ -14,6 +14,7 @@ Covers:
 - Circuit breaker + monthly reset interaction
 """
 
+import copy
 import pytest
 import sys
 import os
@@ -546,7 +547,7 @@ class TestTraderEntryRecovery:
         monkeypatch.setattr(trader, "_STATE_FILE", str(state_path))
         monkeypatch.setattr(trader, "send_telegram", lambda text: None)
 
-        state = dict(trader._EMPTY_STATE)
+        state = copy.deepcopy(trader._EMPTY_STATE)
         signal = {
             "symbol": "ETHUSDT",
             "direction": "LONG",

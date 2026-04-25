@@ -8,7 +8,6 @@ Usage:
   python3 -m trading_bot.cache_manager clear BTCUSDT # Clear BTC cache
 """
 
-import sys
 import argparse
 from . import candle_cache
 
@@ -27,7 +26,7 @@ def cmd_stats(args):
 
 def cmd_clear(args):
     """Clear cache."""
-    symbol = args.symbol if hasattr(args, 'symbol') and args.symbol else None
+    symbol = args.symbol or None
 
     if symbol:
         print(f"Clearing cache for {symbol}...")
@@ -50,9 +49,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python3 cache_manager.py stats              # Show cache stats
-  python3 cache_manager.py clear              # Clear all cache
-  python3 cache_manager.py clear BTCUSDT      # Clear BTC cache
+  python3 -m trading_bot.cache_manager stats         # Show cache stats
+  python3 -m trading_bot.cache_manager clear         # Clear all cache
+  python3 -m trading_bot.cache_manager clear BTCUSDT # Clear BTC cache
         """,
     )
 

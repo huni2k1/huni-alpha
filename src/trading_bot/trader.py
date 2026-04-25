@@ -33,6 +33,7 @@ Config (env vars or config/trader.json):
 
 import os
 import sys
+import copy
 import json
 import time
 import atexit
@@ -180,13 +181,17 @@ _DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
 os.makedirs(_DATA_DIR, exist_ok=True)
 _STATE_FILE = os.environ.get("TRADER_STATE", os.path.join(_DATA_DIR, "trader-state.json"))
 
-_EMPTY_STATE = {
-    "positions": {},        # symbol → position dict
-    "last_signal": {},      # symbol → ISO timestamp of last signal
-    "peak_equity": None,    # float — for circuit breaker
-    "circuit_breaker_until": None,  # ISO timestamp or None
-    "trade_log": [],        # closed trade records
-}
+def _new_empty_state() -> dict:
+    return {
+        "positions": {},        # symbol → position dict
+        "last_signal": {},      # symbol → ISO timestamp of last signal
+        "peak_equity": None,    # float — for circuit breaker
+        "circuit_breaker_until": None,  # ISO timestamp or None
+        "trade_log": [],        # closed trade records
+    }
+
+
+_EMPTY_STATE = _new_empty_state()
 
 
 def load_state() -> dict:
@@ -194,11 +199,11 @@ def load_state() -> dict:
         with open(_STATE_FILE) as f:
             s = json.load(f)
             # Ensure all keys present (forward-compat with older state files)
-            for k, v in _EMPTY_STATE.items():
+            for k, v in _new_empty_state().items():
                 s.setdefault(k, v)
             return s
     except Exception:
-        return dict(_EMPTY_STATE)
+        return _new_empty_state()
 
 
 def save_state(state: dict):

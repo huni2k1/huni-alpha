@@ -1,3 +1,4 @@
+import copy
 import os
 from pathlib import Path
 
@@ -51,7 +52,7 @@ def test_live_trader_startup_logs_version_and_reconcile_on_balance_failure(monke
         "circuit_break_hours": 168,
         "window_size": 1000,
     }
-    state = dict(trader._EMPTY_STATE)
+    state = copy.deepcopy(trader._EMPTY_STATE)
     _patch_common_startup(monkeypatch, cfg, state, _FakeLiveClient)
     monkeypatch.setattr(trader, "get_app_version", lambda: "ver1234")
 
@@ -94,7 +95,7 @@ def test_live_trader_skips_scan_when_already_at_max_positions(monkeypatch):
         "window_size": 1000,
     }
     state = {
-        **trader._EMPTY_STATE,
+        **copy.deepcopy(trader._EMPTY_STATE),
         "positions": {
             "BTCUSDT": {"symbol": "BTCUSDT"},
             "ETHUSDT": {"symbol": "ETHUSDT"},
@@ -123,6 +124,164 @@ def test_live_trader_skips_scan_when_already_at_max_positions(monkeypatch):
 
     assert any("At max positions (3/3), skipping scan" in line for line in info_logs)
     assert telegram_messages
+
+
+def test_live_trader_skips_symbol_in_cooldown(monkeypatch):
+    cfg = {
+        "dry_run": True,
+        "signal_engine": "combined",
+        "risk_pct": 1.5,
+        "max_positions": 3,
+        "scan_interval": 300,
+        "cooldown_hours": 24,
+        "timeout_hours": 180,
+        "max_drawdown_pct": 25.0,
+        "circuit_break_hours": 168,
+        "window_size": 220,
+    }
+    state = {
+        **copy.deepcopy(trader._EMPTY_STATE),
+        "last_signal": {
+            "ETHUSDT": trader.datetime.now(trader.timezone.utc).isoformat(),
+        },
+    }
+    _patch_common_startup(monkeypatch, cfg, state, _FakeDryRunClient)
+
+    info_logs = []
+    monkeypatch.setattr(trader, "get_app_version", lambda: "cool123")
+    monkeypatch.setattr(trader, "SYMBOLS", ["ETHUSDT"])
+    monkeypatch.setattr(trader, "send_telegram", lambda msg: None)
+    monkeypatch.setattr(trader, "monitor_positions", lambda *args, **kwargs: None)
+    monkeypatch.setattr(trader, "classify_current_regime", lambda candles: "bull")
+    monkeypatch.setattr(
+        trader,
+        "fetch_klines_cached",
+        lambda symbol, interval, limit, use_cache=False: [[1.0, 1.0, 1.0, 100.0, 1.0]] * limit,
+    )
+    monkeypatch.setattr(trader, "generate_signal", lambda *args, **kwargs: pytest.fail("cooldown symbol should not generate"))
+    monkeypatch.setattr(trader.log, "info", lambda msg: info_logs.append(msg))
+
+    def _stop_sleep(_seconds):
+        raise SystemExit(0)
+
+    monkeypatch.setattr(trader.time, "sleep", _stop_sleep)
+
+    with pytest.raises(SystemExit):
+        trader.main()
+
+    assert any("ETHUSDT: in cooldown, skip" in line for line in info_logs)
+
+
+def test_live_trader_warns_on_insufficient_candle_data(monkeypatch):
+    cfg = {
+        "dry_run": True,
+        "signal_engine": "combined",
+        "risk_pct": 1.5,
+        "max_positions": 3,
+        "scan_interval": 300,
+        "cooldown_hours": 24,
+        "timeout_hours": 180,
+        "max_drawdown_pct": 25.0,
+        "circuit_break_hours": 168,
+        "window_size": 220,
+    }
+    state = copy.deepcopy(trader._EMPTY_STATE)
+    _patch_common_startup(monkeypatch, cfg, state, _FakeDryRunClient)
+
+    warnings = []
+    sleep_calls = {"count": 0}
+    monkeypatch.setattr(trader, "get_app_version", lambda: "data123")
+    monkeypatch.setattr(trader, "SYMBOLS", ["ETHUSDT"])
+    monkeypatch.setattr(trader, "send_telegram", lambda msg: None)
+    monkeypatch.setattr(trader, "monitor_positions", lambda *args, **kwargs: None)
+    monkeypatch.setattr(trader, "classify_current_regime", lambda candles: "bull")
+
+    def _fake_fetch(symbol, interval, limit, use_cache=False):
+        if symbol == "BTCUSDT":
+            return [[1.0, 1.0, 1.0, 100.0, 1.0]] * limit
+        return [[1.0, 1.0, 1.0, 100.0, 1.0]] * 100
+
+    monkeypatch.setattr(trader, "fetch_klines_cached", _fake_fetch)
+    monkeypatch.setattr(trader, "generate_signal", lambda *args, **kwargs: pytest.fail("insufficient data should skip generate_signal"))
+    monkeypatch.setattr(trader.log, "warning", lambda msg: warnings.append(msg))
+
+    def _fake_sleep(_seconds):
+        sleep_calls["count"] += 1
+        if sleep_calls["count"] >= 2:
+            raise SystemExit(0)
+
+    monkeypatch.setattr(trader.time, "sleep", _fake_sleep)
+
+    with pytest.raises(SystemExit):
+        trader.main()
+
+    assert any("insufficient candle data (100), skip" in line for line in warnings)
+
+
+def test_live_trader_logs_score_below_threshold_summary(monkeypatch):
+    cfg = {
+        "dry_run": True,
+        "signal_engine": "combined",
+        "risk_pct": 1.5,
+        "max_positions": 3,
+        "scan_interval": 300,
+        "cooldown_hours": 24,
+        "timeout_hours": 180,
+        "max_drawdown_pct": 25.0,
+        "circuit_break_hours": 168,
+        "window_size": 220,
+    }
+    state = copy.deepcopy(trader._EMPTY_STATE)
+    _patch_common_startup(monkeypatch, cfg, state, _FakeDryRunClient)
+
+    info_logs = []
+    sleep_calls = {"count": 0}
+    monkeypatch.setattr(trader, "get_app_version", lambda: "score123")
+    monkeypatch.setattr(trader, "SYMBOLS", ["ETHUSDT"])
+    monkeypatch.setattr(trader, "send_telegram", lambda msg: None)
+    monkeypatch.setattr(trader, "monitor_positions", lambda *args, **kwargs: None)
+    monkeypatch.setattr(trader, "classify_current_regime", lambda candles: "bull")
+    monkeypatch.setattr(
+        trader,
+        "fetch_klines_cached",
+        lambda symbol, interval, limit, use_cache=False: [[1.0, 1.0, 1.0, 100.0, 1.0]] * limit,
+    )
+    monkeypatch.setattr(
+        trader,
+        "generate_signal",
+        lambda *args, **kwargs: {
+            "symbol": "ETHUSDT",
+            "direction": "LONG",
+            "score": 4.5,
+            "entry_price": 100.0,
+            "tp": 103.0,
+            "sl": 98.0,
+            "tp_pct": 3.0,
+            "sl_pct": 2.0,
+            "atr": 1.0,
+            "rr_ratio": 1.5,
+            "long_score": 4.5,
+            "short_score": 0.0,
+            "technical_score": 4.5,
+            "strategy": "trend_pullback",
+            "signal_engine": "combined",
+            "details": {"rsi": {"1h": 55.0}, "adx": 19.0, "regime": "weak_trend"},
+        },
+    )
+    monkeypatch.setattr(trader.log, "info", lambda msg: info_logs.append(msg))
+
+    def _fake_sleep(_seconds):
+        sleep_calls["count"] += 1
+        if sleep_calls["count"] >= 2:
+            raise SystemExit(0)
+
+    monkeypatch.setattr(trader.time, "sleep", _fake_sleep)
+
+    with pytest.raises(SystemExit):
+        trader.main()
+
+    assert any("score 4.50 < 7" in line for line in info_logs)
+    assert any("Rejection summary: Score below threshold=1" in line for line in info_logs)
 
 
 def test_service_file_wires_runtime_env_and_exec_path():

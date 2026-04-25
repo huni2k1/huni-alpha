@@ -18,8 +18,8 @@ Cache Structure:
 import os
 import json
 import time
-from datetime import datetime, timedelta, timezone
-from typing import Optional, List, Tuple
+from datetime import datetime
+from typing import Optional, List
 
 CACHE_DIR = os.path.expanduser("~/.trading_bot_cache")
 DEFAULT_CACHE_VARIANT = "ohlcv"
@@ -129,8 +129,7 @@ def load_from_cache(symbol: str, interval: str, start_date: str,
             return candles
 
         if is_complete and not is_recent:
-            # Cache is complete but stale (>24h old) — log warning but accept for offline mode
-            # For live trading, consider forcing API refresh for recent data
+            # Cache is complete but stale (>24h old); warn and force a refresh.
             print(f"[Cache] ⚠ {cache_path} is {cache_age_hours:.1f}h old (complete but stale)")
 
         return None
@@ -193,7 +192,7 @@ def get_cache_stats() -> dict:
     total_size = 0
     symbols = set()
 
-    for root, dirs, files in os.walk(CACHE_DIR):
+    for root, _, files in os.walk(CACHE_DIR):
         for file in files:
             if file.endswith(".json"):
                 total_files += 1
