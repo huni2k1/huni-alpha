@@ -398,7 +398,7 @@ def _recover_position_state_from_binance(state: dict, live_position: dict, clien
 # POSITION SIZING  (mirrors backtester logic)
 # ─────────────────────────────────────────────────────────────────
 def size_position(
-    balance: float,
+    equity: float,
     risk_pct: float,
     sl_pct: float,
     entry_price: float,
@@ -410,24 +410,27 @@ def size_position(
     """
     Risk-based position sizing — same formula as backtester.
 
-    risk_amount    = balance * risk_pct%
-    position_usdt  = risk_amount / sl_pct_decimal
-    quantity       = position_usdt / entry_price, capped at balance/max_positions
+    `equity` must be total wallet equity (free + locked + unrealized PnL),
+    not the available USDT balance. Using available balance shrinks each
+    successive position as margin gets locked, producing inconsistent sizes
+    across the open slots.
 
-    Example with $100 balance, max_positions=3:
-      - Trade 1: max $33.33 per position
-      - Trade 2: max $33.33 per position
-      - Trade 3: max $33.33 per position
-      - Total exposure: ~$100
+    risk_amount    = equity * risk_pct%
+    position_usdt  = risk_amount / sl_pct_decimal
+    quantity       = position_usdt / entry_price, capped at equity/max_positions
+
+    Example with $100 equity, max_positions=3:
+      - Each open slot: max $33.33 per position
+      - Total exposure when full: ~$100 (1x leverage)
 
     Returns quantity in base asset, or None if below minimum.
     """
     if sl_pct <= 0 or entry_price <= 0:
         return None
 
-    risk_amount = balance * (risk_pct / 100)
+    risk_amount = equity * (risk_pct / 100)
     position_usdt = risk_amount / (sl_pct / 100)
-    position_usdt = min(position_usdt, balance / max_positions)   # balance divided by max positions
+    position_usdt = min(position_usdt, equity / max_positions)   # equity divided by max positions
 
     quantity = position_usdt / entry_price
     quantity = round(quantity, qty_precision)
@@ -623,7 +626,7 @@ def execute_entry(
     client: BinanceClient,
     cfg: dict,
     dry_run: bool,
-    balance: float,
+    equity: float,
 ) -> bool:
     """
     Size and execute a trade entry. Returns True if position was opened.
@@ -667,7 +670,7 @@ def execute_entry(
         min_qty, min_notional = 0.001, 5.0
 
     quantity = size_position(
-        balance, cfg["risk_pct"], sl_pct, entry_p, qty_prec, min_qty, min_notional,
+        equity, cfg["risk_pct"], sl_pct, entry_p, qty_prec, min_qty, min_notional,
         max_positions=cfg["max_positions"]
     )
     if quantity is None:
@@ -1276,7 +1279,7 @@ def main():
                 )
 
                 # Execute
-                opened = execute_entry(trade_signal, state, client, cfg, dry_run, balance)
+                opened = execute_entry(trade_signal, state, client, cfg, dry_run, equity)
                 if opened:
                     log.info(f"  {symbol}: position opened")
                 else:

@@ -114,7 +114,7 @@ def test_execute_entry_telegram_includes_audit_context(monkeypatch):
         client=object(),
         cfg=cfg,
         dry_run=True,
-        balance=1000.0,
+        equity=1000.0,
     )
 
     assert opened is True

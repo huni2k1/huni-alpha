@@ -303,9 +303,19 @@ def test_size_position_rejects_below_min_notional():
     assert qty is None
 
 
-def test_size_position_success_caps_by_balance_per_position():
+def test_size_position_success_caps_by_equity_per_position():
     qty = trader.size_position(1000, 1.5, 1.0, 100.0, 3, 0.001, 5.0, max_positions=2)
     assert qty == 5.0
+
+
+def test_size_position_is_stable_across_sequential_calls_with_same_equity():
+    # Regression: previously this used available `balance` which shrank as
+    # margin got locked, producing smaller successive positions. Now sizing
+    # is driven by total equity, so identical inputs must produce identical
+    # sizes regardless of how many positions are already open.
+    args = (1000.0, 1.5, 1.0, 100.0, 3, 0.001, 5.0)
+    sizes = [trader.size_position(*args, max_positions=5) for _ in range(5)]
+    assert all(s == sizes[0] for s in sizes), f"sizes drifted: {sizes}"
 
 
 def test_required_threshold_by_engine_and_strategy():
@@ -417,7 +427,7 @@ def test_execute_entry_rejects_missing_symbol_info(monkeypatch):
     }
     cfg = {"risk_pct": 1.5, "max_positions": 3, "signal_engine": "combined"}
 
-    assert trader.execute_entry(signal, state, client, cfg, dry_run=False, balance=1000.0) is False
+    assert trader.execute_entry(signal, state, client, cfg, dry_run=False, equity=1000.0) is False
 
 
 def test_execute_entry_handles_market_order_failure(monkeypatch):
@@ -437,7 +447,7 @@ def test_execute_entry_handles_market_order_failure(monkeypatch):
     }
     cfg = {"risk_pct": 1.5, "max_positions": 3, "signal_engine": "combined"}
 
-    assert trader.execute_entry(signal, state, client, cfg, dry_run=False, balance=1000.0) is False
+    assert trader.execute_entry(signal, state, client, cfg, dry_run=False, equity=1000.0) is False
 
 
 def test_execute_entry_handles_tp_failure_with_emergency_close(monkeypatch):
@@ -462,7 +472,7 @@ def test_execute_entry_handles_tp_failure_with_emergency_close(monkeypatch):
     }
     cfg = {"risk_pct": 1.5, "max_positions": 3, "signal_engine": "combined"}
 
-    assert trader.execute_entry(signal, state, client, cfg, dry_run=False, balance=1000.0) is False
+    assert trader.execute_entry(signal, state, client, cfg, dry_run=False, equity=1000.0) is False
     assert "BTCUSDT" not in state["positions"]
     assert state["last_signal"]["BTCUSDT"]
     assert client.close_calls
@@ -491,7 +501,7 @@ def test_execute_entry_handles_sl_failure_and_cancels_tp(monkeypatch):
     }
     cfg = {"risk_pct": 1.5, "max_positions": 3, "signal_engine": "combined"}
 
-    assert trader.execute_entry(signal, state, client, cfg, dry_run=False, balance=1000.0) is False
+    assert trader.execute_entry(signal, state, client, cfg, dry_run=False, equity=1000.0) is False
     assert client.cancel_calls == [("BTCUSDT", "algo:tp1")]
 
 

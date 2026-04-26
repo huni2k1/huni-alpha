@@ -572,7 +572,7 @@ class TestTraderEntryRecovery:
                 self._FakeClient(),
                 cfg,
                 dry_run=False,
-                balance=90.0,
+                equity=90.0,
             )
 
         saved = json.loads(state_path.read_text())
