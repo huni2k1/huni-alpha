@@ -1253,18 +1253,23 @@ def _setup_signature(setup: dict) -> tuple:
     """Create a compact signature for detecting effectively identical setups."""
     window_signature = []
     for window in setup.get("window_results", []):
+        train = window.get("train_stats")
+        test = window.get("test_stats")
+        # Skip windows that failed evaluation (insufficient samples → stats=None).
+        if not train or not test:
+            continue
         window_signature.append(
             (
                 tuple(window["train_months"]),
                 tuple(window["test_months"]),
-                int(window["train_stats"]["count"]),
-                round(_metric_value(window["train_stats"], "win_rate"), 4),
-                round(_metric_value(window["train_stats"], "avg_pnl_pct"), 4),
-                round(_metric_value(window["train_stats"], "profit_factor"), 4),
-                int(window["test_stats"]["count"]),
-                round(_metric_value(window["test_stats"], "win_rate"), 4),
-                round(_metric_value(window["test_stats"], "avg_pnl_pct"), 4),
-                round(_metric_value(window["test_stats"], "profit_factor"), 4),
+                int(train["count"]),
+                round(_metric_value(train, "win_rate"), 4),
+                round(_metric_value(train, "avg_pnl_pct"), 4),
+                round(_metric_value(train, "profit_factor"), 4),
+                int(test["count"]),
+                round(_metric_value(test, "win_rate"), 4),
+                round(_metric_value(test, "avg_pnl_pct"), 4),
+                round(_metric_value(test, "profit_factor"), 4),
             )
         )
     by_symbol_signature = tuple(
@@ -1285,11 +1290,11 @@ def _average_window_metric(setup: dict, split: str, metric: str) -> float:
     values = [
         _metric_value(window[f"{split}_stats"], metric)
         for window in setup.get("window_results", [])
-        if f"{split}_stats" in window
+        if window.get(f"{split}_stats") is not None
     ]
     if values:
         return sum(values) / len(values)
-    return _metric_value(setup.get(f"{split}_stats", {}), metric)
+    return _metric_value(setup.get(f"{split}_stats") or {}, metric)
 
 
 def _is_superset(candidate: dict, simpler_setup: dict) -> bool:
