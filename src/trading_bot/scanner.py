@@ -119,7 +119,7 @@ STATE_FILE      = "/tmp/scanner-state.json"
 
 SYMBOLS = [
     "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT",
-    "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT",
+    "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "DOTUSDT",
 ]
 
 # ─────────────────────────────────────────────────────────────────

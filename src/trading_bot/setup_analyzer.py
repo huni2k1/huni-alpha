@@ -73,7 +73,6 @@ DEFAULT_SYMBOLS = list(getattr(scanner, "SYMBOLS", [])) or [
     "DOGEUSDT",
     "ADAUSDT",
     "AVAXUSDT",
-    "LINKUSDT",
     "DOTUSDT",
 ]
 DEFAULT_REPORT_OUTPUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "setup_analysis_report.json")

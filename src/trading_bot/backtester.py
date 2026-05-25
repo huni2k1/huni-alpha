@@ -1866,7 +1866,7 @@ if __name__ == "__main__":
 
     symbols = args.symbols or [
         "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "BNBUSDT",
-        "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "LINKUSDT", "DOTUSDT",
+        "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "DOTUSDT",
     ]
 
     # Parse custom date range if provided
