@@ -108,6 +108,8 @@ def test_next_open_reanchors_tp_sl_and_caps_position_size():
     candles[entry_idx]["low"] = 119.5
     candles[entry_idx]["close"] = 120.0
 
+    # Recipe: atr=1, sl_atr_mult=1.0, rr_ratio=10.0 → sl_distance=1, tp_distance=10.
+    # Applied at the actual fill (entry=120 next-open) → tp=130, sl=119.
     signal = {
         "score": 7.0,
         "direction": "LONG",
@@ -119,6 +121,8 @@ def test_next_open_reanchors_tp_sl_and_caps_position_size():
         "tp_pct": 10.0,
         "sl_pct": 1.0,
         "atr": 1.0,
+        "sl_atr_mult": 1.0,
+        "rr_ratio": 10.0,
         "details": {"strategy": "trend_pullback", "regime": "trending", "rsi": {}},
     }
 

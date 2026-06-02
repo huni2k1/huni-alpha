@@ -214,66 +214,47 @@ class TestPnLCalculation:
 # ─────────────────────────────────────────────────────────────
 
 class TestResumeSameCandleHit:
-    """Test same-candle TP/SL conflict resolution."""
+    """Test same-candle TP/SL conflict resolution.
 
-    def test_long_open_above_entry_tp_wins(self):
-        """LONG: candle open > entry → TP wins (price moved up first)."""
+    Algorithm: whichever of TP/SL is closer to the candle open wins.
+    """
+
+    def test_long_open_closer_to_tp_wins(self):
+        # open=108, TP=110, SL=95 → dist 2 vs 13 → TP
         result = bt.resolve_same_candle_hit(
-            candle={"open": 105.0},  # opened high
-            direction="LONG",
-            entry_price=100.0,
-            tp_price=110.0,
-            sl_price=95.0
+            candle={"open": 108.0}, tp_price=110.0, sl_price=95.0
         )
-        assert result == "TP", "LONG open above entry should resolve to TP"
+        assert result == "TP"
 
-    def test_long_open_at_entry_sl_wins(self):
-        """LONG: candle open == entry → uses random choice."""
-        import random
+    def test_long_open_equidistant_uses_tie_break(self):
+        # midpoint between SL=95 and TP=110 is 102.5 → equidistant
         with patch("random.choice", return_value="SL"):
             result = bt.resolve_same_candle_hit(
-                candle={"open": 100.0},
-                direction="LONG",
-                entry_price=100.0,
-                tp_price=110.0,
-                sl_price=95.0
+                candle={"open": 102.5}, tp_price=110.0, sl_price=95.0
             )
-            assert result == "SL", "LONG open at entry should pick SL when random returns it"
+            assert result == "SL"
 
-    def test_long_open_below_entry_sl_wins(self):
-        """LONG: candle open < entry → SL wins (price moved down first)."""
+    def test_long_open_closer_to_sl_wins(self):
+        # open=97, TP=110, SL=95 → dist 13 vs 2 → SL
         result = bt.resolve_same_candle_hit(
-            candle={"open": 95.0},  # opened low
-            direction="LONG",
-            entry_price=100.0,
-            tp_price=110.0,
-            sl_price=90.0
+            candle={"open": 97.0}, tp_price=110.0, sl_price=95.0
         )
-        assert result == "SL", "LONG open below entry should resolve to SL"
+        assert result == "SL"
 
-    def test_short_open_below_entry_tp_wins(self):
-        """SHORT: candle open < entry → TP wins."""
+    def test_short_open_closer_to_tp_wins(self):
+        # open=92, TP=90, SL=105 → dist 2 vs 13 → TP
         result = bt.resolve_same_candle_hit(
-            candle={"open": 95.0},  # opened low
-            direction="SHORT",
-            entry_price=100.0,
-            tp_price=90.0,
-            sl_price=105.0
+            candle={"open": 92.0}, tp_price=90.0, sl_price=105.0
         )
-        assert result == "TP", "SHORT open below entry should resolve to TP"
+        assert result == "TP"
 
-    def test_short_open_at_entry_sl_wins(self):
-        """SHORT: candle open == entry → uses random choice."""
-        import random
+    def test_short_open_equidistant_uses_tie_break(self):
+        # midpoint between TP=90 and SL=105 is 97.5 → equidistant
         with patch("random.choice", return_value="SL"):
             result = bt.resolve_same_candle_hit(
-                candle={"open": 100.0},
-                direction="SHORT",
-                entry_price=100.0,
-                tp_price=90.0,
-                sl_price=105.0
+                candle={"open": 97.5}, tp_price=90.0, sl_price=105.0
             )
-            assert result == "SL", "SHORT open at entry should pick SL when random returns it"
+            assert result == "SL"
 
 
 # ─────────────────────────────────────────────────────────────

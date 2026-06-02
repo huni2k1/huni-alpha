@@ -248,6 +248,7 @@ def test_generate_rule_match_signal_builds_full_signal(monkeypatch):
             "tp_pct": 5.0,
             "sl_pct": 2.0,
             "atr": 1.0,
+            "sl_atr_mult": 2.0,
             "rr_ratio": 2.5,
         },
     )

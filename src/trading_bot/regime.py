@@ -18,15 +18,21 @@ Design notes:
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Optional
 
 try:
-    from .scanner import ema
+    from .core.indicators import ema
 except ImportError:
-    from scanner import ema  # type: ignore
+    from core.indicators import ema  # type: ignore
+
+try:
+    from .core.types import MarketRegime
+except ImportError:
+    from core.types import MarketRegime  # type: ignore
 
 
-Regime = Literal["bull", "bear", "chop", "unknown"]
+# Local alias retained for backward compat with any external callers.
+Regime = MarketRegime
 VALID_REGIMES: tuple[str, ...] = ("bull", "bear", "chop")
 
 DEFAULT_EMA_PERIOD = 200
@@ -37,7 +43,7 @@ def classify_regime_series(
     candles: list[dict],
     ema_period: int = DEFAULT_EMA_PERIOD,
     slope_lookback: int = DEFAULT_SLOPE_LOOKBACK,
-) -> list[str]:
+) -> list[MarketRegime]:
     """Return regime label per candle, aligned to input length.
 
     First `ema_period + slope_lookback - 1` entries are "unknown" (warmup).
@@ -52,7 +58,7 @@ def classify_regime_series(
     offset = n - len(ema_vals)
     aligned_ema: list[Optional[float]] = [None] * offset + list(ema_vals)
 
-    labels: list[str] = []
+    labels: list[MarketRegime] = []
     for i in range(n):
         ema_now = aligned_ema[i]
         ema_then = aligned_ema[i - slope_lookback] if i - slope_lookback >= 0 else None
@@ -77,7 +83,7 @@ def classify_current_regime(
     candles: list[dict],
     ema_period: int = DEFAULT_EMA_PERIOD,
     slope_lookback: int = DEFAULT_SLOPE_LOOKBACK,
-) -> str:
+) -> MarketRegime:
     """Regime for the latest candle. Returns 'unknown' if history is too short."""
     series = classify_regime_series(candles, ema_period, slope_lookback)
     return series[-1] if series else "unknown"
@@ -87,7 +93,7 @@ def build_regime_lookup(
     btc_candles: list[dict],
     ema_period: int = DEFAULT_EMA_PERIOD,
     slope_lookback: int = DEFAULT_SLOPE_LOOKBACK,
-) -> dict[int, str]:
+) -> dict[int, MarketRegime]:
     """Map close_time (ms) -> regime label for each BTC candle.
 
     Analyzer uses this to tag every row (across symbols) with the BTC regime

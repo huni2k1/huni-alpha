@@ -397,6 +397,24 @@ def _recover_position_state_from_binance(state: dict, live_position: dict, clien
 # ─────────────────────────────────────────────────────────────────
 # POSITION SIZING  (mirrors backtester logic)
 # ─────────────────────────────────────────────────────────────────
+try:
+    from .core.tp_sl import compute_tp_sl
+    from .core.types import SignalEngine
+    from .execution.sizing import size_position_notional
+    from .execution.gating import (
+        required_threshold as _gate_required_threshold,
+        in_cooldown as _gate_in_cooldown,
+    )
+except ImportError:
+    from core.tp_sl import compute_tp_sl  # type: ignore
+    from core.types import SignalEngine  # type: ignore
+    from execution.sizing import size_position_notional  # type: ignore
+    from execution.gating import (  # type: ignore
+        required_threshold as _gate_required_threshold,
+        in_cooldown as _gate_in_cooldown,
+    )
+
+
 def size_position(
     equity: float,
     risk_pct: float,
@@ -407,35 +425,21 @@ def size_position(
     min_notional: float,
     max_positions: int = 3,
 ) -> Optional[float]:
-    """
-    Risk-based position sizing — same formula as backtester.
+    """Live wrapper: shared notional formula → quantity, with exchange filters.
 
-    `equity` must be total wallet equity (free + locked + unrealized PnL),
-    not the available USDT balance. Using available balance shrinks each
-    successive position as margin gets locked, producing inconsistent sizes
-    across the open slots.
-
-    risk_amount    = equity * risk_pct%
-    position_usdt  = risk_amount / sl_pct_decimal
-    quantity       = position_usdt / entry_price, capped at equity/max_positions
-
-    Example with $100 equity, max_positions=3:
-      - Each open slot: max $33.33 per position
-      - Total exposure when full: ~$100 (1x leverage)
-
-    Returns quantity in base asset, or None if below minimum.
+    `equity` must be total wallet equity (free + locked + unrealized PnL).
+    Returns base-asset quantity, or None if below exchange minimums.
     """
     if sl_pct <= 0 or entry_price <= 0:
         return None
 
-    risk_amount = equity * (risk_pct / 100)
-    position_usdt = risk_amount / (sl_pct / 100)
-    position_usdt = min(position_usdt, equity / max_positions)   # equity divided by max positions
+    position_usdt = size_position_notional(
+        equity, risk_pct, sl_pct, max_positions=max_positions
+    )
 
     quantity = position_usdt / entry_price
     quantity = round(quantity, qty_precision)
 
-    # Check minimums
     if quantity < min_qty:
         log.warning(f"Quantity {quantity} below min_qty {min_qty}")
         return None
@@ -447,32 +451,28 @@ def size_position(
 
 
 # ─────────────────────────────────────────────────────────────────
-# THRESHOLD  (mirrors backtester logic)
+# THRESHOLD  (delegates to execution/gating.py — shared with backtester)
 # ─────────────────────────────────────────────────────────────────
-def _required_threshold(signal_engine: str, strategy: str) -> Optional[float]:
+def _required_threshold(signal_engine: SignalEngine, strategy: str) -> Optional[float]:
     """Return minimum score threshold, or None to bypass (rule match is the gate)."""
-    if signal_engine == "rule_match":
-        return None
-    if signal_engine == "combined":
-        if "rule_" in strategy or "statistical" in strategy:
-            return None  # Rule-match leg: rulebook membership is the gate
-        if "breakout" in strategy:
-            return SIGNAL_THRESHOLD_BREAKOUT
-        return SIGNAL_THRESHOLD_TREND
-    if "breakout" in strategy:
-        return SIGNAL_THRESHOLD_BREAKOUT
-    return SIGNAL_THRESHOLD_TREND
+    return _gate_required_threshold(
+        signal_engine, strategy,
+        trend_threshold=SIGNAL_THRESHOLD_TREND,
+        breakout_threshold=SIGNAL_THRESHOLD_BREAKOUT,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────
 # COOLDOWN HELPERS
 # ─────────────────────────────────────────────────────────────────
 def _in_cooldown(state: dict, symbol: str, cooldown_hours: int) -> bool:
+    """Live cooldown check — parses the stored timestamp, delegates the math."""
     last_str = state["last_signal"].get(symbol)
     if not last_str:
         return False
     last_dt = datetime.fromisoformat(last_str)
-    return (datetime.now(timezone.utc) - last_dt).total_seconds() < cooldown_hours * 3600
+    elapsed_seconds = (datetime.now(timezone.utc) - last_dt).total_seconds()
+    return _gate_in_cooldown(elapsed_seconds, cooldown_hours * 3600)
 
 
 def _set_cooldown(state: dict, symbol: str):
@@ -719,20 +719,13 @@ def execute_entry(
             market_regime=audit["market_regime"],
         )
 
-        # 3. Re-anchor TP/SL to actual fill price (same ATR distance)
-        if direction == "LONG":
-            tp_distance = tp_p - entry_p
-            sl_distance = entry_p - sl_p
-        else:
-            tp_distance = entry_p - tp_p
-            sl_distance = sl_p - entry_p
-
-        if direction == "LONG":
-            tp_p = fill_price + tp_distance
-            sl_p = fill_price - sl_distance
-        else:
-            tp_p = fill_price - tp_distance
-            sl_p = fill_price + sl_distance
+        # 3. Compute TP/SL fresh at the actual fill price (shared with backtester).
+        atr_val = float(signal.get("atr", 0.0) or 0.0)
+        sl_atr_mult = float(signal.get("sl_atr_mult", 1.5) or 1.5)
+        rr_ratio = float(signal.get("rr_ratio", 2.0) or 2.0)
+        tp_p, sl_p = compute_tp_sl(
+            direction, fill_price, atr_val, sl_atr_mult, rr_ratio,
+        )
 
         # 4. Place TP order
         tp_order_id = client.place_tp_order(symbol, close_side, tp_p, price_prec)
@@ -1026,6 +1019,8 @@ def main():
     atexit.register(_release_pid_lock)
     signal.signal(signal.SIGTERM, _handle_exit_signal)
     signal.signal(signal.SIGINT, _handle_exit_signal)
+
+    scanner.configure_logging()
 
     cfg = _load_config()
     dry_run = cfg["dry_run"]

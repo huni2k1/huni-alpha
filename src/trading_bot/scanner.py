@@ -55,6 +55,23 @@ except ImportError:
     matches_conditions = setup_conditions.matches_conditions
     normalize_conditions = setup_conditions.normalize_conditions
 
+try:
+    from .core.types import Direction, MarketRegime, Signal, SignalEngine
+    from .core.indicators import (
+        Snapshot,
+        rsi, ema, macd, bollinger, bollinger_bandwidth,
+        volume_ratio, adx, market_structure, atr as _atr_fn,
+        ema_alignment, support_resistance,
+    )
+except ImportError:
+    from core.types import Direction, MarketRegime, Signal, SignalEngine  # type: ignore
+    from core.indicators import (  # type: ignore
+        Snapshot,
+        rsi, ema, macd, bollinger, bollinger_bandwidth,
+        volume_ratio, adx, market_structure, atr as _atr_fn,
+        ema_alignment, support_resistance,
+    )
+
 # ─────────────────────────────────────────────────────────────────
 # CONFIG — Load sensitive data from environment or config file
 # ─────────────────────────────────────────────────────────────────
@@ -123,34 +140,61 @@ SYMBOLS = [
 ]
 
 # ─────────────────────────────────────────────────────────────────
-# LOGGING — with rotation to keep last 10 scan cycles
+# LOGGING — explicit configure (call from main, not at import time)
+#
+# Module-level setup is bare: get the logger and configure its level. NO
+# filesystem I/O. Handler creation (which opens log files and creates dirs)
+# happens only inside configure_logging() — call it from each app's main().
+# This kept the backtester from needing to monkeypatch os.makedirs at import.
 # ─────────────────────────────────────────────────────────────────
 from logging.handlers import RotatingFileHandler
 
-os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 log = logging.getLogger("trading-bot")
-log.setLevel(logging.DEBUG)  # Capture everything, filter by handler level
+log.setLevel(logging.DEBUG)  # capture everything, filter by handler level
 log.propagate = False
-_fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+dbg = log  # legacy alias used throughout the module
 
-# INFO handler — monitoring log (shared with trader)
-_fh = RotatingFileHandler(LOG_FILE, maxBytes=50*1024*1024, backupCount=10)
-_fh.setLevel(logging.INFO)
-_fh.setFormatter(_fmt)
-log.addHandler(_fh)
+_logging_configured = False
 
-if sys.stdout.isatty():
-    _sh = logging.StreamHandler(sys.stdout)
-    _sh.setLevel(logging.INFO)
-    _sh.setFormatter(_fmt)
-    log.addHandler(_sh)
 
-# DEBUG handler — verbose debug log (shared with trader)
-dbg = log
-_dfh = RotatingFileHandler(DEBUG_LOG_FILE, maxBytes=50*1024*1024, backupCount=10)
-_dfh.setLevel(logging.DEBUG)
-_dfh.setFormatter(_fmt)
-log.addHandler(_dfh)
+def configure_logging(log_file: Optional[str] = None, debug_log_file: Optional[str] = None) -> None:
+    """Attach the rotating file handlers (and optional console handler) to the
+    module logger. Idempotent — safe to call multiple times.
+
+    Call this from the entry point of each app (trader.main, backtester CLI,
+    scanner.main). Tests can skip it; the logger will silently drop INFO/DEBUG.
+    """
+    global _logging_configured
+    if _logging_configured:
+        return
+
+    log_file = log_file or LOG_FILE
+    debug_log_file = debug_log_file or DEBUG_LOG_FILE
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    if os.path.dirname(debug_log_file):
+        os.makedirs(os.path.dirname(debug_log_file), exist_ok=True)
+
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+
+    # INFO handler — monitoring log (shared with trader)
+    fh = RotatingFileHandler(log_file, maxBytes=50 * 1024 * 1024, backupCount=10)
+    fh.setLevel(logging.INFO)
+    fh.setFormatter(fmt)
+    log.addHandler(fh)
+
+    if sys.stdout.isatty():
+        sh = logging.StreamHandler(sys.stdout)
+        sh.setLevel(logging.INFO)
+        sh.setFormatter(fmt)
+        log.addHandler(sh)
+
+    # DEBUG handler — verbose debug log
+    dfh = RotatingFileHandler(debug_log_file, maxBytes=50 * 1024 * 1024, backupCount=10)
+    dfh.setLevel(logging.DEBUG)
+    dfh.setFormatter(fmt)
+    log.addHandler(dfh)
+
+    _logging_configured = True
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -379,213 +423,8 @@ def fetch_klines_cached(symbol: str, interval: str, limit: int,
 
 
 # ─────────────────────────────────────────────────────────────────
-# TECHNICAL INDICATORS
+# TECHNICAL INDICATORS — imported from core.indicators
 # ─────────────────────────────────────────────────────────────────
-def rsi(closes: list, period: int = 14) -> float:
-    """RSI with Wilder smoothing (standard RSI matching TradingView/Binance)."""
-    if len(closes) < period + 1:
-        return 50.0
-    gains, losses = [], []
-    for i in range(1, len(closes)):
-        d = closes[i] - closes[i - 1]
-        gains.append(max(d, 0))
-        losses.append(max(-d, 0))
-
-    avg_g = np.mean(gains[:period])
-    avg_l = np.mean(losses[:period])
-
-    for i in range(period, len(gains)):
-        avg_g = (avg_g * (period - 1) + gains[i]) / period
-        avg_l = (avg_l * (period - 1) + losses[i]) / period
-
-    if avg_l == 0:
-        return 100.0
-    rs = avg_g / avg_l
-    return 100 - (100 / (1 + rs))
-
-
-def ema(values: list, period: int) -> list:
-    """
-    EMA with standard SMA seed (matching TradingView behavior).
-    Returns fewer values than input (shortened by seed_period-1 elements).
-    Callers should use the last value: ema_val = ema(closes, 200)[-1]
-    """
-    if not values:
-        return []
-    result = []
-    k = 2 / (period + 1)
-
-    seed_period = min(period, len(values))
-    seed_value = np.mean(values[:seed_period])
-
-    for i, v in enumerate(values):
-        if i < seed_period:
-            if i == seed_period - 1:
-                result.append(seed_value)
-        else:
-            result.append(v * k + result[-1] * (1 - k))
-
-    return result
-
-
-def macd(closes: list, fast=12, slow=26, signal=9):
-    """MACD with proper EMA alignment (fast & slow aligned from the end)."""
-    if len(closes) < slow + signal:
-        return 0, 0, 0
-    ema_fast = ema(closes, fast)
-    ema_slow = ema(closes, slow)
-
-    # FIX: Align EMAs from the end — fast EMA has more values than slow.
-    # Without alignment, zip pairs mismatched time positions.
-    offset = len(ema_fast) - len(ema_slow)
-    macd_line = [ema_fast[offset + i] - ema_slow[i] for i in range(len(ema_slow))]
-
-    sig_line = ema(macd_line, signal)
-
-    # Align MACD line with signal line the same way
-    offset2 = len(macd_line) - len(sig_line)
-    hist = [macd_line[offset2 + i] - sig_line[i] for i in range(len(sig_line))]
-
-    return macd_line[-1], sig_line[-1], hist[-1]
-
-
-def bollinger(closes: list, period=20, std_mult=2):
-    if len(closes) < period:
-        return closes[-1], closes[-1] * 1.02, closes[-1] * 0.98
-    window = closes[-period:]
-    mid = np.mean(window)
-    std = np.std(window)
-    return mid, mid + std_mult * std, mid - std_mult * std
-
-
-def ema_alignment(closes: list):
-    """Returns (ema9, ema21, ema50, bullish_aligned, bearish_aligned)"""
-    if len(closes) < 50:
-        return None, None, None, False, False
-    e9  = ema(closes, 9)[-1]
-    e21 = ema(closes, 21)[-1]
-    e50 = ema(closes, 50)[-1]
-    bull = e9 > e21 > e50
-    bear = e9 < e21 < e50
-    return e9, e21, e50, bull, bear
-
-
-def volume_ratio(volumes: list, period=20) -> float:
-    if len(volumes) < period + 1:
-        return 1.0
-    avg = np.mean(volumes[-period - 1:-1])
-    return volumes[-1] / avg if avg > 0 else 1.0
-
-
-def adx(highs: list, lows: list, closes: list, period: int = 14) -> float:
-    """Average Directional Index — measures trend strength (0-100).
-    >25 = trending market, <20 = choppy/sideways."""
-    if len(highs) < period * 2:
-        return 0.0
-    plus_dm, minus_dm, trs = [], [], []
-    for i in range(1, len(highs)):
-        h_diff = highs[i] - highs[i - 1]
-        l_diff = lows[i - 1] - lows[i]
-        plus_dm.append(h_diff if h_diff > l_diff and h_diff > 0 else 0)
-        minus_dm.append(l_diff if l_diff > h_diff and l_diff > 0 else 0)
-        tr = max(highs[i] - lows[i],
-                 abs(highs[i] - closes[i - 1]),
-                 abs(lows[i] - closes[i - 1]))
-        trs.append(tr)
-
-    def wilder(vals, p):
-        result = [sum(vals[:p])]
-        for v in vals[p:]:
-            result.append(result[-1] - result[-1] / p + v)
-        return result
-
-    atr_s   = wilder(trs,       period)
-    pdm_s   = wilder(plus_dm,   period)
-    mdm_s   = wilder(minus_dm,  period)
-    dx_vals = []
-    for a, p, m in zip(atr_s, pdm_s, mdm_s):
-        if a == 0:
-            dx_vals.append(0.0)
-            continue
-        pdi = 100 * p / a
-        mdi = 100 * m / a
-        dx_vals.append(100 * abs(pdi - mdi) / (pdi + mdi) if (pdi + mdi) > 0 else 0)
-
-    if len(dx_vals) < period:
-        return 0.0
-    adx_val = float(np.mean(dx_vals[:period]))
-    for dx in dx_vals[period:]:
-        adx_val = (adx_val * (period - 1) + dx) / period
-    return adx_val
-
-
-# ─────────────────────────────────────────────────────────────────
-# SUPPORT / RESISTANCE  (swing highs/lows on last 10 1h candles)
-# ─────────────────────────────────────────────────────────────────
-def support_resistance(candles_1h: list, price: float):
-    """Returns (near_support, near_resistance, dist_support_pct, dist_resist_pct)"""
-    if len(candles_1h) < 10:
-        return False, False, 999, 999
-
-    recent = candles_1h[-10:]
-    highs = [c[1] for c in recent]
-    lows  = [c[2] for c in recent]
-    resistance = max(highs)
-    support    = min(lows)
-
-    dist_r = (resistance - price) / price * 100
-    dist_s = (price - support)    / price * 100
-
-    near_support    = 0 < dist_s < 1.5
-    near_resistance = 0 < dist_r < 1.5
-
-    return near_support, near_resistance, dist_s, dist_r
-
-
-# ─────────────────────────────────────────────────────────────────
-# MARKET STRUCTURE  (higher highs / lower lows)
-# ─────────────────────────────────────────────────────────────────
-def market_structure(candles_1h: list):
-    """Returns (higher_highs, lower_lows) bool flags."""
-    if len(candles_1h) < 6:
-        return False, False
-    highs = [c[1] for c in candles_1h[-6:]]
-    lows  = [c[2] for c in candles_1h[-6:]]
-    hh = all(highs[i] > highs[i-1] for i in range(1, len(highs)))
-    ll = all(lows[i]  < lows[i-1]  for i in range(1, len(lows)))
-    return hh, ll
-
-
-# ─────────────────────────────────────────────────────────────────
-# REGIME DETECTION — What kind of market are we in?
-# ─────────────────────────────────────────────────────────────────
-def bollinger_bandwidth(closes: list, period: int = 20, std_mult: float = 2.0) -> tuple:
-    """Returns (current_bandwidth_pct, is_squeeze).
-    Bandwidth = (upper - lower) / mid * 100.
-    Squeeze = bandwidth below 20th percentile of last 100 candles."""
-    if len(closes) < max(period, 100):
-        return 5.0, False
-
-    bw_history = []
-    for i in range(100, 0, -1):
-        idx = len(closes) - i
-        if idx < period:
-            continue
-        window = closes[idx - period:idx]
-        mid = np.mean(window)
-        std = np.std(window)
-        if mid > 0:
-            bw_history.append((std * std_mult * 2) / mid * 100)
-
-    mid_now, upper_now, lower_now = bollinger(closes, period, std_mult)
-    bw_now = (upper_now - lower_now) / mid_now * 100 if mid_now > 0 else 5.0
-
-    is_squeeze = False
-    if bw_history:
-        threshold = np.percentile(bw_history, 20)
-        is_squeeze = bw_now < threshold
-
-    return round(bw_now, 2), is_squeeze
 
 
 def precompute_indicators_for_all_candles(candles: list) -> dict:
@@ -975,7 +814,7 @@ def score_breakout(closes: list, candles: list, rsi_val: float,
 # ─────────────────────────────────────────────────────────────────
 # ATR-BASED TP/SL — Single implementation (no more trade_setup duplicate)
 # ─────────────────────────────────────────────────────────────────
-def suggest_tp_sl(candles_1h: list, direction: str,
+def suggest_tp_sl(candles_1h: list, direction: Direction,
                   multiplier_sl: float = 1.5, rr_ratio: float = 2.0) -> dict:
     """
     Compute TP/SL levels from ATR and risk/reward ratio.
@@ -1022,6 +861,7 @@ def suggest_tp_sl(candles_1h: list, direction: str,
         "sl_pct": round(sl_pct, 2),
         "tp_pct": round(tp_pct, 2),
         "atr": round(atr, 8),
+        "sl_atr_mult": multiplier_sl,
         "rr_ratio": rr_ratio,
     }
 
@@ -1291,34 +1131,15 @@ def _build_indicator_snapshot(
     candles_1h: list,
     current_time: Optional[datetime] = None,
     precomputed_indicators: dict = None,
-) -> dict:
+) -> Optional[Snapshot]:
     """Build the latest-candle feature snapshot used by validated setup matching."""
-    def _atr_value(candles: list, period: int = 20) -> float:
-        if len(candles) < 2:
-            return 0.0
-        local_closes = [c[3] for c in candles]
-        local_highs = [c[1] for c in candles]
-        local_lows = [c[2] for c in candles]
-        tr_values = []
-        for i in range(1, len(local_closes)):
-            tr_values.append(
-                max(
-                    local_highs[i] - local_lows[i],
-                    abs(local_highs[i] - local_closes[i - 1]),
-                    abs(local_lows[i] - local_closes[i - 1]),
-                )
-            )
-        if not tr_values:
-            return 0.0
-        return sum(tr_values[-period:]) / min(period, len(tr_values))
-
     closes = [c[3] for c in candles_1h]
     opens = [c[0] for c in candles_1h]
     volumes = [c[4] for c in candles_1h]
     highs = [c[1] for c in candles_1h]
     lows = [c[2] for c in candles_1h]
     if len(closes) < 50:
-        return {}
+        return None
 
     if precomputed_indicators:
         rsi_val = precomputed_indicators.get("rsi", 50.0)
@@ -1417,10 +1238,10 @@ def _build_indicator_snapshot(
         atr20_prev = float(precomputed_indicators.get('atr20_prev') or atr20)
         atr_percentile_high = bool(precomputed_indicators.get('atr_percentile_high', False))
     else:
-        atr20 = _atr_value(candles_1h, 20)
-        atr20_prev = _atr_value(candles_1h[:-1], 20) if len(candles_1h) >= 21 else atr20
+        atr20 = _atr_fn(candles_1h, 20)
+        atr20_prev = _atr_fn(candles_1h[:-1], 20) if len(candles_1h) >= 21 else atr20
         recent_atr_values = [
-            _atr_value(candles_1h[:idx], 20)
+            _atr_fn(candles_1h[:idx], 20)
             for idx in range(max(21, len(candles_1h) - 100), len(candles_1h))
         ]
         recent_atr_values = [v for v in recent_atr_values if v > 0]
@@ -1480,95 +1301,96 @@ def _build_indicator_snapshot(
         htf_4h_bull_trend = False
         htf_4h_bear_trend = False
 
-    return {
-        "close": closes[-1],
-        "open": current_open,
-        "high": current_high,
-        "low": current_low,
-        "prev_open": prev_open,
-        "prev_high": prev_high,
-        "prev_low": prev_low,
-        "prev_close": prev_close,
-        "rsi": float(rsi_val),
-        "e9": float(e9),
-        "e21": float(e21),
-        "e50": float(e50),
-        "e200": float(e200),
-        "e9_prev": float(e9_prev),
-        "e21_prev": float(e21_prev),
-        "e50_prev": float(e50_prev),
-        "e200_prev": float(e200_prev),
-        "above_ema200": bool(above_e200),
-        "below_ema200": bool(below_e200),
-        "macd_line": float(macd_line_val),
-        "macd_signal": float(macd_signal_val),
-        "macd_hist": float(macd_hist_val),
-        "macd_hist_prev": float(macd_hist_prev),
-        "adx": float(adx_val),
-        "vol_ratio": float(vol_r),
-        "bb_mid": float(bb_mid),
-        "bb_upper": float(bb_upper),
-        "bb_lower": float(bb_lower),
-        "bb_bandwidth": float(bb_bw),
-        "bb_squeeze": bool(bb_squeeze),
-        "price_near_upper_bb": price_near_upper_bb,
-        "price_near_lower_bb": price_near_lower_bb,
-        "higher_highs": bool(higher_highs),
-        "lower_lows": bool(lower_lows),
-        "bullish_engulfing": bullish_engulfing,
-        "bearish_engulfing": bearish_engulfing,
-        "inside_bar": inside_bar,
-        "outside_bar": outside_bar,
-        "pin_bar_bull": pin_bar_bull,
-        "pin_bar_bear": pin_bar_bear,
-        "three_green_candles": three_green_candles,
-        "three_red_candles": three_red_candles,
-        "atr20": float(atr20),
-        "atr20_prev": float(atr20_prev),
-        "atr_percentile_high": atr_percentile_high,
-        "atr_expansion": atr_expansion,
-        "candle_range_above_atr": candle_range_above_atr,
-        "two_expansion_green_candles": (
+    return Snapshot(
+        close=float(closes[-1]),
+        open=float(current_open),
+        high=float(current_high),
+        low=float(current_low),
+        prev_open=float(prev_open),
+        prev_high=float(prev_high),
+        prev_low=float(prev_low),
+        prev_close=float(prev_close),
+        rsi=float(rsi_val),
+        e9=float(e9),
+        e21=float(e21),
+        e50=float(e50),
+        e200=float(e200),
+        e9_prev=float(e9_prev),
+        e21_prev=float(e21_prev),
+        e50_prev=float(e50_prev),
+        e200_prev=float(e200_prev),
+        above_ema200=bool(above_e200),
+        below_ema200=bool(below_e200),
+        macd_line=float(macd_line_val),
+        macd_signal=float(macd_signal_val),
+        macd_hist=float(macd_hist_val),
+        macd_hist_prev=float(macd_hist_prev),
+        adx=float(adx_val),
+        vol_ratio=float(vol_r),
+        bb_mid=float(bb_mid),
+        bb_upper=float(bb_upper),
+        bb_lower=float(bb_lower),
+        bb_bandwidth=float(bb_bw),
+        bb_squeeze=bool(bb_squeeze),
+        price_near_upper_bb=bool(price_near_upper_bb),
+        price_near_lower_bb=bool(price_near_lower_bb),
+        higher_highs=bool(higher_highs),
+        lower_lows=bool(lower_lows),
+        bullish_engulfing=bool(bullish_engulfing),
+        bearish_engulfing=bool(bearish_engulfing),
+        inside_bar=bool(inside_bar),
+        outside_bar=bool(outside_bar),
+        pin_bar_bull=bool(pin_bar_bull),
+        pin_bar_bear=bool(pin_bar_bear),
+        three_green_candles=bool(three_green_candles),
+        three_red_candles=bool(three_red_candles),
+        atr20=float(atr20),
+        atr20_prev=float(atr20_prev),
+        atr_percentile_high=bool(atr_percentile_high),
+        atr_expansion=bool(atr_expansion),
+        candle_range_above_atr=bool(candle_range_above_atr),
+        two_expansion_green_candles=bool(
             current_close > current_open
             and prev_close > prev_open
             and current_range_atr >= 1.2
             and prev_range_atr >= 1.2
         ),
-        "two_expansion_red_candles": (
+        two_expansion_red_candles=bool(
             current_close < current_open
             and prev_close < prev_open
             and current_range_atr >= 1.2
             and prev_range_atr >= 1.2
         ),
-        "ema21_rising": ema21_rising,
-        "ema21_falling": ema21_falling,
-        "ema_fan_wide": ema_fan_wide,
-        "strong_ema21_slope_up": ema21_slope_pct >= 0.15,
-        "strong_ema21_slope_down": ema21_slope_pct <= -0.15,
-        "adx_rising": adx_rising,
-        "adx_falling": adx_falling,
-        "near_20bar_high": near_20bar_high,
-        "near_20bar_low": near_20bar_low,
-        "breaks_20bar_high": current_close > prior_high_20,
-        "breaks_20bar_low": current_close < prior_low_20,
-        "rsi_bullish_divergence": rsi_bullish_divergence,
-        "rsi_bearish_divergence": rsi_bearish_divergence,
-        "macd_bullish_divergence": macd_bullish_divergence,
-        "macd_bearish_divergence": macd_bearish_divergence,
-        "htf_4h_bull_trend": htf_4h_bull_trend,
-        "htf_4h_bear_trend": htf_4h_bear_trend,
-        "hour_utc": time_for_filter.hour,
-        "symbol": symbol,
-    }
+        ema21_rising=bool(ema21_rising),
+        ema21_falling=bool(ema21_falling),
+        ema_fan_wide=bool(ema_fan_wide),
+        strong_ema21_slope_up=bool(ema21_slope_pct >= 0.15),
+        strong_ema21_slope_down=bool(ema21_slope_pct <= -0.15),
+        adx_rising=bool(adx_rising),
+        adx_falling=bool(adx_falling),
+        near_20bar_high=bool(near_20bar_high),
+        near_20bar_low=bool(near_20bar_low),
+        breaks_20bar_high=bool(current_close > prior_high_20),
+        breaks_20bar_low=bool(current_close < prior_low_20),
+        rsi_bullish_divergence=bool(rsi_bullish_divergence),
+        rsi_bearish_divergence=bool(rsi_bearish_divergence),
+        macd_bullish_divergence=bool(macd_bullish_divergence),
+        macd_bearish_divergence=bool(macd_bearish_divergence),
+        htf_4h_bull_trend=bool(htf_4h_bull_trend),
+        htf_4h_bear_trend=bool(htf_4h_bear_trend),
+        hour_utc=int(time_for_filter.hour),
+        symbol=symbol,
+    )
 
 
 def _find_matching_rules(
     symbol: str,
-    snapshot: dict,
+    snapshot,
     rulebook: dict,
     current_regime: Optional[str] = None,
 ) -> list[dict]:
     """Return rules from the rulebook whose conditions match the current candle snapshot."""
+    snap_dict = snapshot.to_dict() if isinstance(snapshot, Snapshot) else (snapshot or {})
     matches = []
 
     for bucket, direction in (("long", "LONG"), ("short", "SHORT")):
@@ -1577,7 +1399,7 @@ def _find_matching_rules(
                 continue
             if not _rule_matches_context(rule, symbol, current_regime):
                 continue
-            if not matches_conditions(snapshot, rule.get("conditions", [])):
+            if not matches_conditions(snap_dict, rule.get("conditions", [])):
                 continue
             matches.append(dict(rule))
 
@@ -1609,6 +1431,19 @@ def _suggest_tp_sl_for_strategy(candles_1h: list, direction: str, strategy: str)
     return suggest_tp_sl(candles_1h, direction, multiplier_sl=1.5, rr_ratio=2.0)
 
 
+def _emit_signal(payload: dict) -> dict:
+    """Validate and normalize a signal via the typed Signal model.
+
+    Round-trips through Signal.from_dict -> to_dict so consumers keep
+    receiving a dict. The Signal construction step catches missing fields
+    and wrong types at the scanner boundary instead of failing downstream.
+
+    To migrate consumers to typed Signal: drop `.to_dict()` here and update
+    callers one at a time to read `signal.x` instead of `signal["x"]`.
+    """
+    return Signal.from_dict(payload).to_dict()
+
+
 def _generate_rule_match_signal(
     symbol: str,
     candles_1h: list,
@@ -1626,6 +1461,8 @@ def _generate_rule_match_signal(
         current_time=current_time,
         precomputed_indicators=precomputed_indicators,
     )
+    if snapshot is None:
+        return None
     resolved_path = _resolve_rulebook_path(signal_engine, rulebook_path)
     rulebook = load_rulebook(resolved_path)
     matches = _find_matching_rules(symbol, snapshot, rulebook, current_regime)
@@ -1658,7 +1495,7 @@ def _generate_rule_match_signal(
         "rulebook_path": resolved_path,
     }
 
-    return {
+    return _emit_signal({
         "symbol": symbol,
         "direction": direction,
         "score": total_score,
@@ -1668,6 +1505,7 @@ def _generate_rule_match_signal(
         "tp_pct": tp_sl["tp_pct"],
         "sl_pct": tp_sl["sl_pct"],
         "atr": tp_sl["atr"],
+        "sl_atr_mult": tp_sl["sl_atr_mult"],
         "rr_ratio": tp_sl["rr_ratio"],
         "technical_score": 0.0,
         "long_score": long_total,
@@ -1681,7 +1519,7 @@ def _generate_rule_match_signal(
         "statistical_setup": matched_rule["name"],
         "statistical_score": total_score,
         "statistical_details": rule_details,
-    }
+    })
 
 
 def _generate_ta_score_signal(
@@ -1743,7 +1581,7 @@ def _generate_ta_score_signal(
         _last_rejection_reason[symbol] = f"Asia session (UTC {hour_utc})"
         return None
 
-    return {
+    return _emit_signal({
         "symbol": symbol,
         "direction": direction,
         "score": total_score,
@@ -1753,6 +1591,7 @@ def _generate_ta_score_signal(
         "tp_pct": tp_sl["tp_pct"],
         "sl_pct": tp_sl["sl_pct"],
         "atr": tp_sl["atr"],
+        "sl_atr_mult": tp_sl["sl_atr_mult"],
         "rr_ratio": tp_sl["rr_ratio"],
         "technical_score": round(tech_component, 2),
         "long_score": long_total,
@@ -1762,7 +1601,7 @@ def _generate_ta_score_signal(
         "details": tech["details"],
         "signal_engine": "ta_score",
         "signal_model": "ta_score",  # legacy alias
-    }
+    })
 
 
 def _generate_combined_signal(
@@ -1838,7 +1677,7 @@ def _generate_combined_signal(
         "technical_reject_reason": ta_reason if not ta_signal else None,
         "selected": {"source": selected_source, "reason": selected_reason},
     }
-    return result
+    return _emit_signal(result)
 
 
 # Backward-compat aliases for callers that still reference old function names
@@ -1857,11 +1696,11 @@ def generate_signal(symbol: str, candles_1h: list,
                     state: dict = None,
                     current_time: Optional[datetime] = None,
                     precomputed_indicators: dict = None,
-                    signal_engine: Optional[str] = None,
+                    signal_engine: Optional[SignalEngine] = None,
                     rulebook_path: Optional[str] = None,
-                    current_regime: Optional[str] = None,
+                    current_regime: Optional[MarketRegime] = None,
                     # Backward-compat param aliases — callers using old names still work
-                    signal_model: Optional[str] = None,
+                    signal_model: Optional[SignalEngine] = None,
                     validated_setups_path: Optional[str] = None) -> Optional[dict]:
     """Generate a complete trade signal from candle data.
 
@@ -2110,6 +1949,7 @@ def scan_symbol(symbol: str, state: dict):
 
 
 def main():
+    configure_logging()
     active_engine = DEFAULT_SIGNAL_ENGINE
     active_banner = _signal_engine_banner(active_engine)
     log.info("=" * 50)

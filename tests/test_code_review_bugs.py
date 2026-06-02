@@ -177,43 +177,35 @@ class TestPrecomputedVsOnDemand:
 # ═══════════════════════════════════════════════════════════════════
 
 class TestSameCandleResolution:
-    """Test that same-candle TP/SL resolution is deterministic with seed."""
+    """Algorithm: whichever of TP/SL is closer to the candle open wins."""
 
-    def test_resolve_is_deterministic(self):
-        """Running resolve_same_candle_hit twice with same seed gives same result."""
-        candle = make_candle_dict(open_=100.0, high=105.0, low=95.0, close=100.0)
+    def test_resolve_is_deterministic_when_closer_to_one_level(self):
+        # open=108 is clearly closer to TP=110 than to SL=95 → always TP
+        candle = make_candle_dict(open_=108.0, high=111.0, low=95.0, close=109.0)
+        results = [
+            bt.resolve_same_candle_hit(candle, 110.0, 95.0) for _ in range(10)
+        ]
+        assert len(set(results)) == 1 and results[0] == "TP"
 
-        results = []
-        for _ in range(10):
-            random.seed(42)
-            result = bt.resolve_same_candle_hit(candle, "LONG", 100.0, 110.0, 95.0)
-            results.append(result)
+    def test_long_open_closer_to_tp(self):
+        # open=108, TP=110, SL=95
+        candle = make_candle_dict(open_=108.0)
+        assert bt.resolve_same_candle_hit(candle, 110.0, 95.0) == "TP"
 
-        assert len(set(results)) == 1, f"Got non-deterministic results: {results}"
+    def test_long_open_closer_to_sl(self):
+        # open=97, TP=110, SL=95
+        candle = make_candle_dict(open_=97.0)
+        assert bt.resolve_same_candle_hit(candle, 110.0, 95.0) == "SL"
 
-    def test_long_open_above_entry_resolves_tp(self):
-        """LONG: candle opens above entry → TP first."""
-        candle = make_candle_dict(open_=105.0)
-        result = bt.resolve_same_candle_hit(candle, "LONG", 100.0, 110.0, 95.0)
-        assert result == "TP"
+    def test_short_open_closer_to_tp(self):
+        # open=92, TP=90, SL=105
+        candle = make_candle_dict(open_=92.0)
+        assert bt.resolve_same_candle_hit(candle, 90.0, 105.0) == "TP"
 
-    def test_long_open_below_entry_resolves_sl(self):
-        """LONG: candle opens below entry → SL first."""
-        candle = make_candle_dict(open_=95.0)
-        result = bt.resolve_same_candle_hit(candle, "LONG", 100.0, 110.0, 95.0)
-        assert result == "SL"
-
-    def test_short_open_below_entry_resolves_tp(self):
-        """SHORT: candle opens below entry → TP first."""
-        candle = make_candle_dict(open_=95.0)
-        result = bt.resolve_same_candle_hit(candle, "SHORT", 100.0, 90.0, 105.0)
-        assert result == "TP"
-
-    def test_short_open_above_entry_resolves_sl(self):
-        """SHORT: candle opens above entry → SL first."""
-        candle = make_candle_dict(open_=105.0)
-        result = bt.resolve_same_candle_hit(candle, "SHORT", 100.0, 90.0, 105.0)
-        assert result == "SL"
+    def test_short_open_closer_to_sl(self):
+        # open=103, TP=90, SL=105
+        candle = make_candle_dict(open_=103.0)
+        assert bt.resolve_same_candle_hit(candle, 90.0, 105.0) == "SL"
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -373,19 +365,19 @@ class TestStatisticalSnapshot:
             "hour_utc", "symbol",
         ]
         for field in required_fields:
-            assert field in snapshot, f"Missing field: {field}"
+            assert hasattr(snapshot, field), f"Missing field: {field}"
 
     def test_snapshot_rsi_in_range(self):
         """RSI should be between 0 and 100."""
         candles = make_trending_candles(200)
         snapshot = scanner._build_indicator_snapshot("BTCUSDT", candles)
-        assert 0 <= snapshot["rsi"] <= 100
+        assert 0 <= snapshot.rsi <= 100
 
     def test_snapshot_adx_in_range(self):
         """ADX should be between 0 and 100."""
         candles = make_trending_candles(200)
         snapshot = scanner._build_indicator_snapshot("BTCUSDT", candles)
-        assert 0 <= snapshot["adx"] <= 100
+        assert 0 <= snapshot.adx <= 100
 
 
 # ═══════════════════════════════════════════════════════════════════

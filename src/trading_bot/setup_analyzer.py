@@ -33,6 +33,7 @@ from typing import Callable, Optional
 try:
     from . import scanner
     from .backtester import fetch_klines_historical_cached
+    from .core.types import Direction, MarketRegime, Template
     from .regime import VALID_REGIMES, build_regime_lookup
     from .setup_conditions import ALL_CONDITIONS, matches_conditions, normalize_conditions
     from .statistical_utils import (
@@ -46,6 +47,7 @@ except ImportError:
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     import scanner  # type: ignore
     from backtester import fetch_klines_historical_cached  # type: ignore
+    from core.types import Direction, MarketRegime, Template  # type: ignore
     from regime import VALID_REGIMES, build_regime_lookup  # type: ignore
     from setup_conditions import ALL_CONDITIONS, matches_conditions, normalize_conditions  # type: ignore
     from statistical_utils import (  # type: ignore
@@ -592,28 +594,22 @@ def load_symbol_universe_rows(
     return all_rows, rows_by_symbol, candles_by_symbol
 
 
-def resolve_same_candle_hit(candle: dict, direction: str, entry_price: float) -> str:
-    """
-    Resolve TP/SL conflicts inside a single candle.
+# Same-candle TP/SL resolution lives in execution/fills.py; research uses the
+# deterministic tie-break ("sl") so reruns stay bit-for-bit reproducible.
+try:
+    from .execution.fills import resolve_same_candle_hit as _resolve_same_candle_hit_impl
+except ImportError:
+    from execution.fills import resolve_same_candle_hit as _resolve_same_candle_hit_impl  # type: ignore
 
-    Uses the same open-based heuristic as the backtester, but breaks exact-open
-    ties conservatively toward SL so research runs stay deterministic.
-    """
-    candle_open = float(candle["open"])
-    if direction == "LONG":
-        if candle_open > entry_price:
-            return "TP"
-        return "SL"
 
-    if candle_open < entry_price:
-        return "TP"
-    return "SL"
+def resolve_same_candle_hit(candle: dict, tp_price: float, sl_price: float) -> str:
+    return _resolve_same_candle_hit_impl(candle, tp_price, sl_price, tie_break="sl")
 
 
 def simulate_forward_trade(
     candles: list[dict],
     signal_idx: int,
-    direction: str,
+    direction: Direction,
     sl_atr_mult: float,
     rr_ratio: float,
     max_holding_candles: int = DEFAULT_MAX_HOLDING_CANDLES,
@@ -663,7 +659,7 @@ def simulate_forward_trade(
             sl_hit = high >= sl_price
 
         if tp_hit and sl_hit:
-            exit_reason = resolve_same_candle_hit(candle, direction, entry_price)
+            exit_reason = resolve_same_candle_hit(candle, tp_price, sl_price)
             exit_idx = idx
             exit_price = tp_price if exit_reason == "TP" else sl_price
             break

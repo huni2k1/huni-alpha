@@ -62,40 +62,22 @@ except ImportError:
     spec.loader.exec_module(candle_cache)
 
 # ─────────────────────────────────────────────────────────────────
-# SCANNER IMPORT — Suppress side effects, get pure functions
+# SCANNER IMPORT
+#
+# scanner.py is import-side-effect-free as of the refactor — logging setup
+# now lives in scanner.configure_logging() and runs only when an app's
+# main() calls it. So we can import it normally, no monkeypatching needed.
+# The dual-mode (package vs script) import below is still required because
+# this file is sometimes executed as a script (python backtester.py) and
+# sometimes loaded as part of the trading_bot package.
 # ─────────────────────────────────────────────────────────────────
-# Import RotatingFileHandler FIRST (before patching)
-from logging.handlers import RotatingFileHandler as _orig_RFH
-
-_orig_makedirs = os.makedirs
-os.makedirs = lambda *a, **kw: None
-
-_orig_FileHandler = logging.FileHandler
-logging.FileHandler = lambda *a, **kw: logging.NullHandler()
-
-# Now patch RotatingFileHandler to use NullHandler
-import logging.handlers
-logging.handlers.RotatingFileHandler = lambda *a, **kw: logging.NullHandler()
-
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import importlib.util
-_scanner_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scanner.py")
-if not os.path.exists(_scanner_path):
-    raise FileNotFoundError(f"scanner.py not found at expected path: {_scanner_path}")
+try:
+    from . import scanner
+except ImportError:
+    import scanner  # type: ignore
 
-spec = importlib.util.spec_from_file_location("scanner", _scanner_path)
-scanner = importlib.util.module_from_spec(spec)
-scanner.os = os
-scanner.logging = logging
-scanner.sys = sys
-spec.loader.exec_module(scanner)
-
-# Restore patched stdlib
-os.makedirs = _orig_makedirs
-logging.FileHandler = _orig_FileHandler
-
-# Import the functions we need — generate_signal is the key one
 generate_signal = scanner.generate_signal
 score_technical = scanner.score_technical
 suggest_tp_sl   = scanner.suggest_tp_sl
@@ -126,8 +108,8 @@ import inspect
 def validate_code_match():
     """Ensure backtester uses live scanner functions."""
     assert callable(generate_signal), "CRITICAL: generate_signal is not callable"
-    assert generate_signal.__module__ == "scanner", \
-        f"CRITICAL: generate_signal module is {generate_signal.__module__}, not 'scanner'"
+    assert generate_signal.__module__ in ("scanner", "trading_bot.scanner"), \
+        f"CRITICAL: generate_signal module is {generate_signal.__module__}, not scanner"
 
     sig = inspect.signature(generate_signal)
     assert "symbol" in sig.parameters, "CRITICAL: generate_signal missing 'symbol'"
@@ -315,41 +297,20 @@ def fetch_klines_historical_cached(symbol: str, interval: str, start_ms: int,
 
 
 # ─────────────────────────────────────────────────────────────────
-# SAME-CANDLE TP/SL RESOLUTION
+# SAME-CANDLE TP/SL RESOLUTION  (delegated to execution/fills.py)
 # ─────────────────────────────────────────────────────────────────
-def resolve_same_candle_hit(candle: dict, direction: str,
-                            entry_price: float, tp_price: float, sl_price: float) -> str:
-    """
-    When both TP and SL are hit in the same candle, determine which hit first.
-
-    Strategy: Use the candle open to infer direction of first move.
-    - If open is closer to SL side → likely SL hit first (moved against us initially)
-    - If open is closer to TP side → likely TP hit first (moved in our favor initially)
-    - If ambiguous → random (honest: we can't know intra-candle order)
-
-    This removes the systematic bias of the old distance-based approach
-    which always favored SL (since SL is always closer than TP at 3:1 R:R).
-    """
-    candle_open = candle["open"]
-
-    if direction == "LONG":
-        # For LONG: TP is above entry, SL is below entry
-        # If candle opened above entry → price moved up first → TP likely first
-        # If candle opened below entry → price moved down first → SL likely first
-        if candle_open > entry_price:
-            return "TP"
-        elif candle_open < entry_price:
-            return "SL"
-        else:
-            return random.choice(["TP", "SL"])
-    else:
-        # For SHORT: TP is below entry, SL is above entry
-        if candle_open < entry_price:
-            return "TP"
-        elif candle_open > entry_price:
-            return "SL"
-        else:
-            return random.choice(["TP", "SL"])
+try:
+    from .core.tp_sl import compute_tp_sl
+    from .core.types import ExitReason, SignalEngine
+    from .execution.fills import resolve_same_candle_hit
+    from .execution.sizing import size_position_notional
+    from .execution.gating import required_threshold, in_cooldown, at_max_positions
+except ImportError:
+    from core.tp_sl import compute_tp_sl  # type: ignore
+    from core.types import ExitReason, SignalEngine  # type: ignore
+    from execution.fills import resolve_same_candle_hit  # type: ignore
+    from execution.sizing import size_position_notional  # type: ignore
+    from execution.gating import required_threshold, in_cooldown, at_max_positions  # type: ignore
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -424,7 +385,7 @@ def _update_excursion(pos: dict, candle: dict):
     pos["max_adverse"] = max(pos["max_adverse"], adv)
 
 
-def _close_position(pos: dict, exit_price: float, exit_reason: str, exit_candle: dict,
+def _close_position(pos: dict, exit_price: float, exit_reason: ExitReason, exit_candle: dict,
                    current_equity: float, equity_curve: list, all_trades: list,
                    sym_trades_map: dict, fee_pct: float, t: int,
                    slippage_pct: float = 0.0) -> float:
@@ -478,6 +439,7 @@ def _close_position(pos: dict, exit_price: float, exit_reason: str, exit_candle:
     trade = {
         "symbol": symbol,
         "direction": direction,
+        "setup_name": pos["signal"].get("statistical_setup"),
         "strategy": pos["signal"].get("strategy", pos["signal"]["details"].get("strategy", "")),
         "regime": pos["signal"].get("regime", pos["signal"]["details"].get("regime", "")),
         "tier": pos["tier"],
@@ -771,7 +733,7 @@ def run_backtest(
     recovery_candles: int = 168,        # Circuit breaker: candles to wait before resuming
     partial_tp: bool = False,           # Close 50% at 1R, move SL to breakeven (disabled: degrades performance)
     kelly_sizing: bool = False,         # Kelly Criterion-based dynamic position sizing
-    signal_engine: str = "ta_score",     # Signal engine: ta_score | rule_match | combined
+    signal_engine: SignalEngine = "ta_score",  # ta_score | rule_match | combined
     rulebook_path: Optional[str] = None,  # Path to validated rules JSON (rule_match / combined)
     start_date: Optional[datetime] = None,  # Custom start date (overrides months parameter)
     end_date: Optional[datetime] = None,    # Custom end date (overrides months parameter)
@@ -1067,9 +1029,7 @@ def run_backtest(
 
             if sl_hit and tp_hit:
                 # Both in same candle — resolve using open-based logic
-                exit_reason = resolve_same_candle_hit(candle, pos["direction"],
-                                                     pos["entry_price"],
-                                                     pos["tp_price"],
+                exit_reason = resolve_same_candle_hit(candle, pos["tp_price"],
                                                      pos["current_sl"])
                 exit_price = pos["tp_price"] if exit_reason == "TP" else pos["current_sl"]
                 if exit_reason == "SL" and pos["trail_activated"]:
@@ -1139,7 +1099,7 @@ def run_backtest(
             continue
 
         # Skip entries if at max concurrent positions
-        if len(open_positions) >= max_positions:
+        if at_max_positions(len(open_positions), max_positions):
             continue
 
         for symbol in all_candles.keys():
@@ -1147,11 +1107,11 @@ def run_backtest(
                 continue
 
             # Max positions check (could fill up during this symbol loop)
-            if len(open_positions) >= max_positions:
+            if at_max_positions(len(open_positions), max_positions):
                 break
 
             # Cooldown check
-            if (t - last_signal_idx[symbol]) < cooldown_candles:
+            if in_cooldown(t - last_signal_idx[symbol], cooldown_candles):
                 continue
 
             # Stop if liquidated
@@ -1188,12 +1148,15 @@ def run_backtest(
                 current_regime = None
 
             try:
-                signal = generate_signal(symbol, window_candles,
-                                         current_time=candle_time,
-                                         signal_engine=signal_engine,
-                                         rulebook_path=rulebook_path,
-                                         precomputed_indicators=indicators_at_t,
-                                         current_regime=current_regime)
+                signal = generate_signal(
+                    symbol,
+                    window_candles,
+                    current_time=candle_time,
+                    signal_engine=signal_engine,
+                    rulebook_path=rulebook_path,
+                    precomputed_indicators=indicators_at_t,
+                    current_regime=current_regime,
+                )
             except Exception as exc:
                 raise RuntimeError(
                     f"generate_signal failed for {symbol} at {candle_time.isoformat()} "
@@ -1213,23 +1176,16 @@ def run_backtest(
             if direction == "NEUTRAL":
                 continue
 
-            # Strategy-specific threshold filtering.
-            # Statistical mode uses validated setup membership as the primary gate.
+            # Strategy-specific threshold filtering (shared with live trader).
             strategy = signal.get("strategy", "trend_pullback")
             resolved_engine = scanner._ENGINE_COMPAT_ALIASES.get(signal_engine, signal_engine)
-            if resolved_engine == "rule_match":
-                required_threshold = None
-            elif resolved_engine == "combined":
-                is_rule_leg = signal.get("hybrid_details", {}).get("selected", {}).get("source") == "statistical"
-                required_threshold = None if is_rule_leg else (
-                    _breakout_thresh if "breakout" in strategy else _trend_thresh
-                )
-            elif "breakout" in strategy:
-                required_threshold = _breakout_thresh
-            else:
-                required_threshold = _trend_thresh
+            min_score = required_threshold(
+                resolved_engine, strategy,
+                trend_threshold=_trend_thresh,
+                breakout_threshold=_breakout_thresh,
+            )
 
-            if required_threshold is not None and score < required_threshold:
+            if min_score is not None and score < min_score:
                 continue
 
             # Determine tier
@@ -1247,33 +1203,27 @@ def run_backtest(
 
             # Get signal info
             signal_entry = signal["entry_price"]
-            tp_price = signal["tp"]
-            sl_price = signal["sl"]
             tp_pct_sig = signal["tp_pct"]
             sl_pct_sig = signal["sl_pct"]
             atr_val = signal.get("atr", 0)
+            sl_atr_mult = signal.get("sl_atr_mult", 1.5)
+            rr_ratio_sig = signal.get("rr_ratio", 2.0)
 
             # Entry price: use next candle open (realistic) or signal close (legacy)
             if use_next_open:
                 entry_idx = t + 1
                 entry_candle = candles[entry_idx]
                 entry_price = entry_candle["open"]
-                # Re-anchor TP/SL from actual entry using same ATR distances
-                # Compute distances from signal and apply to new entry
-                if direction == "LONG":
-                    tp_distance = tp_price - signal_entry
-                    sl_distance = signal_entry - sl_price
-                    tp_price = entry_price + tp_distance
-                    sl_price = entry_price - sl_distance
-                else:
-                    tp_distance = signal_entry - tp_price
-                    sl_distance = sl_price - signal_entry
-                    tp_price = entry_price - tp_distance
-                    sl_price = entry_price + sl_distance
             else:
                 entry_idx = t
                 entry_candle = candles[entry_idx]
                 entry_price = signal_entry
+
+            # Compute TP/SL fresh at the actual entry price (no re-anchor step needed —
+            # we compute from the recipe directly, using the signal-time ATR).
+            tp_price, sl_price = compute_tp_sl(
+                direction, entry_price, atr_val, sl_atr_mult, rr_ratio_sig,
+            )
 
             # Apply slippage (adverse direction)
             if slippage_pct > 0:
@@ -1305,9 +1255,10 @@ def run_backtest(
                     kelly_multiplier = calculate_kelly_risk_multiplier(score)
                     effective_risk_pct = risk_pct * kelly_multiplier
 
-                risk_amount = equity_for_sizing * (effective_risk_pct / 100)
-                position_size = risk_amount / (sl_pct_sig / 100) if sl_pct_sig > 0 else risk_amount
-                position_size = min(position_size, equity_for_sizing / max_positions)
+                position_size = size_position_notional(
+                    equity_for_sizing, effective_risk_pct, sl_pct_sig,
+                    max_positions=max_positions,
+                )
 
             # Capital constraint: check if we have enough total equity (free + locked + unrealized P&L)
             # This prevents liquidation when positions are underwater
@@ -1671,7 +1622,7 @@ def print_summary(results: dict):
             return "INF"
         return f"{value:.2f}"
 
-    period_label = c.get("period_label") or f"{c['months']} months"
+    period_label = c.get("period_label") or f"{c.get('months', '?')} months"
 
     print("\n" + "═" * 62)
     print(f"  BACKTEST RESULTS — Multi-Regime Scanner (ATR TP/SL)")

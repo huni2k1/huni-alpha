@@ -41,10 +41,14 @@ def test_build_atr_series_returns_zeroes_for_short_input():
     assert analyzer._build_atr_series(one) == [0.0]
 
 
-def test_resolve_same_candle_hit_is_conservative_on_open_tie():
-    candle = {"open": 100.0}
-    assert analyzer.resolve_same_candle_hit(candle, "LONG", 100.0) == "SL"
-    assert analyzer.resolve_same_candle_hit(candle, "SHORT", 100.0) == "SL"
+def test_resolve_same_candle_hit_is_conservative_on_equidistant_open():
+    # Analyzer wrapper uses tie_break="sl" for research determinism.
+    # When open is equidistant from TP and SL, must always pick SL.
+    candle = {"open": 102.5}  # midpoint between SL=95 and TP=110
+    assert analyzer.resolve_same_candle_hit(candle, tp_price=110.0, sl_price=95.0) == "SL"
+    # SHORT: equidistant between TP=90 and SL=105 is 97.5
+    candle_short = {"open": 97.5}
+    assert analyzer.resolve_same_candle_hit(candle_short, tp_price=90.0, sl_price=105.0) == "SL"
 
 
 def test_metric_value_handles_infinite_profit_factor():
