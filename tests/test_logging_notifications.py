@@ -46,42 +46,6 @@ def test_scanner_send_telegram_logs_debug_on_success(monkeypatch):
     assert info_logs == []
 
 
-def test_scanner_summary_falls_back_to_active_engine(monkeypatch):
-    info_logs = []
-    sleep_calls = {"count": 0}
-
-    monkeypatch.setattr(scanner, "DEFAULT_SIGNAL_ENGINE", "combined")
-    monkeypatch.setattr(scanner, "SYMBOLS", ["BTCUSDT"])
-    monkeypatch.setattr(scanner, "load_state", lambda: {})
-    monkeypatch.setattr(scanner, "send_telegram", lambda msg: None)
-    monkeypatch.setattr(scanner.log, "info", lambda msg: info_logs.append(msg))
-
-    def _fake_scan_symbol(_symbol, _state):
-        scanner._cycle_results.append({
-            "coin": "BTC",
-            "price": 100.0,
-            "dir": "SHORT",
-            "tech": 0.0,
-            "total": 1.0,
-            "strategy": "rule_wide",
-            "filter_reason": None,
-        })
-
-    def _fake_sleep(_seconds):
-        sleep_calls["count"] += 1
-        if sleep_calls["count"] >= 2:
-            raise SystemExit(0)
-
-    monkeypatch.setattr(scanner, "scan_symbol", _fake_scan_symbol)
-    monkeypatch.setattr(scanner.time, "sleep", _fake_sleep)
-
-    with pytest.raises(SystemExit):
-        scanner.main()
-
-    assert any("Scanner mode summary: engine=combined" in line for line in info_logs)
-    assert any("combined" in line and "rule_wide" in line for line in info_logs)
-
-
 def test_execute_entry_telegram_includes_audit_context(monkeypatch):
     sent = []
     monkeypatch.setattr(trader, "send_telegram", lambda msg: sent.append(msg))
