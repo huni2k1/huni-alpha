@@ -4,6 +4,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from trading_bot import backtester, scanner
+from trading_bot.signals import engine as _sig_engine
+from trading_bot.signals import rulebook as _sig_rulebook
 
 REPO_VALIDATED_SETUPS = Path(scanner.__file__).with_name("validated_setups.json")
 REPO_CURATED_SETUPS = Path(scanner.__file__).with_name("curated_statistical_setups.json")
@@ -164,7 +166,7 @@ def test_generate_signal_statistical_matches_validated_setup(tmp_path):
     write_validated_export(validated_path)
     candles = make_trending_candles(120, "up")
     with patch.object(
-        scanner,
+        _sig_engine,
         "_build_indicator_snapshot",
         return_value={"rsi": 72, "hour_utc": 12, "bb_squeeze": True, "vol_ratio": 1.6},
     ):
@@ -189,7 +191,7 @@ def test_generate_signal_statistical_returns_none_without_matching_setup(tmp_pat
     write_validated_export(validated_path)
     candles = make_trending_candles(120, "up")
     with patch.object(
-        scanner,
+        _sig_engine,
         "_build_indicator_snapshot",
         return_value={"rsi": 55, "hour_utc": 12, "bb_squeeze": True, "vol_ratio": 1.6},
     ):
@@ -209,7 +211,7 @@ def test_generate_signal_rule_match_wide_short_rsi28_matches(tmp_path):
     write_rsi28_short_rulebook(rulebook_path)
     candles = make_trending_candles(120, "down")
     with patch.object(
-        scanner,
+        _sig_engine,
         "_build_indicator_snapshot",
         return_value={"rsi": 27.5, "hour_utc": 12},
     ):
@@ -233,7 +235,7 @@ def test_generate_signal_rule_match_wide_short_rsi28_returns_none_without_match(
     write_rsi28_short_rulebook(rulebook_path)
     candles = make_trending_candles(120, "down")
     with patch.object(
-        scanner,
+        _sig_engine,
         "_build_indicator_snapshot",
         return_value={"rsi": 29.0, "hour_utc": 12},
     ):
@@ -291,8 +293,8 @@ def test_generate_signal_combined_prefers_rule_match_short():
         "statistical_details": {"conditions": ["rsi_below_28"], "template": "wide"},
     }
 
-    with patch.object(scanner, "_generate_ta_score_signal", return_value=ta_signal), \
-         patch.object(scanner, "_generate_rule_match_signal", return_value=rule_signal):
+    with patch.object(_sig_engine, "_generate_ta_score_signal", return_value=ta_signal), \
+         patch.object(_sig_engine, "_generate_rule_match_signal", return_value=rule_signal):
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
@@ -330,8 +332,8 @@ def test_generate_signal_combined_falls_back_to_ta_when_no_rule_fires():
         "signal_engine": "ta_score",
     }
 
-    with patch.object(scanner, "_generate_ta_score_signal", return_value=ta_signal), \
-         patch.object(scanner, "_generate_rule_match_signal", return_value=None):
+    with patch.object(_sig_engine, "_generate_ta_score_signal", return_value=ta_signal), \
+         patch.object(_sig_engine, "_generate_rule_match_signal", return_value=None):
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
@@ -348,8 +350,8 @@ def test_generate_signal_combined_falls_back_to_ta_when_no_rule_fires():
 def test_generate_signal_combined_reports_rejection_when_no_signal():
     candles = make_trending_candles(120, "up")
 
-    with patch.object(scanner, "_generate_ta_score_signal", return_value=None), \
-         patch.object(scanner, "_generate_rule_match_signal", return_value=None):
+    with patch.object(_sig_engine, "_generate_ta_score_signal", return_value=None), \
+         patch.object(_sig_engine, "_generate_rule_match_signal", return_value=None):
         scanner._last_rejection_reason["BTCUSDT"] = "No validated setup"
         signal = scanner.generate_signal(
             "BTCUSDT",
@@ -367,7 +369,7 @@ def test_generate_signal_statistical_curated_prefers_scoped_setup(tmp_path):
     write_curated_scope_export(validated_path)
     candles = make_trending_candles(120, "down")
     with patch.object(
-        scanner,
+        _sig_engine,
         "_build_indicator_snapshot",
         return_value={"rsi": 35, "adx": 21, "bb_squeeze": False, "vol_ratio": 1.0, "hour_utc": 12},
     ):
@@ -392,7 +394,7 @@ def test_generate_signal_statistical_curated_matches_new_long_crossover_setup(tm
     write_long_crossover_scope_export(validated_path)
     candles = make_trending_candles(220, "up")
     with patch.object(
-        scanner,
+        _sig_engine,
         "_build_indicator_snapshot",
         return_value={
             "rsi": 64,
@@ -449,9 +451,9 @@ def test_generate_signal_statistical_ignores_technical_neutral_gate(tmp_path):
     write_validated_export(validated_path)
     candles = make_trending_candles(120, "up")
 
-    with patch.object(scanner, "score_technical", return_value={"direction": "NEUTRAL"}), \
+    with patch.object(_sig_engine, "score_technical", return_value={"direction": "NEUTRAL"}), \
          patch.object(
-             scanner,
+             _sig_engine,
              "_build_indicator_snapshot",
              return_value={"rsi": 72, "hour_utc": 12, "bb_squeeze": True, "vol_ratio": 1.6},
          ):
@@ -473,7 +475,7 @@ def test_generate_signal_statistical_does_not_force_asia_session_rejection(tmp_p
     candles = make_trending_candles(120, "up")
 
     with patch.object(
-        scanner,
+        _sig_engine,
         "_build_indicator_snapshot",
         return_value={"rsi": 72, "hour_utc": 2, "bb_squeeze": True, "vol_ratio": 1.6},
     ):
@@ -561,7 +563,7 @@ def test_generate_signal_technical_path_still_builds_tp_sl():
         },
     }
 
-    with patch.object(scanner, "score_technical", return_value=mocked_tech):
+    with patch.object(_sig_engine, "score_technical", return_value=mocked_tech):
         signal = scanner.generate_signal(
             "BTCUSDT",
             candles,
@@ -607,7 +609,7 @@ def test_repo_default_curated_signal_mode_generates_signal():
     }
 
     with patch.object(
-        scanner,
+        _sig_engine,
         "_build_indicator_snapshot",
         return_value=snapshot,
     ):

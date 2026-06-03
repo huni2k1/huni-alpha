@@ -72,8 +72,8 @@ import inspect
 def validate_code_match():
     """Ensure backtester uses live scanner functions."""
     assert callable(generate_signal), "CRITICAL: generate_signal is not callable"
-    assert generate_signal.__module__ == "trading_bot.scanner", \
-        f"CRITICAL: generate_signal module is {generate_signal.__module__}, not trading_bot.scanner"
+    assert generate_signal.__module__ == "trading_bot.signals.engine", \
+        f"CRITICAL: generate_signal module is {generate_signal.__module__}, not trading_bot.signals.engine"
 
     sig = inspect.signature(generate_signal)
     assert "symbol" in sig.parameters, "CRITICAL: generate_signal missing 'symbol'"
