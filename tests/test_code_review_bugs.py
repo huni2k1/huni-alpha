@@ -25,7 +25,11 @@ import importlib.util
 import numpy as np
 from datetime import datetime, timezone
 
-from trading_bot import scanner, trader
+from trading_bot import trader
+from trading_bot import binance_http as _bhttp
+from trading_bot import logging_setup as _lg
+from trading_bot import signals as scanner
+from trading_bot.core import indicators as _ind
 from trading_bot import backtester as bt
 
 
@@ -142,7 +146,7 @@ class TestPrecomputedVsOnDemand:
             precomputed_rsi = cache[t]['rsi']
             # On-demand: RSI from closes up to candle t
             closes = [c[3] for c in candles[:t + 1]]
-            ondemand_rsi = scanner.rsi(closes)
+            ondemand_rsi = _ind.rsi(closes)
             # Allow some tolerance since full-history vs window can differ slightly
             assert abs(precomputed_rsi - ondemand_rsi) < 5.0, \
                 f"RSI at {t}: precomputed={precomputed_rsi:.2f} vs ondemand={ondemand_rsi:.2f}"
@@ -155,7 +159,7 @@ class TestPrecomputedVsOnDemand:
         for t in [100, 200, 300, 400]:
             precomputed_e9 = cache[t]['e9']
             closes = [c[3] for c in candles[:t + 1]]
-            ondemand_e9 = scanner.ema(closes, 9)[-1]
+            ondemand_e9 = _ind.ema(closes, 9)[-1]
             # EMA should match very closely with enough history
             assert abs(precomputed_e9 - ondemand_e9) < 0.01, \
                 f"EMA9 at {t}: precomputed={precomputed_e9:.4f} vs ondemand={ondemand_e9:.4f}"
@@ -208,14 +212,14 @@ class TestMACDHistPrev:
         """macd(closes[:-1]) needs at least 35 candles in closes."""
         # With 36 candles, closes[:-1] has 35 → should work
         closes = [100.0 + i * 0.5 for i in range(36)]
-        line, sig, hist = scanner.macd(closes[:-1])
+        line, sig, hist = _ind.macd(closes[:-1])
         assert hist != 0 or (line == 0 and sig == 0), \
             "MACD on 35 candles should produce non-zero values"
 
     def test_macd_returns_zero_for_short_data(self):
         """macd() with < 35 candles should return zeros."""
         closes = [100.0 + i * 0.5 for i in range(30)]
-        line, sig, hist = scanner.macd(closes)
+        line, sig, hist = _ind.macd(closes)
         assert line == 0 and sig == 0 and hist == 0
 
 
@@ -311,7 +315,7 @@ class TestADXPrecomputation:
         # At index 149 (before reversal), ADX with data up to 149 should equal
         # ADX computed on truncated data
         adx_from_full = adx_series[149]
-        adx_from_window = scanner.adx(highs[:150], lows[:150], closes[:150])
+        adx_from_window = _ind.adx(highs[:150], lows[:150], closes[:150])
 
         # Should be reasonably close (not exact due to full-history vs window)
         assert abs(adx_from_full - adx_from_window) < 10.0, \
@@ -331,7 +335,7 @@ class TestADXPrecomputation:
         lows = [c[2] for c in candles]
         closes = [c[3] for c in candles]
 
-        adx_val = scanner.adx(highs, lows, closes)
+        adx_val = _ind.adx(highs, lows, closes)
         assert 0 <= adx_val <= 100, f"ADX out of range: {adx_val}"
 
 

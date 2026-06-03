@@ -65,7 +65,7 @@ def test_next_open_entry_uses_actual_entry_candle_time_and_index():
 
     with patch.object(bt, "fetch_klines_historical_cached", return_value=candles), \
          patch.object(bt, "validate_candle_completeness", return_value=(True, "ok")), \
-         patch.object(bt.scanner, "precompute_indicators_for_all_candles", return_value={}), \
+         patch.object(bt, "precompute_indicators_for_all_candles", return_value={}), \
          patch.object(bt, "generate_signal", side_effect=[signal]):
         results = bt.run_backtest(
             symbols=["BTCUSDT"],

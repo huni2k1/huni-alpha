@@ -14,7 +14,10 @@ import sys
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
-from trading_bot import scanner as market_scanner
+from trading_bot import binance_http as _bhttp
+from trading_bot import logging_setup as _lg
+from trading_bot import signals as market_scanner
+from trading_bot.core import indicators as _ind
 
 # Alias so legacy @patch("market_scanner.X") decorators still resolve.
 sys.modules.setdefault('market_scanner', market_scanner)
@@ -82,7 +85,7 @@ class TestDetectRegime:
 class TestAsiaSessionFilter:
     """Test Filter 4: Asia session (0-8 UTC) rejection with exact boundary conditions."""
 
-    @patch('market_scanner.score_technical')
+    @patch('trading_bot.signals.engine.score_technical')
     def test_asia_session_hour_0_rejected(self, mock_score, trending_up_1000):
         """UTC hour 0 (00:30) → filtered."""
         mock_score.return_value = {
@@ -96,7 +99,7 @@ class TestAsiaSessionFilter:
         signal = generate_signal("BTC", trending_up_1000, current_time=current_time)
         assert signal is None, "Asia session hour 0 should be filtered"
 
-    @patch('market_scanner.score_technical')
+    @patch('trading_bot.signals.engine.score_technical')
     def test_asia_session_hour_7_rejected(self, mock_score, trending_up_1000):
         """UTC hour 7 (07:59) → filtered."""
         mock_score.return_value = {
@@ -110,7 +113,7 @@ class TestAsiaSessionFilter:
         signal = generate_signal("BTC", trending_up_1000, current_time=current_time)
         assert signal is None, "Asia session hour 7 should be filtered"
 
-    @patch('market_scanner.score_technical')
+    @patch('trading_bot.signals.engine.score_technical')
     def test_asia_session_hour_8_allowed(self, mock_score, trending_up_1000):
         """UTC hour 8 (08:00) → NOT filtered (boundary is exclusive: [0, 8))."""
         mock_score.return_value = {
@@ -124,7 +127,7 @@ class TestAsiaSessionFilter:
         signal = generate_signal("BTC", trending_up_1000, current_time=current_time)
         assert signal is not None, "Hour 8 UTC should NOT be filtered"
 
-    @patch('market_scanner.score_technical')
+    @patch('trading_bot.signals.engine.score_technical')
     def test_non_asia_session_hour_12_allowed(self, mock_score, trending_up_1000):
         """UTC hour 12 → NOT filtered."""
         mock_score.return_value = {
@@ -160,7 +163,7 @@ class TestWhipsawDetection:
             }
         }
         # Current time is much later, but same direction
-        with patch('market_scanner.time.time', return_value=1010.0):
+        with patch('trading_bot.signals.filters.time.time', return_value=1010.0):
             result = is_whipsaw(state, "BTC", "LONG")
             assert result is False, "Same direction should not be whipsaw"
 
@@ -172,7 +175,7 @@ class TestWhipsawDetection:
             }
         }
         # Switch to SHORT 10 seconds later
-        with patch('market_scanner.time.time', return_value=1010.0):
+        with patch('trading_bot.signals.filters.time.time', return_value=1010.0):
             result = is_whipsaw(state, "BTC", "SHORT")
             assert result is True, "Opposite direction within 300s should be whipsaw"
 
@@ -184,7 +187,7 @@ class TestWhipsawDetection:
             }
         }
         # Switch to SHORT 400 seconds later
-        with patch('market_scanner.time.time', return_value=1400.0):
+        with patch('trading_bot.signals.filters.time.time', return_value=1400.0):
             result = is_whipsaw(state, "BTC", "SHORT")
             assert result is False, "Opposite direction after 300s should NOT be whipsaw"
 

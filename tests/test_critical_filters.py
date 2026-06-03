@@ -12,7 +12,10 @@ All of these are operationally critical — regressions would silently change li
 import pytest
 import numpy as np
 
-from trading_bot import scanner as market_scanner
+from trading_bot import binance_http as _bhttp
+from trading_bot import logging_setup as _lg
+from trading_bot import signals as market_scanner
+from trading_bot.core import indicators as _ind
 
 generate_signal = market_scanner.generate_signal
 

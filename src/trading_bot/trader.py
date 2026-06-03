@@ -45,12 +45,13 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-# ── Import scanner internals ─────────────────────────────────────
-from . import scanner
-from .scanner import (
+# ── Imports from the refactored packages ────────────────────────
+from . import logging_setup
+from .binance_client import BinanceClient
+from .binance_http import fetch_klines_cached, send_telegram
+from .regime import classify_current_regime
+from .signals import (
     generate_signal,
-    fetch_klines_cached,
-    send_telegram,
     SYMBOLS,
     SIGNAL_THRESHOLD_TREND,
     SIGNAL_THRESHOLD_BREAKOUT,
@@ -59,8 +60,7 @@ from .scanner import (
     CURATED_RULEBOOK_PATH,
     _ENGINE_COMPAT_ALIASES,
 )
-from .binance_client import BinanceClient
-from .regime import classify_current_regime
+from .signals.filters import _last_rejection_reason
 
 # ─────────────────────────────────────────────────────────────────
 # CONFIG
@@ -994,7 +994,7 @@ def main():
     signal.signal(signal.SIGTERM, _handle_exit_signal)
     signal.signal(signal.SIGINT, _handle_exit_signal)
 
-    scanner.configure_logging()
+    logging_setup.configure_logging()
 
     cfg = _load_config()
     dry_run = cfg["dry_run"]
@@ -1137,7 +1137,7 @@ def main():
 
                 if trade_signal is None or trade_signal["direction"] == "NEUTRAL":
                     # Get rejection reason from scanner
-                    rejection_reason = scanner._last_rejection_reason.get(symbol, "Unknown")
+                    rejection_reason = _last_rejection_reason.get(symbol, "Unknown")
                     log.info(f"  {symbol}: ✗ {rejection_reason}")
                     _bump_rejection_count(rejection_counts, rejection_reason)
                     continue

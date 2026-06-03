@@ -1,6 +1,9 @@
 import pytest
 
-from trading_bot import scanner as market_scanner
+from trading_bot import binance_http as _bhttp
+from trading_bot import logging_setup as _lg
+from trading_bot import signals as market_scanner
+from trading_bot.core import indicators as _ind
 
 # Import scanner functions directly
 generate_signal = market_scanner.generate_signal

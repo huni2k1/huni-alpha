@@ -30,11 +30,14 @@ from datetime import datetime, timedelta, timezone
 from itertools import combinations
 from typing import Callable, Optional
 
-from . import scanner
+import numpy as np
+
 from .backtester import fetch_klines_historical_cached
+from .core.indicators import ema, market_structure, rsi
 from .core.types import Direction, MarketRegime, Template
 from .regime import VALID_REGIMES, build_regime_lookup
 from .setup_conditions import ALL_CONDITIONS, matches_conditions, normalize_conditions
+from .signals.snapshot import precompute_indicators_for_all_candles
 from .statistical_utils import (
     SampleStats,
     benjamini_hochberg_adjusted,
@@ -51,7 +54,9 @@ if not log.handlers:
     handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
     log.addHandler(handler)
 
-DEFAULT_SYMBOLS = list(getattr(scanner, "SYMBOLS", [])) or [
+from .signals.config import SYMBOLS as _CFG_SYMBOLS
+
+DEFAULT_SYMBOLS = list(_CFG_SYMBOLS) or [
     "BTCUSDT",
     "ETHUSDT",
     "SOLUSDT",
@@ -215,7 +220,7 @@ def _build_bollinger_context(
     for idx in range(period - 1, len(closes)):
         window = closes[idx - period + 1:idx + 1]
         mid = float(sum(window) / len(window))
-        std = float(scanner.np.std(window))
+        std = float(np.std(window))
         upper = mid + std_mult * std
         lower = mid - std_mult * std
         bw = (upper - lower) / mid * 100.0 if mid > 0 else 5.0
@@ -225,7 +230,7 @@ def _build_bollinger_context(
         bandwidths[idx] = bw
         history = [value for value in bandwidths[max(period - 1, idx - squeeze_lookback):idx] if value is not None]
         if history:
-            squeezes[idx] = bw < float(scanner.np.percentile(history, 20))
+            squeezes[idx] = bw < float(np.percentile(history, 20))
 
     return {
         "bb_mid": mids,
@@ -297,7 +302,7 @@ def precompute_symbol_context(candles: list[dict]) -> dict:
     """Precompute reusable indicator context for one symbol."""
     ohlcv = [[c["open"], c["high"], c["low"], c["close"], c["volume"]] for c in candles]
     _, highs, lows, closes, volumes = candles_to_ohlcv_lists(candles)
-    cheap = scanner.precompute_indicators_for_all_candles(ohlcv)
+    cheap = precompute_indicators_for_all_candles(ohlcv)
     return {
         "ohlcv": ohlcv,
         "highs": highs,
@@ -326,7 +331,7 @@ def compute_indicator_snapshot(symbol: str, candles: list[dict], idx: int, conte
     lows = context["lows"][:idx + 1]
     bb_ctx = context["bb"]
     ohlcv_window = context["ohlcv"][max(0, idx - 5):idx + 1]
-    higher_highs, lower_lows = scanner.market_structure(ohlcv_window)
+    higher_highs, lower_lows = market_structure(ohlcv_window)
     candle_time = datetime.fromtimestamp(window[-1]["close_time"] / 1000, tz=timezone.utc)
     candle = window[-1]
     prev_candle = window[-2] if len(window) >= 2 else candle
@@ -373,7 +378,7 @@ def compute_indicator_snapshot(symbol: str, candles: list[dict], idx: int, conte
     ema_fan_pct = abs(float(cheap.get("e9") or 0.0) - float(cheap.get("e50") or 0.0)) / max(current_close, 1e-9) * 100.0
     adx_prev = float(context["adx"][idx - 1]) if idx > 0 else 0.0
     atr_window = [float(v) for v in context["atr20"][max(0, idx - 99):idx] if float(v) > 0]
-    atr_percentile_high = bool(atr_window) and atr20 >= float(scanner.np.percentile(atr_window, 80))
+    atr_percentile_high = bool(atr_window) and atr20 >= float(np.percentile(atr_window, 80))
     atr_expansion = atr20_prev > 0 and atr20 >= atr20_prev * 1.2
     candle_range_atr = current_range / atr20 if atr20 > 0 else 0.0
     prev_range = max(prev_high - prev_low, 0.0)
@@ -405,8 +410,8 @@ def compute_indicator_snapshot(symbol: str, candles: list[dict], idx: int, conte
     htf_4h_n = htf_4h_ctx["count_by_idx"][idx] if htf_4h_ctx.get("count_by_idx") else 0
     four_hour_closes = htf_4h_ctx["closes"][:htf_4h_n] if htf_4h_ctx.get("closes") else []
     if len(four_hour_closes) >= 50:
-        htf_e21 = scanner.ema(four_hour_closes, 21)[-1]
-        htf_e50 = scanner.ema(four_hour_closes, 50)[-1]
+        htf_e21 = ema(four_hour_closes, 21)[-1]
+        htf_e50 = ema(four_hour_closes, 50)[-1]
         htf_4h_bull_trend = four_hour_closes[-1] > htf_e21 > htf_e50
         htf_4h_bear_trend = four_hour_closes[-1] < htf_e21 < htf_e50
     else:
@@ -429,7 +434,7 @@ def compute_indicator_snapshot(symbol: str, candles: list[dict], idx: int, conte
         "prev_high": prev_high,
         "prev_low": prev_low,
         "prev_close": prev_close,
-        "rsi": float(cheap.get("rsi", scanner.rsi(closes))),
+        "rsi": float(cheap.get("rsi", rsi(closes))),
         "e9": float(cheap.get("e9") or 0.0),
         "e21": float(cheap.get("e21") or 0.0),
         "e50": float(cheap.get("e50") or 0.0),

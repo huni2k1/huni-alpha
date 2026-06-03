@@ -3,12 +3,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-from trading_bot import backtester, scanner
+from trading_bot import backtester
+from trading_bot import binance_http as _bhttp
+from trading_bot import logging_setup as _lg
+from trading_bot import signals as scanner
+from trading_bot.core import indicators as _ind
 from trading_bot.signals import engine as _sig_engine
 from trading_bot.signals import rulebook as _sig_rulebook
 
-REPO_VALIDATED_SETUPS = Path(scanner.__file__).with_name("validated_setups.json")
-REPO_CURATED_SETUPS = Path(scanner.__file__).with_name("curated_statistical_setups.json")
+REPO_VALIDATED_SETUPS = Path(scanner.RULEBOOK_PATH)
+REPO_CURATED_SETUPS = Path(scanner.CURATED_RULEBOOK_PATH)
 
 
 def make_trending_candles(n=100, direction="up"):
@@ -524,7 +528,7 @@ def test_run_backtest_raises_signal_generation_errors():
 
     with patch.object(backtester, "fetch_klines_historical_cached", return_value=candles), \
          patch.object(backtester, "validate_candle_completeness", return_value=(True, "ok")), \
-         patch.object(backtester.scanner, "precompute_indicators_for_all_candles", return_value={}), \
+         patch.object(backtester, "precompute_indicators_for_all_candles", return_value={}), \
          patch.object(backtester, "generate_signal", side_effect=ValueError("bad setup file")):
         try:
             backtester.run_backtest(
@@ -645,7 +649,7 @@ def test_run_backtest_passes_rule_match_signal_args():
 
     with patch.object(backtester, "fetch_klines_historical_cached", return_value=candles), \
          patch.object(backtester, "validate_candle_completeness", return_value=(True, "ok")), \
-         patch.object(backtester.scanner, "precompute_indicators_for_all_candles", return_value={}), \
+         patch.object(backtester, "precompute_indicators_for_all_candles", return_value={}), \
          patch.object(backtester, "generate_signal", side_effect=[signal]) as mock_generate:
         backtester.run_backtest(
             symbols=["BTCUSDT"],

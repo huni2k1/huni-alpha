@@ -2,7 +2,7 @@
 """
 Backtester for Market Scanner V3 — Validates REAL signal performance.
 
-Architecture: Calls generate_signal() from scanner.py (tech-only mode).
+Architecture: Calls generate_signal() from trading_bot.signals.
 The backtester owns NOTHING about scoring or TP/SL computation.
 It only does: fetch history → call generate_signal() → simulate fills → report stats.
 
@@ -50,12 +50,20 @@ import requests
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-from . import candle_cache, scanner
+from . import candle_cache, signals
 from .regime import classify_regime_series
-
-generate_signal = scanner.generate_signal
-score_technical = scanner.score_technical
-suggest_tp_sl   = scanner.suggest_tp_sl
+from .signals import (
+    _ENGINE_COMPAT_ALIASES,
+    MAX_OPEN_POSITIONS,
+    RISK_PER_TRADE_PCT,
+    SIGNAL_COOLDOWN_CANDLES,
+    SIGNAL_THRESHOLD_BREAKOUT,
+    SIGNAL_THRESHOLD_TREND,
+    generate_signal,
+    precompute_indicators_for_all_candles,
+    score_technical,
+    suggest_tp_sl,
+)
 
 # Our own logger
 log = logging.getLogger("backtester")
@@ -87,11 +95,11 @@ log.info("✅ Code validation passed: Using scanner's generate_signal() (WYTIWYT
 # IMPORT STRATEGY PARAMETERS FROM SCANNER
 # ─────────────────────────────────────────────────────────────────
 # Use scanner's optimized defaults; CLI args can override for backtesting
-SCANNER_RISK_PCT = getattr(scanner, 'RISK_PER_TRADE_PCT', 2.0)
-SCANNER_COOLDOWN = getattr(scanner, 'SIGNAL_COOLDOWN_CANDLES', 6)
-SCANNER_TREND_THRESH = getattr(scanner, 'SIGNAL_THRESHOLD_TREND', 7.0)
-SCANNER_BREAKOUT_THRESH = getattr(scanner, 'SIGNAL_THRESHOLD_BREAKOUT', 6.0)
-SCANNER_MAX_POSITIONS = getattr(scanner, 'MAX_OPEN_POSITIONS', 3)
+SCANNER_RISK_PCT = RISK_PER_TRADE_PCT
+SCANNER_COOLDOWN = SIGNAL_COOLDOWN_CANDLES
+SCANNER_TREND_THRESH = SIGNAL_THRESHOLD_TREND
+SCANNER_BREAKOUT_THRESH = SIGNAL_THRESHOLD_BREAKOUT
+SCANNER_MAX_POSITIONS = MAX_OPEN_POSITIONS
 log.info(f"✅ Strategy parameters loaded from scanner: risk={SCANNER_RISK_PCT}%, cooldown={SCANNER_COOLDOWN}h, trend={SCANNER_TREND_THRESH}, breakout={SCANNER_BREAKOUT_THRESH}, max_pos={SCANNER_MAX_POSITIONS}")
 
 # ─────────────────────────────────────────────────────────────────
@@ -798,7 +806,7 @@ def run_backtest(
                   c.get("taker_buy_quote_asset_volume", c["close"] * c["volume"] * 0.5)]
                  for c in candles]
         all_ohlcv[symbol] = ohlcv
-        indicators = scanner.precompute_indicators_for_all_candles(ohlcv)
+        indicators = precompute_indicators_for_all_candles(ohlcv)
 
         closes = [c[3] for c in ohlcv]
         highs = [c[1] for c in ohlcv]
@@ -1121,8 +1129,7 @@ def run_backtest(
                 ) from exc
 
             if signal is None:
-                reasons = getattr(scanner, '_last_rejection_reason', {})
-                reason = reasons.get(symbol, 'unknown')
+                reason = signals._last_rejection_reason.get(symbol, 'unknown')
                 rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
                 continue
 
@@ -1135,7 +1142,7 @@ def run_backtest(
 
             # Strategy-specific threshold filtering (shared with live trader).
             strategy = signal.get("strategy", "trend_pullback")
-            resolved_engine = scanner._ENGINE_COMPAT_ALIASES.get(signal_engine, signal_engine)
+            resolved_engine = _ENGINE_COMPAT_ALIASES.get(signal_engine, signal_engine)
             min_score = required_threshold(
                 resolved_engine, strategy,
                 trend_threshold=_trend_thresh,
@@ -1206,7 +1213,7 @@ def run_backtest(
                 # Dynamic risk based on Kelly Criterion (technical mode only).
                 # Statistical mode uses flat risk_pct — setup validation is the quality gate.
                 effective_risk_pct = risk_pct
-                resolved_engine_ks = scanner._ENGINE_COMPAT_ALIASES.get(signal_engine, signal_engine)
+                resolved_engine_ks = _ENGINE_COMPAT_ALIASES.get(signal_engine, signal_engine)
                 is_statistical = resolved_engine_ks in {"rule_match", "combined"}
                 if kelly_sizing and not is_statistical:
                     kelly_multiplier = calculate_kelly_risk_multiplier(score)

@@ -3,7 +3,11 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from trading_bot import scanner, trader
+from trading_bot import trader
+from trading_bot import binance_http as _bhttp
+from trading_bot import logging_setup as _lg
+from trading_bot import signals as scanner
+from trading_bot.core import indicators as _ind
 
 
 class _FakeResponse:
@@ -34,13 +38,13 @@ def test_scanner_send_telegram_logs_debug_on_success(monkeypatch):
     debug_logs = []
     info_logs = []
 
-    monkeypatch.setattr(scanner, "TELEGRAM_TOKEN", "token")
-    monkeypatch.setattr(scanner, "TELEGRAM_CHAT", "chat")
-    monkeypatch.setattr(scanner.requests, "post", lambda *args, **kwargs: _FakeResponse())
-    monkeypatch.setattr(scanner.log, "debug", lambda msg: debug_logs.append(msg))
-    monkeypatch.setattr(scanner.log, "info", lambda msg: info_logs.append(msg))
+    monkeypatch.setattr(_bhttp, "TELEGRAM_TOKEN", "token")
+    monkeypatch.setattr(_bhttp, "TELEGRAM_CHAT", "chat")
+    monkeypatch.setattr(_bhttp.requests, "post", lambda *args, **kwargs: _FakeResponse())
+    monkeypatch.setattr(_lg.log, "debug", lambda msg: debug_logs.append(msg))
+    monkeypatch.setattr(_lg.log, "info", lambda msg: info_logs.append(msg))
 
-    scanner.send_telegram("hello")
+    _bhttp.send_telegram("hello")
 
     assert debug_logs == ["Telegram message sent."]
     assert info_logs == []

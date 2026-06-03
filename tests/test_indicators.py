@@ -1,15 +1,18 @@
 import pytest
 import numpy as np
 
-from trading_bot import scanner as market_scanner
+from trading_bot import binance_http as _bhttp
+from trading_bot import logging_setup as _lg
+from trading_bot import signals as market_scanner
+from trading_bot.core import indicators as _ind
 
 # Import scanner functions directly
-rsi = market_scanner.rsi
-ema = market_scanner.ema
-macd = market_scanner.macd
-adx = market_scanner.adx
-volume_ratio = market_scanner.volume_ratio
-bollinger = market_scanner.bollinger
+rsi = _ind.rsi
+ema = _ind.ema
+macd = _ind.macd
+adx = _ind.adx
+volume_ratio = _ind.volume_ratio
+bollinger = _ind.bollinger
 
 # ── RSI Tests ─────────────────────────────────────────────────────
 

@@ -1,6 +1,10 @@
 """BTC regime classifier + scanner scope filtering."""
 
-from trading_bot import regime, scanner
+from trading_bot import regime
+from trading_bot import binance_http as _bhttp
+from trading_bot import logging_setup as _lg
+from trading_bot import signals as scanner
+from trading_bot.core import indicators as _ind
 
 
 def _make_candles(closes: list[float], start_ms: int = 1_700_000_000_000) -> list[dict]:
