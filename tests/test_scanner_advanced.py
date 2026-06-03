@@ -10,20 +10,14 @@ These tests cover:
 """
 
 import pytest
-import importlib.util
-import os
 import sys
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
-# Load scanner module
-scanner_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'trading_bot', 'scanner.py')
-spec = importlib.util.spec_from_file_location("market_scanner", scanner_path)
-market_scanner = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(market_scanner)
+from trading_bot import scanner as market_scanner
 
-# Register in sys.modules so @patch decorator can find it
-sys.modules['market_scanner'] = market_scanner
+# Alias so legacy @patch("market_scanner.X") decorators still resolve.
+sys.modules.setdefault('market_scanner', market_scanner)
 
 # Import key functions to test
 generate_signal = market_scanner.generate_signal

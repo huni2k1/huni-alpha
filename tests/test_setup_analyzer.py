@@ -1,14 +1,4 @@
-import os
-import sys
-import importlib.util
-
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-analyzer_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'trading_bot', 'setup_analyzer.py')
-spec = importlib.util.spec_from_file_location("setup_analyzer", analyzer_path)
-analyzer = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(analyzer)
+from trading_bot import setup_analyzer as analyzer
 
 
 def make_candle(open_price, high, low, close, hour_index):

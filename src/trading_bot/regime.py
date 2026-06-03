@@ -20,15 +20,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-try:
-    from .core.indicators import ema
-except ImportError:
-    from core.indicators import ema  # type: ignore
-
-try:
-    from .core.types import MarketRegime
-except ImportError:
-    from core.types import MarketRegime  # type: ignore
+from .core.indicators import ema
+from .core.types import MarketRegime
 
 
 # Local alias retained for backward compat with any external callers.

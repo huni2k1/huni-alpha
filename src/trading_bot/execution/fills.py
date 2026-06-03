@@ -5,10 +5,7 @@ from __future__ import annotations
 import random
 from typing import Literal
 
-try:
-    from ..core.types import TieBreak
-except ImportError:
-    from core.types import TieBreak  # type: ignore
+from ..core.types import TieBreak
 
 
 def resolve_same_candle_hit(

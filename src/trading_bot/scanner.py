@@ -32,45 +32,15 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-# Import candle caching module (handle both module and script contexts)
-try:
-    from . import candle_cache
-except ImportError:
-    # Fallback for direct script execution
-    _cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "candle_cache.py")
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("candle_cache", _cache_path)
-    candle_cache = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(candle_cache)
-
-try:
-    from .setup_conditions import ALL_CONDITIONS, matches_conditions, normalize_conditions
-except ImportError:
-    _setup_conditions_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "setup_conditions.py")
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("setup_conditions", _setup_conditions_path)
-    setup_conditions = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(setup_conditions)
-    ALL_CONDITIONS = setup_conditions.ALL_CONDITIONS
-    matches_conditions = setup_conditions.matches_conditions
-    normalize_conditions = setup_conditions.normalize_conditions
-
-try:
-    from .core.types import Direction, MarketRegime, Signal, SignalEngine
-    from .core.indicators import (
-        Snapshot,
-        rsi, ema, macd, bollinger, bollinger_bandwidth,
-        volume_ratio, adx, market_structure, atr as _atr_fn,
-        ema_alignment, support_resistance,
-    )
-except ImportError:
-    from core.types import Direction, MarketRegime, Signal, SignalEngine  # type: ignore
-    from core.indicators import (  # type: ignore
-        Snapshot,
-        rsi, ema, macd, bollinger, bollinger_bandwidth,
-        volume_ratio, adx, market_structure, atr as _atr_fn,
-        ema_alignment, support_resistance,
-    )
+from . import candle_cache
+from .setup_conditions import ALL_CONDITIONS, matches_conditions, normalize_conditions
+from .core.types import Direction, MarketRegime, Signal, SignalEngine
+from .core.indicators import (
+    Snapshot,
+    rsi, ema, macd, bollinger, bollinger_bandwidth,
+    volume_ratio, adx, market_structure, atr as _atr_fn,
+    ema_alignment, support_resistance,
+)
 
 # ─────────────────────────────────────────────────────────────────
 # CONFIG — Load sensitive data from environment or config file

@@ -1,12 +1,6 @@
 import pytest
-import sys, os
-import importlib.util
 
-# Load scanner.py from src/trading_bot (canonical location)
-scanner_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'trading_bot', 'scanner.py')
-spec = importlib.util.spec_from_file_location("market_scanner", scanner_path)
-market_scanner = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(market_scanner)
+from trading_bot import scanner as market_scanner
 
 # Import scanner functions directly
 generate_signal = market_scanner.generate_signal

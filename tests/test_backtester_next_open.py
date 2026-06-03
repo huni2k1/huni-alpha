@@ -1,17 +1,9 @@
-import importlib.util
-import os
-import sys
 from datetime import datetime, timezone
 from unittest.mock import patch
 
 import pytest
 
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-backtester_path = os.path.join(os.path.dirname(__file__), "..", "src", "trading_bot", "backtester.py")
-spec = importlib.util.spec_from_file_location("backtester", backtester_path)
-bt = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(bt)
+from trading_bot import backtester as bt
 
 
 def make_candle_dict(open_, high, low, close, volume=1000, open_time_ms=None, close_time_ms=None):

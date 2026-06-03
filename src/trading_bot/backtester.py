@@ -50,48 +50,12 @@ import requests
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
-# Import candle caching module (handle both module and script contexts)
-try:
-    from . import candle_cache
-except ImportError:
-    # Fallback for direct script execution
-    _cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "candle_cache.py")
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("candle_cache", _cache_path)
-    candle_cache = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(candle_cache)
-
-# ─────────────────────────────────────────────────────────────────
-# SCANNER IMPORT
-#
-# scanner.py is import-side-effect-free as of the refactor — logging setup
-# now lives in scanner.configure_logging() and runs only when an app's
-# main() calls it. So we can import it normally, no monkeypatching needed.
-# The dual-mode (package vs script) import below is still required because
-# this file is sometimes executed as a script (python backtester.py) and
-# sometimes loaded as part of the trading_bot package.
-# ─────────────────────────────────────────────────────────────────
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-try:
-    from . import scanner
-except ImportError:
-    import scanner  # type: ignore
+from . import candle_cache, scanner
+from .regime import classify_regime_series
 
 generate_signal = scanner.generate_signal
 score_technical = scanner.score_technical
 suggest_tp_sl   = scanner.suggest_tp_sl
-
-# Regime classifier — dual-mode import (package or script)
-try:
-    from .regime import classify_regime_series
-except ImportError:
-    _regime_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "regime.py")
-    _regime_spec = importlib.util.spec_from_file_location("regime", _regime_path)
-    _regime_mod = importlib.util.module_from_spec(_regime_spec)
-    sys.modules.setdefault("scanner", scanner)  # regime.py falls back to `from scanner import ema`
-    _regime_spec.loader.exec_module(_regime_mod)
-    classify_regime_series = _regime_mod.classify_regime_series
 
 # Our own logger
 log = logging.getLogger("backtester")
@@ -108,8 +72,8 @@ import inspect
 def validate_code_match():
     """Ensure backtester uses live scanner functions."""
     assert callable(generate_signal), "CRITICAL: generate_signal is not callable"
-    assert generate_signal.__module__ in ("scanner", "trading_bot.scanner"), \
-        f"CRITICAL: generate_signal module is {generate_signal.__module__}, not scanner"
+    assert generate_signal.__module__ == "trading_bot.scanner", \
+        f"CRITICAL: generate_signal module is {generate_signal.__module__}, not trading_bot.scanner"
 
     sig = inspect.signature(generate_signal)
     assert "symbol" in sig.parameters, "CRITICAL: generate_signal missing 'symbol'"
@@ -299,18 +263,11 @@ def fetch_klines_historical_cached(symbol: str, interval: str, start_ms: int,
 # ─────────────────────────────────────────────────────────────────
 # SAME-CANDLE TP/SL RESOLUTION  (delegated to execution/fills.py)
 # ─────────────────────────────────────────────────────────────────
-try:
-    from .core.tp_sl import compute_tp_sl
-    from .core.types import ExitReason, SignalEngine
-    from .execution.fills import resolve_same_candle_hit
-    from .execution.sizing import size_position_notional
-    from .execution.gating import required_threshold, in_cooldown, at_max_positions
-except ImportError:
-    from core.tp_sl import compute_tp_sl  # type: ignore
-    from core.types import ExitReason, SignalEngine  # type: ignore
-    from execution.fills import resolve_same_candle_hit  # type: ignore
-    from execution.sizing import size_position_notional  # type: ignore
-    from execution.gating import required_threshold, in_cooldown, at_max_positions  # type: ignore
+from .core.tp_sl import compute_tp_sl
+from .core.types import ExitReason, SignalEngine
+from .execution.fills import resolve_same_candle_hit
+from .execution.sizing import size_position_notional
+from .execution.gating import required_threshold, in_cooldown, at_max_positions
 
 
 # ─────────────────────────────────────────────────────────────────

@@ -16,10 +16,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-try:
-    from ..core.types import SignalEngine
-except ImportError:
-    from core.types import SignalEngine  # type: ignore
+from ..core.types import SignalEngine
 
 
 def required_threshold(

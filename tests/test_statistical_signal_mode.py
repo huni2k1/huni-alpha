@@ -1,26 +1,12 @@
-import importlib.util
 import json
-import os
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+from trading_bot import backtester, scanner
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
-scanner_path = os.path.join(os.path.dirname(__file__), "..", "src", "trading_bot", "scanner.py")
-scanner_spec = importlib.util.spec_from_file_location("stat_scanner", scanner_path)
-scanner = importlib.util.module_from_spec(scanner_spec)
-scanner_spec.loader.exec_module(scanner)
-
-backtester_path = os.path.join(os.path.dirname(__file__), "..", "src", "trading_bot", "backtester.py")
-backtester_spec = importlib.util.spec_from_file_location("stat_backtester", backtester_path)
-backtester = importlib.util.module_from_spec(backtester_spec)
-backtester_spec.loader.exec_module(backtester)
-
-REPO_VALIDATED_SETUPS = Path(scanner_path).with_name("validated_setups.json")
-REPO_CURATED_SETUPS = Path(scanner_path).with_name("curated_statistical_setups.json")
+REPO_VALIDATED_SETUPS = Path(scanner.__file__).with_name("validated_setups.json")
+REPO_CURATED_SETUPS = Path(scanner.__file__).with_name("curated_statistical_setups.json")
 
 
 def make_trending_candles(n=100, direction="up"):

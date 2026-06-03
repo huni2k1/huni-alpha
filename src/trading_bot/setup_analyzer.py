@@ -30,33 +30,18 @@ from datetime import datetime, timedelta, timezone
 from itertools import combinations
 from typing import Callable, Optional
 
-try:
-    from . import scanner
-    from .backtester import fetch_klines_historical_cached
-    from .core.types import Direction, MarketRegime, Template
-    from .regime import VALID_REGIMES, build_regime_lookup
-    from .setup_conditions import ALL_CONDITIONS, matches_conditions, normalize_conditions
-    from .statistical_utils import (
-        SampleStats,
-        benjamini_hochberg_adjusted,
-        build_walk_forward_windows,
-        summarize_outcomes,
-        two_proportion_ztest,
-    )
-except ImportError:
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    import scanner  # type: ignore
-    from backtester import fetch_klines_historical_cached  # type: ignore
-    from core.types import Direction, MarketRegime, Template  # type: ignore
-    from regime import VALID_REGIMES, build_regime_lookup  # type: ignore
-    from setup_conditions import ALL_CONDITIONS, matches_conditions, normalize_conditions  # type: ignore
-    from statistical_utils import (  # type: ignore
-        SampleStats,
-        benjamini_hochberg_adjusted,
-        build_walk_forward_windows,
-        summarize_outcomes,
-        two_proportion_ztest,
-    )
+from . import scanner
+from .backtester import fetch_klines_historical_cached
+from .core.types import Direction, MarketRegime, Template
+from .regime import VALID_REGIMES, build_regime_lookup
+from .setup_conditions import ALL_CONDITIONS, matches_conditions, normalize_conditions
+from .statistical_utils import (
+    SampleStats,
+    benjamini_hochberg_adjusted,
+    build_walk_forward_windows,
+    summarize_outcomes,
+    two_proportion_ztest,
+)
 
 
 log = logging.getLogger("setup_analyzer")
@@ -596,10 +581,7 @@ def load_symbol_universe_rows(
 
 # Same-candle TP/SL resolution lives in execution/fills.py; research uses the
 # deterministic tie-break ("sl") so reruns stay bit-for-bit reproducible.
-try:
-    from .execution.fills import resolve_same_candle_hit as _resolve_same_candle_hit_impl
-except ImportError:
-    from execution.fills import resolve_same_candle_hit as _resolve_same_candle_hit_impl  # type: ignore
+from .execution.fills import resolve_same_candle_hit as _resolve_same_candle_hit_impl
 
 
 def resolve_same_candle_hit(candle: dict, tp_price: float, sl_price: float) -> str:

@@ -25,19 +25,8 @@ import importlib.util
 import numpy as np
 from datetime import datetime, timezone
 
-# Load modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-scanner_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'trading_bot', 'scanner.py')
-spec = importlib.util.spec_from_file_location("market_scanner", scanner_path)
-scanner = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(scanner)
-
-backtester_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'trading_bot', 'backtester.py')
-spec_bt = importlib.util.spec_from_file_location("backtester", backtester_path)
-bt = importlib.util.module_from_spec(spec_bt)
-spec_bt.loader.exec_module(bt)
-
-from trading_bot import trader
+from trading_bot import scanner, trader
+from trading_bot import backtester as bt
 
 
 # ── Helpers ──────────────────────────────────────────────────────

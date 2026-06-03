@@ -46,38 +46,21 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 # ── Import scanner internals ─────────────────────────────────────
-try:
-    from . import scanner
-    from .scanner import (
-        generate_signal,
-        fetch_klines_cached,
-        send_telegram,
-        SYMBOLS,
-        SIGNAL_THRESHOLD_TREND,
-        SIGNAL_THRESHOLD_BREAKOUT,
-        VALID_SIGNAL_ENGINES,
-        RULEBOOK_PATH,
-        CURATED_RULEBOOK_PATH,
-        _ENGINE_COMPAT_ALIASES,
-    )
-    from .binance_client import BinanceClient
-    from .regime import classify_current_regime
-except ImportError:
-    import scanner
-    from scanner import (
-        generate_signal,
-        fetch_klines_cached,
-        send_telegram,
-        SYMBOLS,
-        SIGNAL_THRESHOLD_TREND,
-        SIGNAL_THRESHOLD_BREAKOUT,
-        VALID_SIGNAL_ENGINES,
-        RULEBOOK_PATH,
-        CURATED_RULEBOOK_PATH,
-        _ENGINE_COMPAT_ALIASES,
-    )
-    from binance_client import BinanceClient
-    from regime import classify_current_regime
+from . import scanner
+from .scanner import (
+    generate_signal,
+    fetch_klines_cached,
+    send_telegram,
+    SYMBOLS,
+    SIGNAL_THRESHOLD_TREND,
+    SIGNAL_THRESHOLD_BREAKOUT,
+    VALID_SIGNAL_ENGINES,
+    RULEBOOK_PATH,
+    CURATED_RULEBOOK_PATH,
+    _ENGINE_COMPAT_ALIASES,
+)
+from .binance_client import BinanceClient
+from .regime import classify_current_regime
 
 # ─────────────────────────────────────────────────────────────────
 # CONFIG
@@ -397,22 +380,13 @@ def _recover_position_state_from_binance(state: dict, live_position: dict, clien
 # ─────────────────────────────────────────────────────────────────
 # POSITION SIZING  (mirrors backtester logic)
 # ─────────────────────────────────────────────────────────────────
-try:
-    from .core.tp_sl import compute_tp_sl
-    from .core.types import SignalEngine
-    from .execution.sizing import size_position_notional
-    from .execution.gating import (
-        required_threshold as _gate_required_threshold,
-        in_cooldown as _gate_in_cooldown,
-    )
-except ImportError:
-    from core.tp_sl import compute_tp_sl  # type: ignore
-    from core.types import SignalEngine  # type: ignore
-    from execution.sizing import size_position_notional  # type: ignore
-    from execution.gating import (  # type: ignore
-        required_threshold as _gate_required_threshold,
-        in_cooldown as _gate_in_cooldown,
-    )
+from .core.tp_sl import compute_tp_sl
+from .core.types import SignalEngine
+from .execution.sizing import size_position_notional
+from .execution.gating import (
+    required_threshold as _gate_required_threshold,
+    in_cooldown as _gate_in_cooldown,
+)
 
 
 def size_position(

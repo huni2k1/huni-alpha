@@ -14,18 +14,10 @@ These tests cover:
 """
 
 import pytest
-import sys
-import os
-import importlib.util
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
 
-# Load backtester module
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-backtester_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'trading_bot', 'backtester.py')
-spec = importlib.util.spec_from_file_location("backtester", backtester_path)
-bt = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(bt)
+from trading_bot import backtester as bt
 
 # Helper functions (same as in conftest.py)
 def make_candle_dict(open_=100.0, high=100.5, low=99.5, close=100.0, volume=1000, open_time_ms=None, close_time_ms=None):

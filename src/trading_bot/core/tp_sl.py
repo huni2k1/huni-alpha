@@ -11,10 +11,7 @@ pattern with a single, direct computation.
 
 from __future__ import annotations
 
-try:
-    from .types import Direction
-except ImportError:
-    from types import Direction  # type: ignore
+from .types import Direction
 
 
 def compute_tp_sl(

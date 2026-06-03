@@ -5,19 +5,10 @@ These tests ensure the backtester cache preserves real exchange timestamps
 and does not collide with the scanner's simpler OHLCV cache format.
 """
 
-import os
-import sys
-import importlib.util
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-backtester_path = os.path.join(os.path.dirname(__file__), '..', 'src', 'trading_bot', 'backtester.py')
-spec = importlib.util.spec_from_file_location("backtester", backtester_path)
-bt = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(bt)
+from trading_bot import backtester as bt
 
 
 def make_candle_dict(open_time_ms: int, price: float) -> dict:
