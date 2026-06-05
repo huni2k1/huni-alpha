@@ -532,18 +532,15 @@ class TestTraderEntryRecovery:
         monkeypatch.setattr(trader, "_STATE_FILE", str(state_path))
         monkeypatch.setattr(trader, "send_telegram", lambda text: None)
 
+        from trading_bot.core.types import Signal
         state = copy.deepcopy(trader._EMPTY_STATE)
-        signal = {
-            "symbol": "ETHUSDT",
-            "direction": "LONG",
-            "entry_price": 100.0,
-            "tp": 104.0,
-            "sl": 98.4,
-            "tp_pct": 4.0,
-            "sl_pct": 1.6,
-            "score": 7.75,
-            "strategy": "breakout",
-        }
+        signal = Signal(
+            symbol="ETHUSDT", direction="LONG",
+            entry_price=100.0, tp=104.0, sl=98.4,
+            tp_pct=4.0, sl_pct=1.6,
+            score=7.75, atr=1.0, sl_atr_mult=1.5, rr_ratio=2.0,
+            strategy="breakout",
+        )
         cfg = {
             "risk_pct": 1.5,
             "max_positions": 3,

@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 
 from trading_bot import backtester as bt
+from trading_bot.core.types import Signal
 
 
 def make_candle_dict(open_, high, low, close, volume=1000, open_time_ms=None, close_time_ms=None):
@@ -49,19 +50,14 @@ def test_next_open_entry_uses_actual_entry_candle_time_and_index():
     candles[entry_idx]["low"] = 122.5
     candles[entry_idx]["close"] = 123.0
 
-    signal = {
-        "score": 7.0,
-        "direction": "LONG",
-        "strategy": "trend_pullback",
-        "regime": "trending",
-        "entry_price": 100.0,
-        "tp": 110.0,
-        "sl": 95.0,
-        "tp_pct": 10.0,
-        "sl_pct": 5.0,
-        "atr": 1.0,
-        "details": {"strategy": "trend_pullback", "regime": "trending"},
-    }
+    signal = Signal(
+        symbol="BTCUSDT", direction="LONG", score=7.0,
+        entry_price=100.0, tp=110.0, sl=95.0,
+        tp_pct=10.0, sl_pct=5.0, atr=1.0,
+        sl_atr_mult=1.5, rr_ratio=2.0,
+        strategy="trend_pullback", regime="trending",
+        details={"strategy": "trend_pullback", "regime": "trending"},
+    )
 
     with patch.object(bt, "fetch_klines_historical_cached", return_value=candles), \
          patch.object(bt, "validate_candle_completeness", return_value=(True, "ok")), \
@@ -102,21 +98,14 @@ def test_next_open_reanchors_tp_sl_and_caps_position_size():
 
     # Recipe: atr=1, sl_atr_mult=1.0, rr_ratio=10.0 → sl_distance=1, tp_distance=10.
     # Applied at the actual fill (entry=120 next-open) → tp=130, sl=119.
-    signal = {
-        "score": 7.0,
-        "direction": "LONG",
-        "strategy": "trend_pullback",
-        "regime": "trending",
-        "entry_price": 100.0,
-        "tp": 110.0,
-        "sl": 99.0,
-        "tp_pct": 10.0,
-        "sl_pct": 1.0,
-        "atr": 1.0,
-        "sl_atr_mult": 1.0,
-        "rr_ratio": 10.0,
-        "details": {"strategy": "trend_pullback", "regime": "trending", "rsi": {}},
-    }
+    signal = Signal(
+        symbol="BTCUSDT", direction="LONG", score=7.0,
+        entry_price=100.0, tp=110.0, sl=99.0,
+        tp_pct=10.0, sl_pct=1.0,
+        atr=1.0, sl_atr_mult=1.0, rr_ratio=10.0,
+        strategy="trend_pullback", regime="trending",
+        details={"strategy": "trend_pullback", "regime": "trending", "rsi": {}},
+    )
 
     with patch.object(bt, "fetch_klines_historical_cached", return_value=candles), \
          patch.object(bt, "validate_candle_completeness", return_value=(True, "ok")), \

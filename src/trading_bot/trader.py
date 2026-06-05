@@ -34,6 +34,7 @@ Config (env vars or config/trader.json):
 import os
 import sys
 import copy
+import dataclasses
 import json
 import time
 import atexit
@@ -235,15 +236,15 @@ def _write_position_state(
     save_state(state)
 
 
-def _signal_audit_context(signal: dict, default_engine: Optional[str] = None) -> dict:
+def _signal_audit_context(signal, default_engine: Optional[str] = None) -> dict:
     """Extract a compact audit context for logs, state, and Telegram alerts."""
-    hybrid_details = signal.get("hybrid_details") or {}
+    hybrid_details = signal.hybrid_details or {}
     selected = hybrid_details.get("selected") or {}
 
-    engine = signal.get("signal_engine") or default_engine or "unknown"
-    source = signal.get("selected_source") or selected.get("source")
+    engine = signal.signal_engine or default_engine or "unknown"
+    source = signal.selected_source or selected.get("source")
     if not source:
-        if signal.get("statistical_setup") or engine == "rule_match":
+        if signal.statistical_setup or engine == "rule_match":
             source = "statistical"
         elif engine in {"ta_score", "technical"}:
             source = "technical"
@@ -251,17 +252,16 @@ def _signal_audit_context(signal: dict, default_engine: Optional[str] = None) ->
             source = engine
 
     setup_name = (
-        signal.get("setup_name")
-        or signal.get("statistical_setup")
+        signal.setup_name
+        or signal.statistical_setup
         or (hybrid_details.get("statistical") or {}).get("setup")
-        or signal.get("strategy")
+        or signal.strategy
         or "unknown"
     )
     market_regime = (
-        signal.get("market_regime")
-        or signal.get("current_regime")
-        or signal.get("regime")
-        or (signal.get("details") or {}).get("regime")
+        signal.market_regime
+        or signal.regime
+        or (signal.details or {}).get("regime")
         or "unknown"
     )
 
@@ -615,15 +615,15 @@ def execute_entry(
     On dry run:
       Simulates fill at signal entry_price, logs as if real.
     """
-    symbol    = signal["symbol"]
-    direction = signal["direction"]
-    entry_p   = signal["entry_price"]
-    tp_p      = signal["tp"]
-    sl_p      = signal["sl"]
-    sl_pct    = abs(signal["sl_pct"])
-    tp_pct    = abs(signal["tp_pct"])
-    strategy  = signal.get("strategy", "trend_pullback")
-    score     = signal.get("score", 0)
+    symbol    = signal.symbol
+    direction = signal.direction
+    entry_p   = signal.entry_price
+    tp_p      = signal.tp
+    sl_p      = signal.sl
+    sl_pct    = abs(signal.sl_pct)
+    tp_pct    = abs(signal.tp_pct)
+    strategy  = signal.strategy
+    score     = signal.score
     audit = _signal_audit_context(signal, cfg.get("signal_engine"))
 
     entry_side = "BUY" if direction == "LONG" else "SELL"
@@ -694,9 +694,9 @@ def execute_entry(
         )
 
         # 3. Compute TP/SL fresh at the actual fill price (shared with backtester).
-        atr_val = float(signal.get("atr", 0.0) or 0.0)
-        sl_atr_mult = float(signal.get("sl_atr_mult", 1.5) or 1.5)
-        rr_ratio = float(signal.get("rr_ratio", 2.0) or 2.0)
+        atr_val = float(signal.atr or 0.0)
+        sl_atr_mult = float(signal.sl_atr_mult or 1.5)
+        rr_ratio = float(signal.rr_ratio or 2.0)
         tp_p, sl_p = compute_tp_sl(
             direction, fill_price, atr_val, sl_atr_mult, rr_ratio,
         )
@@ -1135,33 +1135,40 @@ def main():
 
                 time.sleep(1.5)  # Rate limit between symbols
 
-                if trade_signal is None or trade_signal["direction"] == "NEUTRAL":
+                if trade_signal is None or trade_signal.direction == "NEUTRAL":
                     # Get rejection reason from scanner
                     rejection_reason = _last_rejection_reason.get(symbol, "Unknown")
                     log.info(f"  {symbol}: ✗ {rejection_reason}")
                     _bump_rejection_count(rejection_counts, rejection_reason)
                     continue
 
-                trade_signal["market_regime"] = current_regime or trade_signal.get("market_regime")
+                # Stash trader-side context on the (frozen) Signal.
+                trade_signal = dataclasses.replace(
+                    trade_signal,
+                    market_regime=current_regime or trade_signal.market_regime,
+                )
                 audit = _signal_audit_context(trade_signal, signal_engine)
-                trade_signal.setdefault("selected_source", audit["source"])
-                trade_signal.setdefault("setup_name", audit["setup_name"])
+                trade_signal = dataclasses.replace(
+                    trade_signal,
+                    selected_source=trade_signal.selected_source or audit["source"],
+                    setup_name=trade_signal.setup_name or audit["setup_name"],
+                )
 
-                score    = trade_signal["score"]
-                strategy = trade_signal.get("strategy", "trend_pullback")
+                score    = trade_signal.score
+                strategy = trade_signal.strategy
                 threshold = _required_threshold(signal_engine, strategy)
 
                 # ── Log signal details ──
-                d = trade_signal.get("details", {})
-                entry_p   = trade_signal.get("entry_price", 0)
-                l_score   = trade_signal.get("long_score", 0)
-                s_score   = trade_signal.get("short_score", 0)
-                regime    = trade_signal.get("regime") or d.get("regime", "?")
-                sig_engine = trade_signal.get("signal_engine", signal_engine)
-                hybrid_d  = trade_signal.get("hybrid_details")
+                d = trade_signal.details or {}
+                entry_p   = trade_signal.entry_price
+                l_score   = trade_signal.long_score
+                s_score   = trade_signal.short_score
+                regime    = trade_signal.regime or d.get("regime", "?")
+                sig_engine = trade_signal.signal_engine or signal_engine
+                hybrid_d  = trade_signal.hybrid_details
 
                 log.info(
-                    f"  {symbol}: ${entry_p:,.2f} | {trade_signal['direction']} "
+                    f"  {symbol}: ${entry_p:,.2f} | {trade_signal.direction} "
                     f"score={score:.2f} | engine={sig_engine} strategy={strategy}"
                 )
 
@@ -1213,7 +1220,7 @@ def main():
                 elif hybrid_d:
                     log.info(f"    [STATISTICAL] no match")
 
-                stat_d = trade_signal.get("statistical_details")
+                stat_d = trade_signal.statistical_details
                 if stat_d:
                     test_stats = stat_d.get("test_stats", {})
                     train_stats = stat_d.get("train_stats", {})
@@ -1230,10 +1237,10 @@ def main():
                     log.info(f"    [HYBRID] => {sel.get('source', '?')} ({sel.get('reason', '?')})")
 
                 if threshold is not None and score < threshold:
-                    d = trade_signal.get("details", {})
+                    d = trade_signal.details or {}
                     rsi = d.get("rsi", "?")
                     adx = d.get("adx", "?")
-                    regime = trade_signal.get("regime", "?")
+                    regime = trade_signal.regime or "?"
                     log.info(
                         f"  {symbol}: ✗ score {score:.2f} < {threshold:.0f} "
                         f"| {regime} | RSI={rsi} ADX={adx}"
@@ -1242,9 +1249,9 @@ def main():
                     continue
 
                 log.info(
-                    f"  {symbol}: >>> ENTRY {trade_signal['direction']} "
-                    f"TP={trade_signal['tp_pct']:.2f}% SL={trade_signal['sl_pct']:.2f}% "
-                    f"R:R={trade_signal.get('rr_ratio', '?')} ATR={trade_signal.get('atr', '?')}"
+                    f"  {symbol}: >>> ENTRY {trade_signal.direction} "
+                    f"TP={trade_signal.tp_pct:.2f}% SL={trade_signal.sl_pct:.2f}% "
+                    f"R:R={trade_signal.rr_ratio} ATR={trade_signal.atr}"
                 )
 
                 # Execute

@@ -18,6 +18,7 @@ from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone
 
 from trading_bot import backtester as bt
+from trading_bot.core.types import Signal
 
 # Helper functions (same as in conftest.py)
 def make_candle_dict(open_=100.0, high=100.5, low=99.5, close=100.0, volume=1000, open_time_ms=None, close_time_ms=None):
@@ -59,16 +60,15 @@ def make_position_dict(direction="LONG", entry_price=100.0, tp_price=110.0, sl_p
         "atr": atr,
         "tp_pct": abs((tp_price - entry_price) / entry_price * 100),
         "sl_pct": abs((entry_price - sl_price) / entry_price * 100),
-        "signal": {
-            "symbol": symbol,
-            "direction": direction,
-            "score": score,
-            "details": {
-                "strategy": "trend_pullback",
-                "regime": "trending",
-                "rsi": {},
-            },
-        },
+        "signal": Signal(
+            symbol=symbol, direction=direction, score=score,
+            entry_price=entry_price, tp=tp_price, sl=sl_price,
+            tp_pct=abs((tp_price - entry_price) / entry_price * 100),
+            sl_pct=abs((entry_price - sl_price) / entry_price * 100),
+            atr=atr, sl_atr_mult=1.5, rr_ratio=2.0,
+            strategy="trend_pullback", regime="trending",
+            details={"strategy": "trend_pullback", "regime": "trending", "rsi": {}},
+        ),
         "partial_taken": False,
         "partial_pnl_usd": 0.0,
     }

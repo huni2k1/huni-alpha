@@ -6,6 +6,19 @@ from pathlib import Path
 import pytest
 
 from trading_bot import trader
+from trading_bot.core.types import Signal
+
+
+def _make_signal(**overrides):
+    """Build a Signal with sensible defaults for tests."""
+    defaults = dict(
+        symbol="BTCUSDT", direction="LONG", score=7.0,
+        entry_price=100.0, tp=104.0, sl=98.0,
+        tp_pct=4.0, sl_pct=2.0,
+        atr=1.0, sl_atr_mult=1.5, rr_ratio=2.0,
+    )
+    defaults.update(overrides)
+    return Signal(**defaults)
 
 
 def _fresh_state():
@@ -202,12 +215,12 @@ def test_write_position_state_rounds_and_saves(monkeypatch):
 
 
 def test_signal_audit_context_prefers_explicit_fields():
-    signal = {
-        "signal_engine": "combined",
-        "selected_source": "rulebook",
-        "setup_name": "wide_short",
-        "market_regime": "bear",
-    }
+    signal = _make_signal(
+        signal_engine="combined",
+        selected_source="rulebook",
+        setup_name="wide_short",
+        market_regime="bear",
+    )
     assert trader._signal_audit_context(signal) == {
         "engine": "combined",
         "source": "rulebook",
@@ -217,10 +230,11 @@ def test_signal_audit_context_prefers_explicit_fields():
 
 
 def test_signal_audit_context_infers_defaults():
-    signal = {
-        "strategy": "trend_pullback",
-        "details": {"regime": "weak_trend"},
-    }
+    signal = _make_signal(
+        strategy="trend_pullback",
+        details={"regime": "weak_trend"},
+        regime="weak_trend",
+    )
     ctx = trader._signal_audit_context(signal, "ta_score")
     assert ctx["engine"] == "ta_score"
     assert ctx["source"] == "technical"
@@ -414,17 +428,7 @@ def test_execute_entry_rejects_missing_symbol_info(monkeypatch):
     monkeypatch.setattr(trader, "send_telegram", lambda msg: None)
     state = _fresh_state()
     client = _EntryClient(symbol_info=None)
-    signal = {
-        "symbol": "BTCUSDT",
-        "direction": "LONG",
-        "entry_price": 100.0,
-        "tp": 104.0,
-        "sl": 98.0,
-        "tp_pct": 4.0,
-        "sl_pct": 2.0,
-        "score": 7.0,
-        "strategy": "breakout",
-    }
+    signal = _make_signal(strategy="breakout", entry_price=100.0, tp=104.0, sl=98.0, tp_pct=4.0, sl_pct=2.0, score=7.0)
     cfg = {"risk_pct": 1.5, "max_positions": 3, "signal_engine": "combined"}
 
     assert trader.execute_entry(signal, state, client, cfg, dry_run=False, equity=1000.0) is False
@@ -434,17 +438,7 @@ def test_execute_entry_handles_market_order_failure(monkeypatch):
     monkeypatch.setattr(trader, "send_telegram", lambda msg: None)
     state = _fresh_state()
     client = _EntryClient(market_fill=None)
-    signal = {
-        "symbol": "BTCUSDT",
-        "direction": "LONG",
-        "entry_price": 100.0,
-        "tp": 104.0,
-        "sl": 98.0,
-        "tp_pct": 4.0,
-        "sl_pct": 2.0,
-        "score": 7.0,
-        "strategy": "breakout",
-    }
+    signal = _make_signal(strategy="breakout", entry_price=100.0, tp=104.0, sl=98.0, tp_pct=4.0, sl_pct=2.0, score=7.0)
     cfg = {"risk_pct": 1.5, "max_positions": 3, "signal_engine": "combined"}
 
     assert trader.execute_entry(signal, state, client, cfg, dry_run=False, equity=1000.0) is False
@@ -459,17 +453,7 @@ def test_execute_entry_handles_tp_failure_with_emergency_close(monkeypatch):
         tp_order_id=None,
         market_close={"filled_price": 101.0, "status": "FILLED"},
     )
-    signal = {
-        "symbol": "BTCUSDT",
-        "direction": "LONG",
-        "entry_price": 100.0,
-        "tp": 104.0,
-        "sl": 98.0,
-        "tp_pct": 4.0,
-        "sl_pct": 2.0,
-        "score": 7.0,
-        "strategy": "breakout",
-    }
+    signal = _make_signal(strategy="breakout", entry_price=100.0, tp=104.0, sl=98.0, tp_pct=4.0, sl_pct=2.0, score=7.0)
     cfg = {"risk_pct": 1.5, "max_positions": 3, "signal_engine": "combined"}
 
     assert trader.execute_entry(signal, state, client, cfg, dry_run=False, equity=1000.0) is False
@@ -488,17 +472,11 @@ def test_execute_entry_handles_sl_failure_and_cancels_tp(monkeypatch):
         sl_order_id=None,
         market_close={"filled_price": 101.0, "status": "FILLED"},
     )
-    signal = {
-        "symbol": "BTCUSDT",
-        "direction": "SHORT",
-        "entry_price": 100.0,
-        "tp": 96.0,
-        "sl": 102.0,
-        "tp_pct": 4.0,
-        "sl_pct": 2.0,
-        "score": 7.0,
-        "strategy": "breakout",
-    }
+    signal = _make_signal(
+        symbol="BTCUSDT", direction="SHORT",
+        entry_price=100.0, tp=96.0, sl=102.0,
+        tp_pct=4.0, sl_pct=2.0, score=7.0, strategy="breakout",
+    )
     cfg = {"risk_pct": 1.5, "max_positions": 3, "signal_engine": "combined"}
 
     assert trader.execute_entry(signal, state, client, cfg, dry_run=False, equity=1000.0) is False

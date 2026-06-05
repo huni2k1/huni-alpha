@@ -169,44 +169,40 @@ def test_tp_sl_returns_required_keys():
 def test_generate_signal_returns_none_on_neutral():
     """Choppy market with no clear direction should return None."""
     candles = make_choppy_candles(1000)
-    # Note: may or may not be None depending on exact data — just check it doesn't crash
     result = generate_signal("BTCUSDT", candles)
-    # Result is either None or a valid signal dict
     if result is not None:
-        assert "direction" in result
-        assert result["direction"] in ["LONG", "SHORT"]
+        assert result.direction in ["LONG", "SHORT"]
 
 def test_generate_signal_complete_dict():
     """When a signal fires, it must have all required fields."""
     candles = make_trending_candles(1000, "up")
     result = generate_signal("BTCUSDT", candles)
     if result is not None:
-        required = ["symbol", "direction", "score", "entry_price",
-                    "tp", "sl", "tp_pct", "sl_pct", "atr", "rr_ratio",
-                    "technical_score", "regime", "strategy"]
-        for key in required:
-            assert key in result, f"Signal missing key: {key}"
+        for field in ("symbol", "direction", "score", "entry_price",
+                      "tp", "sl", "tp_pct", "sl_pct", "atr", "rr_ratio",
+                      "technical_score", "regime", "strategy"):
+            assert hasattr(result, field), f"Signal missing field: {field}"
 
 def test_generate_signal_tp_sl_consistent():
     """TP and SL must be on correct sides of entry for both directions."""
     candles = make_trending_candles(1000, "up")
     result = generate_signal("BTCUSDT", candles)
-    if result and result["direction"] == "LONG":
-        assert result["tp"] > result["entry_price"], "LONG TP must be above entry"
-        assert result["sl"] < result["entry_price"], "LONG SL must be below entry"
+    if result and result.direction == "LONG":
+        assert result.tp > result.entry_price, "LONG TP must be above entry"
+        assert result.sl < result.entry_price, "LONG SL must be below entry"
 
     candles_down = make_trending_candles(1000, "down")
     result_down = generate_signal("BTCUSDT", candles_down)
-    if result_down and result_down["direction"] == "SHORT":
-        assert result_down["tp"] < result_down["entry_price"], "SHORT TP must be below entry"
-        assert result_down["sl"] > result_down["entry_price"], "SHORT SL must be above entry"
+    if result_down and result_down.direction == "SHORT":
+        assert result_down.tp < result_down.entry_price, "SHORT TP must be below entry"
+        assert result_down.sl > result_down.entry_price, "SHORT SL must be above entry"
 
 def test_generate_signal_score_matches_direction():
     """Score should match the winning direction's total."""
     candles = make_trending_candles(1000, "up")
     result = generate_signal("BTCUSDT", candles)
     if result:
-        if result["direction"] == "LONG":
-            assert result["score"] == result["long_score"]
+        if result.direction == "LONG":
+            assert result.score == result.long_score
         else:
-            assert result["score"] == result["short_score"]
+            assert result.score == result.short_score

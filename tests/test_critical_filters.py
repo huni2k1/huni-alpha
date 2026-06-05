@@ -36,7 +36,7 @@ def test_min_score_differential_filter_exists():
     # Signal should either be None or have one clear direction (not both)
     # This validates MIN_SCORE_DIFFERENTIAL enforcement
     if signal is not None:
-        assert signal["direction"] in ["LONG", "SHORT"], \
+        assert signal.direction in ["LONG", "SHORT"], \
             f"Signal must have single direction, got {signal['direction']}"
 
 
@@ -48,13 +48,14 @@ def test_signal_generation_does_not_crash():
     """Verify signal generation handles various market conditions without crashing."""
     # Test uptrend
     uptrend = [[100.0 + i*0.3, 101 + i*0.3, 99.5 + i*0.3, 100.2 + i*0.3, 1000] for i in range(1000)]
+    from trading_bot.core.types import Signal
     signal_up = generate_signal("TESTUSDT", uptrend)
-    assert signal_up is None or isinstance(signal_up, dict), "Signal should be None or dict"
+    assert signal_up is None or isinstance(signal_up, Signal)
 
     # Test downtrend
     downtrend = [[100.0 - i*0.3, 100.5 - i*0.3, 99 - i*0.3, 99.8 - i*0.3, 1000] for i in range(1000)]
     signal_down = generate_signal("TESTUSDT", downtrend)
-    assert signal_down is None or isinstance(signal_down, dict), "Signal should be None or dict"
+    assert signal_down is None or isinstance(signal_down, Signal)
 
     # Test choppy market
     import random
@@ -63,7 +64,7 @@ def test_signal_generation_does_not_crash():
                99.5 + random.uniform(-1, 1), 100 + random.uniform(-1, 1), 1000]
               for _ in range(1000)]
     signal_choppy = generate_signal("TESTUSDT", choppy)
-    assert signal_choppy is None or isinstance(signal_choppy, dict), "Signal should be None or dict"
+    assert signal_choppy is None or isinstance(signal_choppy, Signal)
 
 
 # ── Fixed Test: Indicator Strong Directional Signal ──────────────
@@ -76,9 +77,9 @@ def test_signal_returns_either_direction_or_none():
     signal = generate_signal("TESTUSDT", candles)
 
     if signal is not None:
-        assert signal["direction"] in ["LONG", "SHORT"], \
+        assert signal.direction in ["LONG", "SHORT"], \
             f"Signal direction must be LONG or SHORT, got {signal['direction']}"
-        assert isinstance(signal["score"], (int, float)), \
+        assert isinstance(signal.score, (int, float)), \
             f"Signal score must be numeric, got {type(signal['score'])}"
 
 
@@ -90,11 +91,11 @@ def test_signal_score_matches_direction():
 
     if signal is not None:
         # Score should match the winning direction's total
-        if signal["direction"] == "LONG":
-            assert signal["score"] == signal.get("long_score", signal["score"]), \
+        if signal.direction == "LONG":
+            assert signal.score == (getattr(signal, "long_score", None) or signal.score), \
                 "LONG signal score should equal long_score"
-        elif signal["direction"] == "SHORT":
-            assert signal["score"] == signal.get("short_score", signal["score"]), \
+        elif signal.direction == "SHORT":
+            assert signal.score == (getattr(signal, "short_score", None) or signal.score), \
                 "SHORT signal score should equal short_score"
 
 
@@ -105,14 +106,14 @@ def test_signal_tp_sl_consistency():
     signal = generate_signal("TESTUSDT", candles)
 
     if signal is not None:
-        entry = signal.get("entry_price", 100)
-        tp = signal.get("tp", 100)
-        sl = signal.get("sl", 100)
+        entry = (getattr(signal, "entry_price", None) or 100)
+        tp = (getattr(signal, "tp", None) or 100)
+        sl = (getattr(signal, "sl", None) or 100)
 
-        if signal["direction"] == "LONG":
+        if signal.direction == "LONG":
             assert tp > entry, f"LONG TP ({tp}) must be above entry ({entry})"
             assert sl < entry, f"LONG SL ({sl}) must be below entry ({entry})"
-        elif signal["direction"] == "SHORT":
+        elif signal.direction == "SHORT":
             assert tp < entry, f"SHORT TP ({tp}) must be below entry ({entry})"
             assert sl > entry, f"SHORT SL ({sl}) must be above entry ({entry})"
 

@@ -236,10 +236,10 @@ def test_generate_rule_match_signal_builds_full_signal(monkeypatch):
 
     result = _sig_engine._generate_rule_match_signal("BTCUSDT", [[1, 1, 1, 1, 1]] * 60, "rule_match")
 
-    assert result["direction"] == "SHORT"
-    assert result["strategy"] == "rule_wide"
-    assert result["statistical_setup"] == "rule1"
-    assert result["statistical_details"]["candidate_count"] == 1
+    assert result.direction == "SHORT"
+    assert result.strategy == "rule_wide"
+    assert result.statistical_setup == "rule1"
+    assert result.statistical_details["candidate_count"] == 1
 
 
 def test_generate_ta_score_signal_returns_none_for_neutral(monkeypatch):
@@ -296,7 +296,8 @@ def test_generate_ta_score_signal_rejects_whipsaw(monkeypatch):
 
 
 def test_generate_combined_signal_includes_selected_reason(monkeypatch):
-    monkeypatch.setattr(_sig_engine, "_generate_rule_match_signal", lambda *args, **kwargs: {
+    from trading_bot.core.types import Signal
+    monkeypatch.setattr(_sig_engine, "_generate_rule_match_signal", lambda *args, **kwargs: Signal.from_dict({
         "symbol": "BTCUSDT",
         "direction": "SHORT",
         "score": 1.4,
@@ -316,22 +317,23 @@ def test_generate_combined_signal_includes_selected_reason(monkeypatch):
         "signal_engine": "rule_match",
         "statistical_setup": "wide_short_rsi_below_28",
         "statistical_details": {"conditions": ["rsi_below_28"], "template": "wide"},
-    })
+    }))
     monkeypatch.setattr(_sig_engine, "_generate_ta_score_signal", lambda *args, **kwargs: None)
     _sig_filters._last_rejection_reason.clear()
     _sig_filters._last_rejection_reason["BTCUSDT"] = "No matching rule"
 
     result = _sig_engine._generate_combined_signal("BTCUSDT", [[1, 1, 1, 1, 1]] * 60)
 
-    assert result["hybrid_details"]["selected"] == {
+    assert result.hybrid_details["selected"] == {
         "source": "statistical",
         "reason": "rule matched",
     }
 
 
 def test_generate_combined_signal_sets_technical_fallback_reason(monkeypatch):
+    from trading_bot.core.types import Signal
     monkeypatch.setattr(_sig_engine, "_generate_rule_match_signal", lambda *args, **kwargs: None)
-    monkeypatch.setattr(_sig_engine, "_generate_ta_score_signal", lambda *args, **kwargs: {
+    monkeypatch.setattr(_sig_engine, "_generate_ta_score_signal", lambda *args, **kwargs: Signal.from_dict({
         "symbol": "BTCUSDT",
         "direction": "LONG",
         "score": 7.2,
@@ -349,11 +351,11 @@ def test_generate_combined_signal_sets_technical_fallback_reason(monkeypatch):
         "strategy": "trend_pullback",
         "details": {"regime": "trending", "rsi": {"1h": 45}},
         "signal_engine": "ta_score",
-    })
+    }))
     _sig_filters._last_rejection_reason.clear()
 
     result = _sig_engine._generate_combined_signal("BTCUSDT", [[1, 1, 1, 1, 1]] * 60)
 
-    assert result["hybrid_details"]["selected"]["source"] == "technical"
-    assert result["hybrid_details"]["selected"]["reason"] == "technical fallback (no matching rule)"
+    assert result.hybrid_details["selected"]["source"] == "technical"
+    assert result.hybrid_details["selected"]["reason"] == "technical fallback (no matching rule)"
 

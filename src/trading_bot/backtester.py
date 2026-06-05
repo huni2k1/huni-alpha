@@ -404,9 +404,9 @@ def _close_position(pos: dict, exit_price: float, exit_reason: ExitReason, exit_
     trade = {
         "symbol": symbol,
         "direction": direction,
-        "setup_name": pos["signal"].get("statistical_setup"),
-        "strategy": pos["signal"].get("strategy", pos["signal"]["details"].get("strategy", "")),
-        "regime": pos["signal"].get("regime", pos["signal"]["details"].get("regime", "")),
+        "setup_name": pos["signal"].statistical_setup,
+        "strategy": pos["signal"].strategy or (pos["signal"].details or {}).get("strategy", ""),
+        "regime": pos["signal"].regime or (pos["signal"].details or {}).get("regime", ""),
         "tier": pos["tier"],
         "score": round(pos["score"], 2),
         "entry_price": round(entry_price, 6),
@@ -430,14 +430,14 @@ def _close_position(pos: dict, exit_price: float, exit_reason: ExitReason, exit_
         "max_favorable_pct": round(pos["max_favorable"], 2),
         "max_adverse_pct": round(pos["max_adverse"], 2),
         "details": {
-            "rsi": pos["signal"]["details"].get("rsi", {}).get("1h"),
-            "adx": pos["signal"]["details"].get("adx"),
-            "ema_bull": pos["signal"]["details"].get("ema_bull"),
-            "ema_bear": pos["signal"]["details"].get("ema_bear"),
-            "above_ema200": pos["signal"]["details"].get("above_e200"),
-            "vol_ratio": pos["signal"]["details"].get("vol_ratio"),
-            "regime": pos["signal"].get("regime", pos["signal"]["details"].get("regime", "")),
-            "strategy": pos["signal"].get("strategy", pos["signal"]["details"].get("strategy", "")),
+            "rsi": (pos["signal"].details or {}).get("rsi", {}).get("1h") if isinstance((pos["signal"].details or {}).get("rsi"), dict) else (pos["signal"].details or {}).get("rsi"),
+            "adx": (pos["signal"].details or {}).get("adx"),
+            "ema_bull": (pos["signal"].details or {}).get("ema_bull"),
+            "ema_bear": (pos["signal"].details or {}).get("ema_bear"),
+            "above_ema200": (pos["signal"].details or {}).get("above_e200"),
+            "vol_ratio": (pos["signal"].details or {}).get("vol_ratio"),
+            "regime": pos["signal"].regime or (pos["signal"].details or {}).get("regime", ""),
+            "strategy": pos["signal"].strategy or (pos["signal"].details or {}).get("strategy", ""),
         }
     }
 
@@ -1134,14 +1134,14 @@ def run_backtest(
                 continue
 
             signal_count += 1
-            score = signal["score"]
-            direction = signal["direction"]
+            score = signal.score
+            direction = signal.direction
 
             if direction == "NEUTRAL":
                 continue
 
             # Strategy-specific threshold filtering (shared with live trader).
-            strategy = signal.get("strategy", "trend_pullback")
+            strategy = signal.strategy
             resolved_engine = _ENGINE_COMPAT_ALIASES.get(signal_engine, signal_engine)
             min_score = required_threshold(
                 resolved_engine, strategy,
@@ -1156,7 +1156,7 @@ def run_backtest(
             if resolved_engine == "rule_match":
                 tier = "ENTRY"
             elif resolved_engine == "combined":
-                is_rule_leg = signal.get("hybrid_details", {}).get("selected", {}).get("source") == "statistical"
+                is_rule_leg = (signal.hybrid_details or {}).get("selected", {}).get("source") == "statistical"
                 tier = "ENTRY" if is_rule_leg else (
                     "HIGH_CONF" if score >= threshold_high else "ENTRY"
                 )
@@ -1166,12 +1166,12 @@ def run_backtest(
                 tier = "ENTRY"
 
             # Get signal info
-            signal_entry = signal["entry_price"]
-            tp_pct_sig = signal["tp_pct"]
-            sl_pct_sig = signal["sl_pct"]
-            atr_val = signal.get("atr", 0)
-            sl_atr_mult = signal.get("sl_atr_mult", 1.5)
-            rr_ratio_sig = signal.get("rr_ratio", 2.0)
+            signal_entry = signal.entry_price
+            tp_pct_sig = signal.tp_pct
+            sl_pct_sig = signal.sl_pct
+            atr_val = signal.atr
+            sl_atr_mult = signal.sl_atr_mult
+            rr_ratio_sig = signal.rr_ratio
 
             # Entry price: use next candle open (realistic) or signal close (legacy)
             if use_next_open:

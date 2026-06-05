@@ -246,28 +246,16 @@ def test_live_trader_logs_score_below_threshold_summary(monkeypatch):
         "fetch_klines_cached",
         lambda symbol, interval, limit, use_cache=False: [[1.0, 1.0, 1.0, 100.0, 1.0]] * limit,
     )
-    monkeypatch.setattr(
-        trader,
-        "generate_signal",
-        lambda *args, **kwargs: {
-            "symbol": "ETHUSDT",
-            "direction": "LONG",
-            "score": 4.5,
-            "entry_price": 100.0,
-            "tp": 103.0,
-            "sl": 98.0,
-            "tp_pct": 3.0,
-            "sl_pct": 2.0,
-            "atr": 1.0,
-            "rr_ratio": 1.5,
-            "long_score": 4.5,
-            "short_score": 0.0,
-            "technical_score": 4.5,
-            "strategy": "trend_pullback",
-            "signal_engine": "combined",
-            "details": {"rsi": {"1h": 55.0}, "adx": 19.0, "regime": "weak_trend"},
-        },
+    from trading_bot.core.types import Signal
+    _fake_signal = Signal(
+        symbol="ETHUSDT", direction="LONG", score=4.5,
+        entry_price=100.0, tp=103.0, sl=98.0,
+        tp_pct=3.0, sl_pct=2.0, atr=1.0, sl_atr_mult=1.5, rr_ratio=1.5,
+        long_score=4.5, short_score=0.0, technical_score=4.5,
+        strategy="trend_pullback", signal_engine="combined",
+        details={"rsi": {"1h": 55.0}, "adx": 19.0, "regime": "weak_trend"},
     )
+    monkeypatch.setattr(trader, "generate_signal", lambda *args, **kwargs: _fake_signal)
     monkeypatch.setattr(trader.log, "info", lambda msg: info_logs.append(msg))
 
     def _fake_sleep(_seconds):

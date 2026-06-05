@@ -54,22 +54,18 @@ def test_execute_entry_telegram_includes_audit_context(monkeypatch):
     sent = []
     monkeypatch.setattr(trader, "send_telegram", lambda msg: sent.append(msg))
 
+    from trading_bot.core.types import Signal
     state = copy.deepcopy(trader._EMPTY_STATE)
-    signal = {
-        "symbol": "ETHUSDT",
-        "direction": "LONG",
-        "entry_price": 100.0,
-        "tp": 104.0,
-        "sl": 98.0,
-        "tp_pct": 4.0,
-        "sl_pct": 2.0,
-        "score": 7.0,
-        "strategy": "breakout",
-        "signal_engine": "combined",
-        "selected_source": "statistical",
-        "statistical_setup": "wide_short_rsi_below_28",
-        "market_regime": "bear",
-    }
+    signal = Signal(
+        symbol="ETHUSDT", direction="LONG",
+        entry_price=100.0, tp=104.0, sl=98.0,
+        tp_pct=4.0, sl_pct=2.0,
+        score=7.0, atr=1.0, sl_atr_mult=1.5, rr_ratio=2.0,
+        strategy="breakout", signal_engine="combined",
+        selected_source="statistical",
+        statistical_setup="wide_short_rsi_below_28",
+        market_regime="bear",
+    )
     cfg = {
         "risk_pct": 1.5,
         "max_positions": 3,

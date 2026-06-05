@@ -34,17 +34,13 @@ from .scoring import score_technical
 from .snapshot import _build_indicator_snapshot
 
 
-def _emit_signal(payload: dict) -> dict:
-    """Validate and normalize a signal via the typed Signal model.
+def _emit_signal(payload: dict) -> Signal:
+    """Validate a signal via the typed Signal model and return it.
 
-    Round-trips through Signal.from_dict -> to_dict so consumers keep
-    receiving a dict. The Signal construction step catches missing fields
-    and wrong types at the scanner boundary instead of failing downstream.
-
-    To migrate consumers to typed Signal: drop `.to_dict()` here and update
-    callers one at a time to read `signal.x` instead of `signal["x"]`.
+    Construction catches missing fields and wrong types at the scanner
+    boundary, before any consumer touches the value.
     """
-    return Signal.from_dict(payload).to_dict()
+    return Signal.from_dict(payload)
 
 def _generate_rule_match_signal(
     symbol: str,
@@ -55,7 +51,7 @@ def _generate_rule_match_signal(
     precomputed_indicators: dict = None,
     rulebook_path: Optional[str] = None,
     current_regime: Optional[str] = None,
-) -> Optional[dict]:
+) -> Optional[Signal]:
     """Match the current candle snapshot against the rulebook; return signal if a rule fires."""
     snapshot = _build_indicator_snapshot(
         symbol,
@@ -129,7 +125,7 @@ def _generate_ta_score_signal(
     state: dict = None,
     current_time: Optional[datetime] = None,
     precomputed_indicators: dict = None,
-) -> Optional[dict]:
+) -> Optional[Signal]:
     """Score the current candle with TA indicators and return a signal if above threshold."""
     tech = score_technical(symbol, candles_1h, precomputed_indicators=precomputed_indicators)
     if tech["direction"] == "NEUTRAL":
@@ -212,7 +208,7 @@ def _generate_combined_signal(
     precomputed_indicators: dict = None,
     rulebook_path: Optional[str] = None,
     current_regime: Optional[str] = None,
-) -> Optional[dict]:
+) -> Optional[Signal]:
     """Run rule_match and ta_score in parallel; prefer rule_match when it fires.
 
     Priority:
@@ -256,23 +252,22 @@ def _generate_combined_signal(
         selected_reason = "rule matched"
     else:
         selected_reason = f"technical fallback ({rule_reason or 'no matching rule'})"
-    result = dict(selected_signal)
+    result = selected_signal.to_dict()
     result["signal_engine"] = "combined"
-    result["signal_model"] = "combined"  # legacy alias
     result["hybrid_details"] = {
         "statistical": None if not rule_signal else {
-            "direction": rule_signal["direction"],
-            "setup": rule_signal.get("statistical_setup"),
-            "conditions": rule_signal.get("statistical_details", {}).get("conditions"),
-            "template": rule_signal.get("statistical_details", {}).get("template"),
+            "direction": rule_signal.direction,
+            "setup": rule_signal.statistical_setup,
+            "conditions": (rule_signal.statistical_details or {}).get("conditions"),
+            "template": (rule_signal.statistical_details or {}).get("template"),
         },
         "statistical_reject_reason": rule_reason if not rule_signal else None,
         "technical": None if not ta_signal else {
-            "direction": ta_signal["direction"],
-            "score": ta_signal["score"],
-            "long_score": ta_signal.get("long_score", 0.0),
-            "short_score": ta_signal.get("short_score", 0.0),
-            "strategy": ta_signal.get("strategy"),
+            "direction": ta_signal.direction,
+            "score": ta_signal.score,
+            "long_score": ta_signal.long_score,
+            "short_score": ta_signal.short_score,
+            "strategy": ta_signal.strategy,
         },
         "technical_reject_reason": ta_reason if not ta_signal else None,
         "selected": {"source": selected_source, "reason": selected_reason},
@@ -293,7 +288,7 @@ def generate_signal(symbol: str, candles_1h: list,
                     current_regime: Optional[MarketRegime] = None,
                     # Backward-compat param aliases — callers using old names still work
                     signal_model: Optional[SignalEngine] = None,
-                    validated_setups_path: Optional[str] = None) -> Optional[dict]:
+                    validated_setups_path: Optional[str] = None) -> Optional[Signal]:
     """Generate a complete trade signal from candle data.
 
     Args:

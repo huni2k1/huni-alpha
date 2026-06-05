@@ -154,6 +154,13 @@ class Signal:
     statistical_details: Optional[dict] = None
     hybrid_details: Optional[dict] = None
 
+    # Trader-side annotations — added after the signal is generated, used in
+    # audit messages and position records. Use dataclasses.replace() to set
+    # these (Signal is frozen).
+    selected_source: Optional[str] = None     # "statistical" | "technical"
+    setup_name: Optional[str] = None           # e.g. "wide_short_rsi_below_28"
+    market_regime: Optional[str] = None        # BTC regime: "bull" | "bear" | "chop"
+
     @classmethod
     def from_dict(cls, d: dict) -> "Signal":
         """Build from the dict shape that generate_signal currently returns."""
@@ -179,6 +186,9 @@ class Signal:
             statistical_setup=d.get("statistical_setup"),
             statistical_details=d.get("statistical_details"),
             hybrid_details=d.get("hybrid_details"),
+            selected_source=d.get("selected_source"),
+            setup_name=d.get("setup_name"),
+            market_regime=d.get("market_regime"),
         )
 
     def to_dict(self) -> dict:
@@ -210,4 +220,7 @@ class Signal:
             "statistical_setup": self.statistical_setup,
             "statistical_details": self.statistical_details,
             "hybrid_details": self.hybrid_details,
+            "selected_source": self.selected_source,
+            "setup_name": self.setup_name,
+            "market_regime": self.market_regime,
         }
