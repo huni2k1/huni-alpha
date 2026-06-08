@@ -130,5 +130,5 @@ def test_signal_generation_has_required_output_structure():
         required_keys = ["symbol", "direction", "score", "entry_price", "tp", "sl",
                         "strategy", "regime", "atr"]
         for key in required_keys:
-            assert key in signal, f"Signal missing critical field: {key}"
-            assert signal[key] is not None, f"Signal field {key} is None"
+            assert hasattr(signal, key), f"Signal missing critical field: {key}"
+            assert getattr(signal, key) is not None, f"Signal field {key} is None"
