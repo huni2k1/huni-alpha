@@ -2325,6 +2325,117 @@
           "regime": "bear"
         },
         "discovered_in": "2025-06_to_2026-06_remine"
+      },
+      {
+        "name": "standard_short_atr_percentile_high",
+        "template": "standard",
+        "direction": "SHORT",
+        "conditions": [
+          "atr_percentile_high"
+        ],
+        "tp_sl": {
+          "sl_atr_mult": 1.5,
+          "rr_ratio": 2.0
+        },
+        "train_stats": {
+          "conditions": [
+            "atr_percentile_high"
+          ],
+          "direction": "SHORT",
+          "template": "standard",
+          "count": 249,
+          "win_rate": 41.77,
+          "avg_pnl_pct": 0.5131,
+          "pnl_sum_pct": 127.768,
+          "baseline_win_rate": 32.48,
+          "baseline_avg_pnl_pct": -0.3135,
+          "edge_win_rate": 9.29,
+          "edge_avg_pnl_pct": 0.8266,
+          "profit_factor": 1.4248,
+          "p_value": 0.010187,
+          "wilson_low": 35.81,
+          "wilson_high": 47.97
+        },
+        "test_stats": {
+          "conditions": [
+            "atr_percentile_high"
+          ],
+          "direction": "SHORT",
+          "template": "standard",
+          "count": 106,
+          "win_rate": 43.4,
+          "avg_pnl_pct": 0.3378,
+          "pnl_sum_pct": 35.8117,
+          "baseline_win_rate": 37.33,
+          "baseline_avg_pnl_pct": 0.2167,
+          "edge_win_rate": 6.06,
+          "edge_avg_pnl_pct": 0.1212,
+          "profit_factor": 1.3315,
+          "p_value": 0.291963,
+          "wilson_low": 34.36,
+          "wilson_high": 52.9
+        },
+        "by_symbol": {
+          "ADAUSDT": {
+            "trades": 42,
+            "win_rate": 47.62,
+            "avg_pnl_pct": 0.6314,
+            "profit_factor": 1.4789
+          },
+          "AVAXUSDT": {
+            "trades": 47,
+            "win_rate": 40.43,
+            "avg_pnl_pct": 0.3941,
+            "profit_factor": 1.3016
+          },
+          "BNBUSDT": {
+            "trades": 47,
+            "win_rate": 31.91,
+            "avg_pnl_pct": -0.1866,
+            "profit_factor": 0.8338
+          },
+          "BTCUSDT": {
+            "trades": 57,
+            "win_rate": 38.6,
+            "avg_pnl_pct": -0.0026,
+            "profit_factor": 0.9969
+          },
+          "DOGEUSDT": {
+            "trades": 49,
+            "win_rate": 44.9,
+            "avg_pnl_pct": 0.8206,
+            "profit_factor": 1.6861
+          },
+          "DOTUSDT": {
+            "trades": 48,
+            "win_rate": 47.92,
+            "avg_pnl_pct": 0.9417,
+            "profit_factor": 1.7483
+          },
+          "ETHUSDT": {
+            "trades": 53,
+            "win_rate": 50.94,
+            "avg_pnl_pct": 0.929,
+            "profit_factor": 2.0139
+          },
+          "SOLUSDT": {
+            "trades": 48,
+            "win_rate": 33.33,
+            "avg_pnl_pct": -0.004,
+            "profit_factor": 0.9972
+          },
+          "XRPUSDT": {
+            "trades": 43,
+            "win_rate": 48.84,
+            "avg_pnl_pct": 0.5745,
+            "profit_factor": 1.5472
+          }
+        },
+        "scope_key": "regime_bear",
+        "filter": {
+          "regime": "bear"
+        },
+        "discovered_in": "2026-06-25_remine"
       }
     ]
   }
