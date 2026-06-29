@@ -272,9 +272,13 @@ class Snapshot:
     # HTF
     htf_4h_bull_trend: bool
     htf_4h_bear_trend: bool
+    # Cross-symbol / external context
+    btc_pct_4h: float = 0.0
+    taker_buy_ratio: float = 0.5
+    funding_rate: float = 0.0
     # Meta
-    hour_utc: int
-    symbol: str
+    hour_utc: int = 0
+    symbol: str = ""
 
     def to_dict(self) -> dict:
         """For backward compat with code that still accesses indicators as a dict."""

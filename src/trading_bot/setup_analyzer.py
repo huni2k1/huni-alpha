@@ -86,6 +86,12 @@ MAX_CANDIDATE_CONDITIONS = 8
 EVAL_COOLDOWN_CANDLES = 48
 DEFAULT_DISCOVERY_VARIANTS = ("pooled",)
 VALID_DISCOVERY_VARIANTS = ("pooled", "symbol_specific", "regime")
+# Module-level interval; overridable via --interval on the CLI for HTF mining
+INTERVAL = "1h"
+# Cross-symbol context for new condition families. Populated by analyze_symbol_universe
+# before per-symbol row building.
+BTC_PCT_4H_BY_CLOSE_MS: dict[int, float] = {}
+FUNDING_RATE_BY_TIME_MS: dict[str, dict[int, float]] = {}
 REGIME_BTC_SYMBOL = "BTCUSDT"
 DOMINANCE_THRESHOLDS = {
     "train_avg_pnl_pct": 0.15,
@@ -113,6 +119,10 @@ CONDITION_FAMILIES: list[frozenset] = [
     frozenset({"macd_line_below_signal", "macd_hist_negative"}),
     frozenset({"rsi_bullish_divergence", "macd_bullish_divergence"}),
     frozenset({"rsi_bearish_divergence", "macd_bearish_divergence"}),
+    frozenset({"taker_buy_ratio_above_0_55", "taker_buy_ratio_above_0_60"}),
+    frozenset({"taker_buy_ratio_below_0_45", "taker_buy_ratio_below_0_40"}),
+    frozenset({"funding_above_0_01", "funding_above_0_05"}),
+    frozenset({"funding_below_neg_0_01", "funding_below_neg_0_05"}),
 ]
 
 SETUP_TEMPLATES = {
@@ -511,7 +521,84 @@ def compute_indicator_snapshot(symbol: str, candles: list[dict], idx: int, conte
         "macd_bearish_divergence": macd_bearish_divergence,
         "htf_4h_bull_trend": htf_4h_bull_trend,
         "htf_4h_bear_trend": htf_4h_bear_trend,
+        # Taker buy aggressiveness: ratio of taker-buys to total quote volume on this candle
+        "taker_buy_ratio": (
+            float(candle.get("taker_buy_quote_asset_volume", 0.0))
+            / max(float(candle.get("quote_asset_volume", 0.0)), 1e-9)
+            if candle.get("quote_asset_volume", 0.0) > 0 else 0.5
+        ),
+        # BTC contagion: BTC's last-4-candle pct change at this same close_time
+        "btc_pct_4h": float(BTC_PCT_4H_BY_CLOSE_MS.get(int(candle["close_time"]), 0.0)),
+        # Funding rate at this candle's close_time (Binance Futures, hourly forward-fill)
+        "funding_rate": float(FUNDING_RATE_BY_TIME_MS.get(symbol, {}).get(int(candle["close_time"]), 0.0)),
     }
+
+
+def _populate_btc_and_funding_context(symbols: list[str], start_ms: int, end_ms: int) -> None:
+    """Populate module globals BTC_PCT_4H_BY_CLOSE_MS and FUNDING_RATE_BY_TIME_MS."""
+    BTC_PCT_4H_BY_CLOSE_MS.clear()
+    FUNDING_RATE_BY_TIME_MS.clear()
+
+    # BTC contagion: 4-hour rolling pct change keyed by candle close_time
+    try:
+        btc_candles = fetch_klines_historical_cached("BTCUSDT", INTERVAL, start_ms, end_ms, use_cache=True)
+        if btc_candles and len(btc_candles) > 5:
+            for i in range(4, len(btc_candles)):
+                close_now = float(btc_candles[i]["close"])
+                close_4 = float(btc_candles[i - 4]["close"])
+                if close_4 > 0:
+                    BTC_PCT_4H_BY_CLOSE_MS[int(btc_candles[i]["close_time"])] = (close_now - close_4) / close_4 * 100.0
+            log.info(f"BTC contagion context populated for {len(BTC_PCT_4H_BY_CLOSE_MS)} candles")
+    except Exception as exc:
+        log.warning(f"BTC contagion context unavailable: {exc}")
+
+    # Funding rates: forward-fill 8-hour funding events onto each candle's close_time
+    for symbol in symbols:
+        try:
+            FUNDING_RATE_BY_TIME_MS[symbol] = _fetch_funding_series(symbol, start_ms, end_ms)
+        except Exception as exc:
+            log.warning(f"  {symbol}: funding rate unavailable: {exc}")
+            FUNDING_RATE_BY_TIME_MS[symbol] = {}
+    populated = sum(1 for v in FUNDING_RATE_BY_TIME_MS.values() if v)
+    log.info(f"Funding rate context populated for {populated}/{len(symbols)} symbols")
+
+
+def _fetch_funding_series(symbol: str, start_ms: int, end_ms: int) -> dict[int, float]:
+    """Fetch all Binance Futures funding events between start_ms and end_ms, forward-filled by hour."""
+    import urllib.request, urllib.parse, json as _json
+    out: dict[int, float] = {}
+    cursor = start_ms
+    events: list[tuple[int, float]] = []  # (fundingTime_ms, fundingRate)
+    while cursor < end_ms:
+        params = {"symbol": symbol, "startTime": cursor, "endTime": end_ms, "limit": 1000}
+        url = "https://fapi.binance.com/fapi/v1/fundingRate?" + urllib.parse.urlencode(params)
+        try:
+            with urllib.request.urlopen(url, timeout=15) as resp:
+                data = _json.loads(resp.read())
+        except Exception:
+            break
+        if not data:
+            break
+        for row in data:
+            events.append((int(row["fundingTime"]), float(row["fundingRate"])))
+        cursor = int(data[-1]["fundingTime"]) + 1
+        if len(data) < 1000:
+            break
+    # Forward-fill: every hour in [start_ms, end_ms] takes the most recent funding event's rate
+    if not events:
+        return {}
+    events.sort()
+    cur_idx = 0
+    cur_rate = events[0][1]
+    t = start_ms
+    while t < end_ms:
+        while cur_idx + 1 < len(events) and events[cur_idx + 1][0] <= t:
+            cur_idx += 1
+            cur_rate = events[cur_idx][1]
+        # Key by approximate candle close_time (open + 3600_000 - 1) — match snapshot's lookup
+        out[t + 3_600_000 - 1] = cur_rate
+        t += 3_600_000
+    return out
 
 
 def load_symbol_universe_rows(
@@ -534,7 +621,7 @@ def load_symbol_universe_rows(
     if worker_count == 1 or len(symbols) == 1:
         for symbol in symbols:
             log.info(f"Loading {symbol} candles for statistical analysis...")
-            candles = fetch_klines_historical_cached(symbol, "1h", start_ms, end_ms, use_cache=True)
+            candles = fetch_klines_historical_cached(symbol, INTERVAL, start_ms, end_ms, use_cache=True)
             if not candles or len(candles) < warmup_candles + 100:
                 log.warning(f"  {symbol}: insufficient candles ({len(candles) if candles else 0}), skipping")
                 rows_by_symbol[symbol] = []
@@ -578,7 +665,7 @@ def load_symbol_universe_rows(
             all_rows.extend(rows)
 
     for symbol in symbols:
-        candles = fetch_klines_historical_cached(symbol, "1h", start_ms, end_ms, use_cache=True) or []
+        candles = fetch_klines_historical_cached(symbol, INTERVAL, start_ms, end_ms, use_cache=True) or []
         candles_by_symbol[symbol] = candles
         rows_by_symbol.setdefault(symbol, [])
     return all_rows, rows_by_symbol, candles_by_symbol
@@ -742,7 +829,7 @@ def load_and_build_symbol_rows(
     slippage_pct: float,
 ) -> tuple[str, list[dict]]:
     """Load historical candles for one symbol and build analyzer rows."""
-    candles = fetch_klines_historical_cached(symbol, "1h", start_ms, end_ms, use_cache=True)
+    candles = fetch_klines_historical_cached(symbol, INTERVAL, start_ms, end_ms, use_cache=True)
     if not candles or len(candles) < warmup_candles + 100:
         log.warning(f"  {symbol}: insufficient candles ({len(candles) if candles else 0}), skipping")
         return symbol, []
@@ -1526,6 +1613,10 @@ def analyze_symbol_universe(
     analysis_start_ms = int(analysis_start_dt.timestamp() * 1000)
 
     worker_count = max(1, workers)
+
+    # Pre-populate cross-symbol context for the new condition families.
+    _populate_btc_and_funding_context(symbols, start_ms, end_ms)
+
     all_rows, _, candles_by_symbol = load_symbol_universe_rows(
         symbols=symbols,
         start_ms=start_ms,
@@ -1649,6 +1740,7 @@ def main() -> int:
     )
     parser.add_argument("--end-date", type=str, default=None, help="Optional UTC end date (YYYY-MM-DD) for reproducible cached analysis")
     parser.add_argument("--workers", type=int, default=min(4, os.cpu_count() or 1), help="Parallel workers for per-symbol row building")
+    parser.add_argument("--interval", type=str, default="1h", choices=["1h", "4h", "1d"], help="Candle interval")
     parser.add_argument("--output", type=str, default=DEFAULT_REPORT_OUTPUT, help="Full analysis report JSON path")
     parser.add_argument(
         "--validated-output",
@@ -1661,6 +1753,9 @@ def main() -> int:
     end_dt = None
     if args.end_date:
         end_dt = datetime.strptime(args.end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+
+    global INTERVAL
+    INTERVAL = args.interval
 
     report = analyze_symbol_universe(
         symbols=args.symbols,

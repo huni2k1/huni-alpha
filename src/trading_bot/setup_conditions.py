@@ -80,6 +80,20 @@ def build_conditions() -> dict[str, Callable[[dict], bool]]:
         "london_session": lambda ind: 8 <= ind["hour_utc"] <= 16,
         "us_session": lambda ind: 13 <= ind["hour_utc"] <= 21,
         "not_asia": lambda ind: not (0 <= ind["hour_utc"] < 8),
+        # Taker buy aggressiveness (intra-candle buying vs selling pressure)
+        "taker_buy_ratio_above_0_55": lambda ind: ind.get("taker_buy_ratio", 0.5) > 0.55,
+        "taker_buy_ratio_above_0_60": lambda ind: ind.get("taker_buy_ratio", 0.5) > 0.60,
+        "taker_buy_ratio_below_0_45": lambda ind: ind.get("taker_buy_ratio", 0.5) < 0.45,
+        "taker_buy_ratio_below_0_40": lambda ind: ind.get("taker_buy_ratio", 0.5) < 0.40,
+        # BTC contagion (cross-symbol macro pressure)
+        "btc_dump_4h": lambda ind: ind.get("btc_pct_4h", 0.0) < -2.0,
+        "btc_pump_4h": lambda ind: ind.get("btc_pct_4h", 0.0) > 2.0,
+        "btc_flat_4h": lambda ind: abs(ind.get("btc_pct_4h", 0.0)) < 0.5,
+        # Funding rate extremes (crowded-position contrarian signal)
+        "funding_above_0_01": lambda ind: ind.get("funding_rate", 0.0) > 0.0001,
+        "funding_above_0_05": lambda ind: ind.get("funding_rate", 0.0) > 0.0005,
+        "funding_below_neg_0_01": lambda ind: ind.get("funding_rate", 0.0) < -0.0001,
+        "funding_below_neg_0_05": lambda ind: ind.get("funding_rate", 0.0) < -0.0005,
     }
 
 

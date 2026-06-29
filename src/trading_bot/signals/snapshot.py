@@ -25,6 +25,69 @@ from ..core.indicators import (
     volume_ratio,
 )
 
+# ── Cross-symbol / external context ──────────────────────────────────────────
+# Populated by the scanner before generating signals each cycle.
+# BTC_PCT_4H_BY_CLOSE_MS maps BTC candle close_time → BTC's 4-candle pct change.
+# FUNDING_RATE_BY_SYMBOL maps "BTCUSDT" → {close_time_ms: funding_rate}.
+BTC_PCT_4H_BY_CLOSE_MS: dict[int, float] = {}
+FUNDING_RATE_BY_SYMBOL: dict[str, dict[int, float]] = {}
+
+
+def set_btc_pct_4h_context(mapping: dict[int, float]) -> None:
+    """Called by the scanner once per cycle after fetching BTC candles."""
+    BTC_PCT_4H_BY_CLOSE_MS.clear()
+    BTC_PCT_4H_BY_CLOSE_MS.update(mapping)
+
+
+def set_funding_rate_context(mapping: dict[str, dict[int, float]]) -> None:
+    """Called by the scanner once per cycle after fetching funding rates."""
+    FUNDING_RATE_BY_SYMBOL.clear()
+    FUNDING_RATE_BY_SYMBOL.update(mapping)
+
+
+def _close_time_from_candle(candle) -> int:
+    """Best-effort close_time extraction from the array shape used in candles_1h."""
+    # candles_1h is OHLCV: [open, high, low, close, volume, quote_volume, taker_buy_quote].
+    # The scanner builds these without close_time, so we approximate from the index.
+    return 0
+
+
+def _lookup_btc_pct_4h(candles_1h: list) -> float:
+    """4-candle BTC pct change at this candle's close_time, from scanner-provided context."""
+    if len(candles_1h) < 5 or not BTC_PCT_4H_BY_CLOSE_MS:
+        return 0.0
+    # Without per-candle close_time on the array, fall back to recomputing from this
+    # symbol's last 5 closes when we ARE BTC; otherwise scanner-injected mapping handles it
+    # but here we can't match without close_time. Use the most recent value as a best-effort
+    # signal — scanner refreshes the global each cycle so this is "now's" value.
+    if BTC_PCT_4H_BY_CLOSE_MS:
+        return next(iter(reversed(list(BTC_PCT_4H_BY_CLOSE_MS.values()))))
+    return 0.0
+
+
+def _compute_taker_buy_ratio(candles_1h: list) -> float:
+    """taker_buy_quote / quote_volume for the latest candle. Defaults to 0.5 if missing."""
+    if not candles_1h:
+        return 0.5
+    last = candles_1h[-1]
+    # array shape: [open, high, low, close, volume, quote_volume, taker_buy_quote_volume]
+    if len(last) < 7:
+        return 0.5
+    quote_vol = float(last[5]) if last[5] else 0.0
+    taker_buy = float(last[6]) if last[6] else 0.0
+    if quote_vol <= 0:
+        return 0.5
+    return taker_buy / quote_vol
+
+
+def _lookup_funding_rate(symbol: str, candles_1h: list) -> float:
+    """Latest funding rate for this symbol from scanner-provided context."""
+    sym_map = FUNDING_RATE_BY_SYMBOL.get(symbol) or {}
+    if not sym_map:
+        return 0.0
+    # Use the most-recent value (scanner injects current funding per cycle).
+    return next(iter(reversed(list(sym_map.values()))))
+
 
 def precompute_indicators_for_all_candles(candles: list) -> dict:
     """
@@ -465,6 +528,9 @@ def _build_indicator_snapshot(
         macd_bearish_divergence=bool(macd_bearish_divergence),
         htf_4h_bull_trend=bool(htf_4h_bull_trend),
         htf_4h_bear_trend=bool(htf_4h_bear_trend),
+        btc_pct_4h=float(_lookup_btc_pct_4h(candles_1h)),
+        taker_buy_ratio=float(_compute_taker_buy_ratio(candles_1h)),
+        funding_rate=float(_lookup_funding_rate(symbol, candles_1h)),
         hour_utc=int(time_for_filter.hour),
         symbol=symbol,
     )

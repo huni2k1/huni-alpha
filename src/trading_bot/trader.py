@@ -1094,6 +1094,13 @@ def main():
                     btc_candle_dicts = [{"close": float(c[3])} for c in btc_candles]
                     current_regime = classify_current_regime(btc_candle_dicts)
                     log.info(f"BTC regime: {current_regime}")
+                    # Publish BTC 4-candle pct change so setups using btc_pump_4h / btc_dump_4h can fire.
+                    if len(btc_candles) >= 5:
+                        from .signals import snapshot as _snap
+                        close_now = float(btc_candles[-1][3]); close_4 = float(btc_candles[-5][3])
+                        pct_4h = (close_now - close_4) / close_4 * 100.0 if close_4 > 0 else 0.0
+                        _snap.set_btc_pct_4h_context({0: pct_4h})
+                        log.info(f"BTC 4-candle pct change: {pct_4h:+.2f}%")
             except Exception as exc:
                 log.warning(f"Regime classification failed: {exc} — statistical setups will match any regime")
 

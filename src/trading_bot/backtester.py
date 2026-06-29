@@ -163,7 +163,7 @@ def fetch_klines_historical(symbol: str, interval: str, start_ms: int, end_ms: i
     return all_candles
 
 
-def validate_candle_completeness(symbol: str, candles: list, expected_hours: int) -> tuple:
+def validate_candle_completeness(symbol: str, candles: list, expected_hours: int, candles_per_day: int = 24) -> tuple:
     """
     Validate that fetched candles are complete and contiguous.
 
@@ -179,20 +179,23 @@ def validate_candle_completeness(symbol: str, candles: list, expected_hours: int
     if got < min_expected:
         return False, f"{symbol}: Incomplete data — got {got} candles, expected ~{expected_hours} (min {min_expected})"
 
-    # Check for gaps: each candle's open_time should be ~1h after the previous
+    # Check for gaps: each candle's open_time should be ~one interval after the previous
+    expected_interval_hours = 24 / candles_per_day
+    gap_threshold = expected_interval_hours * 1.5
+    fatal_gap_threshold = expected_interval_hours * 24
     gap_count = 0
     max_gap_hours = 0
     for i in range(1, len(candles)):
         diff_ms = candles[i]["open_time"] - candles[i-1]["open_time"]
         diff_hours = diff_ms / 3_600_000
-        if diff_hours > 1.5:  # More than 1.5x expected interval = gap
+        if diff_hours > gap_threshold:
             gap_count += 1
             max_gap_hours = max(max_gap_hours, diff_hours)
 
     if gap_count > 0:
         msg = f"{symbol}: {gap_count} gap(s) detected in candle data (max gap: {max_gap_hours:.1f}h)"
-        if max_gap_hours > 24:
-            return False, msg + " — gap > 24h, data unreliable"
+        if max_gap_hours > fatal_gap_threshold:
+            return False, msg + f" — gap > {fatal_gap_threshold:.0f}h, data unreliable"
         else:
             log.warning(f"  {msg}")
 
@@ -703,6 +706,7 @@ def run_backtest(
     start_date: Optional[datetime] = None,  # Custom start date (overrides months parameter)
     end_date: Optional[datetime] = None,    # Custom end date (overrides months parameter)
     allowed_weekdays: Optional[set] = None,  # 0=Mon..6=Sun; None=all days allowed
+    interval: str = "1h",
 ) -> dict:
     """
     Walk-forward backtest using the scanner's generate_signal() contract.
@@ -743,30 +747,32 @@ def run_backtest(
     period_label = _format_period_label(months, start_date, end_date)
     log.info(f"STEP 1: Fetching candles for {len(symbols)} symbols ({period_label} + warmup)...")
     all_candles = {}
-    warmup_hours = warmup_days * 24
-    window_size = 1000
+    candles_per_day = 24 if interval == "1h" else (6 if interval == "4h" else 1)
+    warmup_hours = warmup_days * candles_per_day
+    window_size = 1000 if interval == "1h" else (250 if interval == "4h" else 250)
     trade_start_idx = max(window_size, warmup_hours)
 
     # Calculate expected candles based on actual date range (warmup + test window)
     total_days = (end_dt - start_dt).days
-    expected_hours = total_days * 24
+    expected_hours = total_days * candles_per_day
     skipped_symbols = []
 
     for symbol in symbols:
         sym_fetch_start = time.time()
         # Use cached version for faster repeated backtests
-        candles = fetch_klines_historical_cached(symbol, "1h", start_ms, end_ms, use_cache=True)
+        candles = fetch_klines_historical_cached(symbol, interval, start_ms, end_ms, use_cache=True)
         fetch_time = time.time() - sym_fetch_start
         log.info(f"  {symbol}: Fetched {len(candles)} candles in {fetch_time:.2f}s")
 
-        if len(candles) < 1010:
-            log.warning(f"    {symbol}: Not enough data ({len(candles)} < 1010), skipping")
+        min_candles = 300 if interval == "1d" else (600 if interval == "4h" else 1010)
+        if len(candles) < min_candles:
+            log.warning(f"    {symbol}: Not enough data ({len(candles)} < {min_candles}), skipping")
             skipped_symbols.append((symbol, f"only {len(candles)} candles"))
             continue
 
         # Validate completeness and contiguity
         sym_validate_start = time.time()
-        is_valid, msg = validate_candle_completeness(symbol, candles, expected_hours)
+        is_valid, msg = validate_candle_completeness(symbol, candles, expected_hours, candles_per_day)
         validate_time = time.time() - sym_validate_start
         if not is_valid:
             log.error(f"    {symbol}: DATA REJECTED: {msg}")
@@ -1123,9 +1129,11 @@ def run_backtest(
                     current_regime=current_regime,
                 )
             except Exception as exc:
+                import traceback
+                traceback.print_exc()
                 raise RuntimeError(
                     f"generate_signal failed for {symbol} at {candle_time.isoformat()} "
-                    f"using signal_engine={signal_engine}"
+                    f"using signal_engine={signal_engine}: {type(exc).__name__}: {exc}"
                 ) from exc
 
             if signal is None:
@@ -1590,7 +1598,7 @@ def print_summary(results: dict):
 
     print("\n" + "═" * 62)
     print(f"  BACKTEST RESULTS — Multi-Regime Scanner (ATR TP/SL)")
-    print(f"  {period_label} | {', '.join(sym.replace('USDT','') for sym in c['symbols'])}")
+    print(f"  {period_label} | {', '.join(sym.replace('USDT','') for sym in c.get('symbols', []))}")
     print(f"  TP/SL: ATR-based, strategy-dependent R:R")
     print(f"  Risk: {c['risk_pct']}%/trade | Trend: {c.get('trend_threshold', c['threshold_entry'])}+ | Breakout: {c.get('breakout_threshold', c['threshold_entry'])}+")
     print(f"  Fees: {c['fee_pct']}% RT | Slippage: {c.get('slippage_pct', 0)}% | Trailing: {'ON' if c['trailing_stop'] else 'OFF'}")
@@ -1755,6 +1763,7 @@ if __name__ == "__main__":
     parser.add_argument("--end-date", type=str, default=None, help="End date in YYYY-MM-DD format (optional, overrides --months)")
     parser.add_argument("--symbols", nargs="+", default=None, help="Symbols to test")
     parser.add_argument("--account", type=float, default=1000.0, help="Starting account USD")
+    parser.add_argument("--interval", type=str, default="1h", choices=["1h", "4h", "1d"], help="Candle interval")
     parser.add_argument("--risk-pct", type=float, default=SCANNER_RISK_PCT, help="Risk per trade (from scanner)")
     parser.add_argument("--fee-pct", type=float, default=0.06, help="Round-trip fee (default: 0.06 for Binance futures)")
     parser.add_argument("--trailing-stop", action="store_true", help="Enable trailing stop (default: disabled)")
@@ -1849,6 +1858,7 @@ if __name__ == "__main__":
         start_date=start_date,
         end_date=end_date,
         allowed_weekdays=allowed_weekdays,
+        interval=args.interval,
     )
 
     print_summary(results)
