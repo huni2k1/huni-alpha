@@ -4,7 +4,7 @@
   "DRY_RUN": false,
   "SIGNAL_MODEL": "combined_validated_rulebook",
   "RISK_PER_TRADE_PCT": 1.5,
-  "MAX_POSITIONS": 5,
+  "MAX_POSITIONS": 8,
   "SCAN_INTERVAL_SEC": 300,
   "COOLDOWN_HOURS": 24,
   "TIMEOUT_HOURS": 180,
