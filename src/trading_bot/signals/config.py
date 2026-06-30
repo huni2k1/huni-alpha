@@ -14,7 +14,7 @@ MAX_OPEN_POSITIONS = 8
 # trader, backtester, and analyzer. Each system reads from here so the gate
 # stays consistent across all three. Anchoring (entry vs exit) is up to the
 # caller — live anchors at exit, backtester/analyzer at signal close.
-SIGNAL_COOLDOWN_CANDLES = 24
+SIGNAL_COOLDOWN_CANDLES = 48
 RISK_PER_TRADE_PCT = 1.5
 
 # Time per candle for each Binance interval. Used to convert a candle-count
