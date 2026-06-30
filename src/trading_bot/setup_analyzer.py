@@ -83,7 +83,8 @@ DEFAULT_FEE_PCT = 0.10
 DEFAULT_SLIPPAGE_PCT = 0.05
 MAX_COMBO_TESTS_DEFAULT = 50
 MAX_CANDIDATE_CONDITIONS = 8
-EVAL_COOLDOWN_CANDLES = 48
+from .signals.config import SIGNAL_COOLDOWN_CANDLES as _SHARED_COOLDOWN_CANDLES, INTERVAL_MS as _INTERVAL_MS
+EVAL_COOLDOWN_CANDLES = _SHARED_COOLDOWN_CANDLES
 DEFAULT_DISCOVERY_VARIANTS = ("pooled",)
 VALID_DISCOVERY_VARIANTS = ("pooled", "symbol_specific", "regime")
 # Module-level interval; overridable via --interval on the CLI for HTF mining
@@ -915,7 +916,9 @@ def _select_non_overlapping(
     selected = []
     next_allowed_anchor_by_symbol = {}
     use_time = bool(rows and rows[0].get("close_time") is not None)
-    cooldown_step = cooldown * 3_600_000 if use_time else cooldown
+    # Interval-aware: convert "N candles" to milliseconds for the active interval
+    # so HTF mining (4h/1d) spaces trades correctly. Falls back to 1h if unknown.
+    cooldown_step = cooldown * _INTERVAL_MS.get(INTERVAL, _INTERVAL_MS["1h"]) if use_time else cooldown
 
     for row in rows:
         symbol = str(row.get("symbol", ""))

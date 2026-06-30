@@ -51,6 +51,7 @@ from . import logging_setup
 from .binance_client import BinanceClient
 from .binance_http import fetch_klines_cached, send_telegram
 from .regime import classify_current_regime
+from .signals import config as _shared
 from .signals import (
     generate_signal,
     SYMBOLS,
@@ -111,10 +112,12 @@ def _load_config() -> dict:
     return {
         "dry_run":           _bool(_get("DRY_RUN", True)),
         "signal_engine":     _ENGINE_COMPAT_ALIASES.get(_get("SIGNAL_MODEL", "ta_score").strip().lower(), _get("SIGNAL_MODEL", "ta_score").strip().lower()),
-        "risk_pct":          float(_get("RISK_PER_TRADE_PCT", 1.5)),
-        "max_positions":     int(_get("MAX_POSITIONS", 3)),
+        "risk_pct":          float(_get("RISK_PER_TRADE_PCT", _shared.RISK_PER_TRADE_PCT)),
+        "max_positions":     int(_get("MAX_POSITIONS", _shared.MAX_OPEN_POSITIONS)),
         "scan_interval":     int(_get("SCAN_INTERVAL_SEC", 300)),
-        "cooldown_hours":    int(_get("COOLDOWN_HOURS", 24)),
+        # Live trader fetches 1h candles, so SIGNAL_COOLDOWN_CANDLES translates
+        # 1:1 to hours. trader.json's COOLDOWN_HOURS still overrides if set.
+        "cooldown_hours":    int(_get("COOLDOWN_HOURS", _shared.SIGNAL_COOLDOWN_CANDLES)),
         "timeout_hours":     int(_get("TIMEOUT_HOURS", 180)),
         "max_drawdown_pct":  float(_get("MAX_DRAWDOWN_PCT", 25.0)),
         "circuit_break_hours": int(_get("CIRCUIT_BREAK_HOURS", 168)),

@@ -10,8 +10,25 @@ SIGNAL_THRESHOLD_TREND = 7.0
 SIGNAL_THRESHOLD_BREAKOUT = 6.0
 
 MAX_OPEN_POSITIONS = 8
-SIGNAL_COOLDOWN_CANDLES = 48  # 1h candles between signals per symbol
+# Minimum candles between two signals on the same symbol. Used by the live
+# trader, backtester, and analyzer. Each system reads from here so the gate
+# stays consistent across all three. Anchoring (entry vs exit) is up to the
+# caller — live anchors at exit, backtester/analyzer at signal close.
+SIGNAL_COOLDOWN_CANDLES = 24
 RISK_PER_TRADE_PCT = 1.5
+
+# Time per candle for each Binance interval. Used to convert a candle-count
+# cooldown into milliseconds when comparing wall-clock timestamps.
+INTERVAL_MS: dict[str, int] = {
+    "1h": 3_600_000,
+    "4h": 14_400_000,
+    "1d": 86_400_000,
+}
+
+
+def cooldown_ms(interval: str, candles: int = SIGNAL_COOLDOWN_CANDLES) -> int:
+    """Cooldown duration in milliseconds for a given candle interval."""
+    return candles * INTERVAL_MS.get(interval, INTERVAL_MS["1h"])
 
 # Canonical engine names accepted by generate_signal().
 VALID_SIGNAL_ENGINES = {"ta_score", "rule_match", "combined"}
