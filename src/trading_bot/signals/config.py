@@ -9,7 +9,7 @@ import os
 SIGNAL_THRESHOLD_TREND = 7.0
 SIGNAL_THRESHOLD_BREAKOUT = 6.0
 
-MAX_OPEN_POSITIONS = 8
+MAX_OPEN_POSITIONS = 5
 # Minimum candles between two signals on the same symbol. Used by the live
 # trader, backtester, and analyzer. Each system reads from here so the gate
 # stays consistent across all three. Anchoring (entry vs exit) is up to the
