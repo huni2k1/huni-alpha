@@ -478,10 +478,11 @@ class TestRegimeDetection:
         regime = scanner.detect_regime(30.0, False, 1.0, self._closes())
         assert regime == "trending"
 
-    def test_breakout_with_squeeze_and_volume(self):
-        """BB squeeze + volume spike → breakout."""
+    def test_squeeze_and_volume_no_longer_breakout(self):
+        """BB squeeze + volume spike no longer → breakout (regime removed);
+        ADX<20 falls through to weak_trend."""
         regime = scanner.detect_regime(15.0, True, 2.0, self._closes())
-        assert regime == "breakout"
+        assert regime == "weak_trend"
 
     def test_weak_trend_20_to_25(self):
         """ADX 20-25, no squeeze → weak_trend."""

@@ -155,7 +155,6 @@ def test_print_summary_prefers_period_label_for_exact_date_runs(capsys):
             "trailing_stop": False,
             "threshold_entry": 7.0,
             "trend_threshold": 7.0,
-            "breakout_threshold": 6.0,
             "max_positions": 3,
             "cooldown_candles": 48,
             "use_next_open": True,

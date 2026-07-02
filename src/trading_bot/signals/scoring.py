@@ -1,8 +1,8 @@
 """TA scoring engine: regime detection, strategy scoring, TP/SL suggestion.
 
-Three strategies live here today (selected based on detected regime):
+Strategies live here today (selected based on detected regime):
   - trend_pullback  (ADX > 25 or weak_trend)
-  - breakout         (Bollinger squeeze + volume surge)
+  - [breakout was removed — dragged returns/Sharpe in backtests]
   - [mean reversion was removed — was losing in backtests]
 
 score_technical() is the public entry; it dispatches based on detect_regime().
@@ -14,12 +14,10 @@ from typing import Optional
 
 from ..core.indicators import (
     adx,
-    bollinger,
     bollinger_bandwidth,
     ema,
     ema_alignment,
     macd,
-    market_structure,
     rsi,
     volume_ratio,
 )
@@ -32,16 +30,16 @@ def detect_regime(adx_val: float, bb_squeeze: bool, vol_r: float,
     """
     Classify current market regime:
     - 'trending':  ADX > 25, clear directional movement
-    - 'breakout':  Bollinger squeeze releasing with volume spike
-    - 'weak_trend': ADX 20-25, transitional (scored with softened trend logic)
+    - 'weak_trend': ADX < 25, transitional (scored with softened trend logic)
 
     NOTE: Mean reversion disabled (was causing losses in 2024-2025).
     All ADX < 20 regimes now use weak_trend (trend pullback logic).
-    """
-    # Breakout: squeeze + volume explosion
-    if bb_squeeze and vol_r > 1.5:
-        return "breakout"
 
+    NOTE: Breakout regime removed — the custom score_breakout() strategy dragged
+    returns and Sharpe in 12mo backtests. Squeeze+volume candles now fall through
+    to ADX-based trend classification. bb_squeeze/vol_r are retained in the
+    signature for call-site compatibility and debug logging.
+    """
     # Strong trend
     if adx_val >= 25:
         return "trending"
@@ -145,81 +143,11 @@ def score_trend_pullback(closes: list, volumes: list, rsi_val: float,
 
 
 # ─────────────────────────────────────────────────────────────────
-# STRATEGY 3: BREAKOUT (new — for squeeze/compression release)
-# Best when: Bollinger squeeze + volume explosion
+# STRATEGY 3: BREAKOUT — REMOVED
+# The custom breakout scorer (Bollinger squeeze + volume release) dragged
+# returns and Sharpe in 12mo backtests. Removed along with the "breakout"
+# regime; squeeze+volume candles now fall through to trend scoring.
 # ─────────────────────────────────────────────────────────────────
-def score_breakout(closes: list, candles: list, rsi_val: float,
-                   macd_line: float, signal_line: float,
-                   hist_curr: float, hist_prev: float,
-                   vol_r: float, adx_val: float,
-                   bull_align: bool, bear_align: bool,
-                   above_e200: bool = True, below_e200: bool = False) -> tuple:
-    """
-    Breakout: catch the initial move out of a compression range.
-    Uses Bollinger squeeze, volume surge, and directional confirmation.
-    Includes macro trend filtering (EMA200) for soft penalty on counter-trend breakouts.
-    Max theoretical: ~8.0 points per direction.
-    """
-    long_score = 0.0
-    short_score = 0.0
-
-    mid_bb, upper_bb, lower_bb = bollinger(closes)
-    price = closes[-1]
-    prev_price = closes[-2] if len(closes) > 1 else price
-
-    # 1. Squeeze release direction (0-3 pts)
-    if price > upper_bb and prev_price <= upper_bb:
-        long_score += 3.0    # breaking above upper band
-    elif price > upper_bb:
-        long_score += 1.5    # already above, confirming
-
-    if price < lower_bb and prev_price >= lower_bb:
-        short_score += 3.0   # breaking below lower band
-    elif price < lower_bb:
-        short_score += 1.5
-
-    # 2. Volume surge (0-2 pts)
-    if vol_r > 2.0:
-        long_score += 2.0; short_score += 2.0
-    elif vol_r > 1.5:
-        long_score += 1.5; short_score += 1.5
-    elif vol_r > 1.3:
-        long_score += 0.5; short_score += 0.5
-
-    # 3. ADX rising (trend forming) (0-1 pt)
-    # We can't directly compute ADX delta here, but ADX > 20 is positive
-    if adx_val > 20:
-        long_score += 0.5; short_score += 0.5
-    if adx_val > 15:
-        long_score += 0.5; short_score += 0.5
-
-    # 4. MACD confirmation (0-1 pt)
-    if macd_line > signal_line and hist_curr > 0:
-        long_score += 1.0
-    if macd_line < signal_line and hist_curr < 0:
-        short_score += 1.0
-
-    # 5. Market structure confirmation (0-1 pt)
-    hh, ll = market_structure(candles)
-    if hh:
-        long_score += 1.0
-    if ll:
-        short_score += 1.0
-
-    # Volume only boosts the dominant direction
-    vol_portion = min(long_score, short_score)
-    if long_score > short_score:
-        short_score -= vol_portion * 0.3
-    elif short_score > long_score:
-        long_score -= vol_portion * 0.3
-
-    # ── Macro trend filter (EMA200): Soft penalty for counter-trend breakouts ──
-    if long_score > 0 and not above_e200:
-        long_score -= 1.5  # Penalty: breakout LONG against macro downtrend
-    if short_score > 0 and not below_e200:
-        short_score -= 1.5  # Penalty: breakout SHORT against macro uptrend
-
-    return max(0, long_score), max(0, short_score)
 
 # ─────────────────────────────────────────────────────────────────
 # ATR-BASED TP/SL — Single implementation (no more trade_setup duplicate)
@@ -278,7 +206,7 @@ def suggest_tp_sl(candles_1h: list, direction: Direction,
 def score_technical(symbol: str, candles_1h: list, precomputed_indicators: dict = None) -> dict:
     """
     Multi-regime technical scoring.
-    Detects market regime (trending/ranging/breakout) and applies
+    Detects market regime (trending/weak_trend) and applies
     the appropriate strategy. Returns the best signal from the active regime.
 
     Args:
@@ -370,15 +298,8 @@ def score_technical(symbol: str, candles_1h: list, precomputed_indicators: dict 
 
         strategy = "trend_pullback_weak"
 
-    elif regime == "breakout":
-        long_pts, short_pts = score_breakout(
-            closes, candles_1h, rsi_val, macd_line_val, sig_line_val,
-            hist_curr, hist_prev, vol_r, adx_val, bull_align, bear_align,
-            above_e200=above_e200, below_e200=below_e200
-        )
-
-        strategy = "breakout"
-
+    # NOTE: Breakout regime removed — score_breakout() deleted; detect_regime()
+    # no longer returns "breakout", so squeeze+volume candles are scored as trend.
     # NOTE: Mean reversion regime removed (was losing -$475 in 12mo backtest)
     # All low-ADX conditions now use weak_trend (trend pullback logic)
 

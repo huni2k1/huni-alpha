@@ -335,7 +335,8 @@ def test_size_position_is_stable_across_sequential_calls_with_same_equity():
 def test_required_threshold_by_engine_and_strategy():
     assert trader._required_threshold("rule_match", "anything") is None
     assert trader._required_threshold("combined", "rule_statistical") is None
-    assert trader._required_threshold("combined", "breakout_long") == trader.SIGNAL_THRESHOLD_BREAKOUT
+    # Any non-rule technical strategy now uses the single trend threshold
+    # (breakout strategy/threshold removed).
     assert trader._required_threshold("combined", "trend_pullback") == trader.SIGNAL_THRESHOLD_TREND
 
 

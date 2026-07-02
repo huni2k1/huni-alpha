@@ -20,7 +20,7 @@ Key features:
   - Asia session filter: skips low-liquidity hours (0-8 UTC)
 
 Usage:
-  python3 backtester.py                          # Default: 6mo, 10 symbols, trend_threshold=7.0, breakout_threshold=6.0
+  python3 backtester.py                          # Default: 6mo, 10 symbols, trend_threshold=7.0
   python3 backtester.py --months 12              # 12 months
   python3 backtester.py --start-date 2022-01-01 --end-date 2023-12-31  # Custom date range
   python3 backtester.py --symbols BTCUSDT ETHUSDT
@@ -57,7 +57,6 @@ from .signals import (
     MAX_OPEN_POSITIONS,
     RISK_PER_TRADE_PCT,
     SIGNAL_COOLDOWN_CANDLES,
-    SIGNAL_THRESHOLD_BREAKOUT,
     SIGNAL_THRESHOLD_TREND,
     generate_signal,
     precompute_indicators_for_all_candles,
@@ -98,9 +97,8 @@ log.info("✅ Code validation passed: Using scanner's generate_signal() (WYTIWYT
 SCANNER_RISK_PCT = RISK_PER_TRADE_PCT
 SCANNER_COOLDOWN = SIGNAL_COOLDOWN_CANDLES
 SCANNER_TREND_THRESH = SIGNAL_THRESHOLD_TREND
-SCANNER_BREAKOUT_THRESH = SIGNAL_THRESHOLD_BREAKOUT
 SCANNER_MAX_POSITIONS = MAX_OPEN_POSITIONS
-log.info(f"✅ Strategy parameters loaded from scanner: risk={SCANNER_RISK_PCT}%, cooldown={SCANNER_COOLDOWN}h, trend={SCANNER_TREND_THRESH}, breakout={SCANNER_BREAKOUT_THRESH}, max_pos={SCANNER_MAX_POSITIONS}")
+log.info(f"✅ Strategy parameters loaded from scanner: risk={SCANNER_RISK_PCT}%, cooldown={SCANNER_COOLDOWN}h, trend={SCANNER_TREND_THRESH}, max_pos={SCANNER_MAX_POSITIONS}")
 
 # ─────────────────────────────────────────────────────────────────
 # BINANCE HISTORICAL DATA FETCHER
@@ -692,7 +690,6 @@ def run_backtest(
     reset_monthly: bool = False,
     # New parameters
     trend_threshold: float = 0.0,       # Strategy-specific: trend_pullback min score (0=use threshold_entry)
-    breakout_threshold: float = 0.0,    # Strategy-specific: breakout min score (0=use threshold_entry)
     max_positions: int = 3,             # Max concurrent open positions
     slippage_pct: float = 0.05,         # Adverse slippage per side (%)
     use_next_open: bool = True,         # Entry at next candle open (more realistic)
@@ -924,7 +921,6 @@ def run_backtest(
 
     # Resolve strategy-specific thresholds (0 = use global threshold_entry)
     _trend_thresh = trend_threshold if trend_threshold > 0 else threshold_entry
-    _breakout_thresh = breakout_threshold if breakout_threshold > 0 else threshold_entry
 
     # ── STEP 2: Time-ordered loop across all symbols ───────────────
     max_candles = max(len(candles) for candles in all_candles.values())
@@ -1154,7 +1150,6 @@ def run_backtest(
             min_score = required_threshold(
                 resolved_engine, strategy,
                 trend_threshold=_trend_thresh,
-                breakout_threshold=_breakout_thresh,
             )
 
             if min_score is not None and score < min_score:
@@ -1485,7 +1480,6 @@ def run_backtest(
             "avg_sl_pct": round(np.mean(all_sl_pcts), 2) if all_sl_pcts else 0,
             "threshold_entry": threshold_entry,
             "trend_threshold": _trend_thresh,
-            "breakout_threshold": _breakout_thresh,
             "threshold_high": threshold_high,
             "signal_engine": signal_engine,
             "rulebook_path": rulebook_path,
@@ -1600,7 +1594,7 @@ def print_summary(results: dict):
     print(f"  BACKTEST RESULTS — Multi-Regime Scanner (ATR TP/SL)")
     print(f"  {period_label} | {', '.join(sym.replace('USDT','') for sym in c.get('symbols', []))}")
     print(f"  TP/SL: ATR-based, strategy-dependent R:R")
-    print(f"  Risk: {c['risk_pct']}%/trade | Trend: {c.get('trend_threshold', c['threshold_entry'])}+ | Breakout: {c.get('breakout_threshold', c['threshold_entry'])}+")
+    print(f"  Risk: {c['risk_pct']}%/trade | Trend: {c.get('trend_threshold', c['threshold_entry'])}+")
     print(f"  Fees: {c['fee_pct']}% RT | Slippage: {c.get('slippage_pct', 0)}% | Trailing: {'ON' if c['trailing_stop'] else 'OFF'}")
     print(f"  Max Pos: {c.get('max_positions', 'N/A')} | Cooldown: {c.get('cooldown_candles', 24)}h | Entry: {'close' if not c.get('use_next_open', True) else 'next open'}")
     print("═" * 62)
@@ -1771,7 +1765,6 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=str, default="backtest-results.json", help="Output JSON file")
     # Strategy-specific thresholds (from scanner)
     parser.add_argument("--trend-threshold", type=float, default=SCANNER_TREND_THRESH, help="Min score for trend_pullback signals (from scanner)")
-    parser.add_argument("--breakout-threshold", type=float, default=SCANNER_BREAKOUT_THRESH, help="Min score for breakout signals (from scanner)")
     # Position management (from scanner)
     parser.add_argument("--cooldown", type=int, default=SCANNER_COOLDOWN, help="Cooldown candles between signals per symbol (from scanner)")
     parser.add_argument("--max-positions", type=int, default=SCANNER_MAX_POSITIONS, help="Max concurrent open positions (from scanner)")
@@ -1812,7 +1805,7 @@ if __name__ == "__main__":
 
     log.info(f"Starting backtest: {date_range_str}, {len(symbols)} symbols, ${args.account} account")
     log.info(f"TP/SL: ATR-based, strategy-dependent R:R (multi-regime)")
-    log.info(f"Thresholds: trend={args.trend_threshold} breakout={args.breakout_threshold}")
+    log.info(f"Thresholds: trend={args.trend_threshold}")
     log.info(f"Fees: {args.fee_pct}% RT | Slippage: {args.slippage_pct}% | Trailing Stop: {'ON' if args.trailing_stop else 'OFF'}")
     log.info(f"Max positions: {args.max_positions} | Cooldown: {args.cooldown}h | Entry: next candle open")
     log.info(f"Signal engine: {args.signal_engine}")
@@ -1838,13 +1831,12 @@ if __name__ == "__main__":
         months=args.months,
         account=args.account,
         risk_pct=args.risk_pct,
-        threshold_entry=min(args.trend_threshold, args.breakout_threshold),
+        threshold_entry=args.trend_threshold,
         fee_pct=args.fee_pct,
         trailing_stop=args.trailing_stop,
         reset_monthly=args.reset_monthly,
         cooldown_candles=args.cooldown,
         trend_threshold=args.trend_threshold,
-        breakout_threshold=args.breakout_threshold,
         max_positions=args.max_positions,
         slippage_pct=args.slippage_pct,
         use_next_open=True,

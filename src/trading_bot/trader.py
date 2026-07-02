@@ -56,7 +56,6 @@ from .signals import (
     generate_signal,
     SYMBOLS,
     SIGNAL_THRESHOLD_TREND,
-    SIGNAL_THRESHOLD_BREAKOUT,
     VALID_SIGNAL_ENGINES,
     RULEBOOK_PATH,
     CURATED_RULEBOOK_PATH,
@@ -435,7 +434,6 @@ def _required_threshold(signal_engine: SignalEngine, strategy: str) -> Optional[
     return _gate_required_threshold(
         signal_engine, strategy,
         trend_threshold=SIGNAL_THRESHOLD_TREND,
-        breakout_threshold=SIGNAL_THRESHOLD_BREAKOUT,
     )
 
 

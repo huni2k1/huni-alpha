@@ -18,37 +18,31 @@ from trading_bot.execution.gating import (
 # ── required_threshold ───────────────────────────────────────────────────────
 
 def test_rule_match_engine_returns_none():
-    assert required_threshold("rule_match", "rule_wide", 7.0, 6.0) is None
+    assert required_threshold("rule_match", "rule_wide", 7.0) is None
 
 
 def test_combined_engine_rule_leg_bypasses_threshold():
     # strategy contains "rule_" → rule leg → no threshold
-    assert required_threshold("combined", "rule_wide", 7.0, 6.0) is None
-    assert required_threshold("combined", "rule_standard", 7.0, 6.0) is None
+    assert required_threshold("combined", "rule_wide", 7.0) is None
+    assert required_threshold("combined", "rule_standard", 7.0) is None
 
 
 def test_combined_engine_statistical_in_strategy_bypasses():
-    assert required_threshold("combined", "statistical_wide_short", 7.0, 6.0) is None
+    assert required_threshold("combined", "statistical_wide_short", 7.0) is None
 
 
 def test_combined_engine_technical_leg_uses_threshold():
-    # No rule_ / statistical → technical fallback → threshold applies
-    assert required_threshold("combined", "trend_pullback", 7.0, 6.0) == 7.0
-    assert required_threshold("combined", "breakout", 7.0, 6.0) == 6.0
+    # No rule_ / statistical → technical fallback → trend threshold applies
+    assert required_threshold("combined", "trend_pullback", 7.0) == 7.0
 
 
 def test_ta_score_engine_trend_uses_trend_threshold():
-    assert required_threshold("ta_score", "trend_pullback", 7.0, 6.0) == 7.0
+    assert required_threshold("ta_score", "trend_pullback", 7.0) == 7.0
 
 
-def test_ta_score_engine_breakout_uses_breakout_threshold():
-    assert required_threshold("ta_score", "breakout", 7.0, 6.0) == 6.0
-
-
-def test_thresholds_are_caller_supplied_not_hardcoded():
-    # Passing different thresholds → different output
-    assert required_threshold("ta_score", "trend_pullback", 8.5, 6.0) == 8.5
-    assert required_threshold("ta_score", "breakout", 7.0, 5.0) == 5.0
+def test_threshold_is_caller_supplied_not_hardcoded():
+    # Passing a different threshold → different output
+    assert required_threshold("ta_score", "trend_pullback", 8.5) == 8.5
 
 
 # ── in_cooldown ──────────────────────────────────────────────────────────────

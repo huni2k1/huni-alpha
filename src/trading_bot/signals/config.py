@@ -6,8 +6,8 @@ import os
 
 
 # Score thresholds — minimum signal score required to fire a trade.
+# (Breakout strategy removed — trend is the only technical family left.)
 SIGNAL_THRESHOLD_TREND = 7.0
-SIGNAL_THRESHOLD_BREAKOUT = 6.0
 
 MAX_OPEN_POSITIONS = 5
 # Minimum candles between two signals on the same symbol. Used by the live

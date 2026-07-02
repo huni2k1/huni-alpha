@@ -221,7 +221,6 @@ def test_print_summary_renders_extended_sections(capsys):
             "risk_pct": 1.5,
             "threshold_entry": 6.0,
             "trend_threshold": 7.0,
-            "breakout_threshold": 6.0,
             "fee_pct": 0.06,
             "slippage_pct": 0.05,
             "trailing_stop": True,

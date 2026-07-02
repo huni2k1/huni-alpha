@@ -7,7 +7,7 @@ Submodules:
   config    — strategy parameters and constants (SYMBOLS, thresholds, paths)
   filters   — whipsaw detection, Asia-session filter, rejection-reason cache
   snapshot  — _build_indicator_snapshot, precompute_indicators_for_all_candles
-  scoring   — TA scoring (trend pullback, breakout) + regime detection + TP/SL
+  scoring   — TA scoring (trend pullback) + regime detection + TP/SL
   rulebook  — load_rulebook, rule matching, scope filtering
   engine    — generate_signal + per-engine implementations
 
@@ -18,7 +18,6 @@ working for callers that don't need submodule granularity.
 from .config import (
     SYMBOLS,
     SIGNAL_THRESHOLD_TREND,
-    SIGNAL_THRESHOLD_BREAKOUT,
     MAX_OPEN_POSITIONS,
     SIGNAL_COOLDOWN_CANDLES,
     RISK_PER_TRADE_PCT,
@@ -52,7 +51,6 @@ from .rulebook import (
 from .scoring import (
     detect_regime,
     score_trend_pullback,
-    score_breakout,
     suggest_tp_sl,
     score_technical,
 )
@@ -79,7 +77,6 @@ __all__ = [
     "suggest_tp_sl",
     "SYMBOLS",
     "SIGNAL_THRESHOLD_TREND",
-    "SIGNAL_THRESHOLD_BREAKOUT",
     "MAX_OPEN_POSITIONS",
     "SIGNAL_COOLDOWN_CANDLES",
     "RISK_PER_TRADE_PCT",

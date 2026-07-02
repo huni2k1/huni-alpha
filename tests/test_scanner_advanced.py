@@ -50,12 +50,13 @@ def trending_up_1000():
 # ─────────────────────────────────────────────────────────────
 
 class TestDetectRegime:
-    """Test all 4 regime branches."""
+    """Test regime branches (breakout regime removed — ADX-only classification)."""
 
-    def test_regime_breakout_when_squeeze_and_high_volume(self):
-        """Bollinger squeeze + high volume → 'breakout' (overrides ADX)."""
+    def test_regime_squeeze_and_high_volume_no_longer_breakout(self):
+        """Bollinger squeeze + high volume no longer forces 'breakout';
+        ADX<20 falls through to 'weak_trend'."""
         regime = detect_regime(adx_val=10, bb_squeeze=True, vol_r=2.0, closes=[100] * 50)
-        assert regime == "breakout"
+        assert regime == "weak_trend"
 
     def test_regime_trending_when_adx_above_25(self):
         """ADX >= 25 → 'trending'."""
@@ -72,10 +73,10 @@ class TestDetectRegime:
         regime = detect_regime(adx_val=10, bb_squeeze=False, vol_r=1.0, closes=[100] * 50)
         assert regime == "weak_trend"
 
-    def test_regime_breakout_wins_over_trending_adx(self):
-        """When both squeeze and ADX 25+, squeeze wins → 'breakout'."""
+    def test_regime_squeeze_ignored_adx_still_wins(self):
+        """Squeeze no longer overrides ADX: ADX 25+ → 'trending' regardless of squeeze."""
         regime = detect_regime(adx_val=30, bb_squeeze=True, vol_r=2.0, closes=[100] * 50)
-        assert regime == "breakout"
+        assert regime == "trending"
 
 
 # ─────────────────────────────────────────────────────────────

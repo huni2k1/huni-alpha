@@ -23,13 +23,12 @@ def required_threshold(
     signal_engine: SignalEngine,
     strategy: str,
     trend_threshold: float,
-    breakout_threshold: float,
 ) -> Optional[float]:
     """Minimum score a signal must have to open a position.
 
     Returns None if no threshold applies (rule-match leg bypasses scoring —
-    rulebook membership is the gate). Otherwise returns the breakout or trend
-    threshold based on the signal's strategy.
+    rulebook membership is the gate). Otherwise returns the trend threshold
+    (the only technical strategy family after breakout was removed).
 
     Rule leg detection uses the strategy prefix: any strategy starting with
     "rule_" or containing "statistical" is treated as a rule leg.
@@ -38,8 +37,6 @@ def required_threshold(
         return None
     if signal_engine == "combined" and ("rule_" in strategy or "statistical" in strategy):
         return None
-    if "breakout" in strategy:
-        return breakout_threshold
     return trend_threshold
 
 
