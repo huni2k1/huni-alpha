@@ -117,8 +117,8 @@ def _load_config() -> dict:
         # Live trader fetches 1h candles, so SIGNAL_COOLDOWN_CANDLES translates
         # 1:1 to hours. trader.json's COOLDOWN_HOURS still overrides if set.
         "cooldown_hours":    int(_get("COOLDOWN_HOURS", _shared.SIGNAL_COOLDOWN_CANDLES)),
-        "timeout_hours":     int(_get("TIMEOUT_HOURS", 180)),
-        "max_drawdown_pct":  float(_get("MAX_DRAWDOWN_PCT", 25.0)),
+        "timeout_hours":     int(_get("TIMEOUT_HOURS", 120)),
+        "max_drawdown_pct":  float(_get("MAX_DRAWDOWN_PCT", 12.0)),
         "circuit_break_hours": int(_get("CIRCUIT_BREAK_HOURS", 168)),
         "window_size":       int(_get("WINDOW_SIZE", 1000)),
     }

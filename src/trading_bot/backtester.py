@@ -691,6 +691,8 @@ def run_backtest(
     # New parameters
     trend_threshold: float = 0.0,       # Strategy-specific: trend_pullback min score (0=use threshold_entry)
     max_positions: int = 3,             # Max concurrent open positions
+    max_per_direction: int = 0,         # Max concurrent same-direction positions (0=disabled)
+    timeout_candles: int = 120,         # Force-close undecided positions after N candles (120 beat 180 in 12mo sweep)
     slippage_pct: float = 0.05,         # Adverse slippage per side (%)
     use_next_open: bool = True,         # Entry at next candle open (more realistic)
     fixed_size: float = 0.0,            # Fixed $ per trade (0=use risk% sizing)
@@ -1008,8 +1010,8 @@ def run_backtest(
                 exit_price = pos["tp_price"]
                 exit_reason = "TP"
 
-            # Check timeout (180 candles = 7.5 days)
-            if exit_price is None and (t - pos["entry_idx"]) >= 180:
+            # Check timeout (default 180 candles = 7.5 days on 1h)
+            if exit_price is None and (t - pos["entry_idx"]) >= timeout_candles:
                 exit_price = candle["close"]
                 exit_reason = "TIMEOUT"
 
@@ -1153,6 +1155,15 @@ def run_backtest(
 
             if min_score is not None and score < min_score:
                 continue
+
+            # Direction cap: limit concurrent same-direction positions.
+            # Crypto majors are highly correlated — N same-direction positions
+            # behave like one N×-sized bet (live: 5/5 correlated shorts stopped
+            # out together twice, Jun 27–Jul 4). 0 = disabled.
+            if max_per_direction > 0:
+                same_dir = sum(1 for p in open_positions if p["direction"] == direction)
+                if same_dir >= max_per_direction:
+                    continue
 
             # Determine tier
             if resolved_engine == "rule_match":
@@ -1767,6 +1778,8 @@ if __name__ == "__main__":
     # Position management (from scanner)
     parser.add_argument("--cooldown", type=int, default=SCANNER_COOLDOWN, help="Cooldown candles between signals per symbol (from scanner)")
     parser.add_argument("--max-positions", type=int, default=SCANNER_MAX_POSITIONS, help="Max concurrent open positions (from scanner)")
+    parser.add_argument("--max-per-direction", type=int, default=0, help="Max concurrent same-direction positions, correlation guard (0=disabled)")
+    parser.add_argument("--timeout-candles", type=int, default=120, help="Force-close undecided positions after N candles (default 120 = 5 days on 1h)")
     parser.add_argument("--slippage-pct", type=float, default=0.05, help="Adverse slippage %% per side (default: 0.05)")
     parser.add_argument("--fixed-size", type=float, default=0.0, help="Fixed $ per trade (0=use risk%% sizing)")
     parser.add_argument("--partial-tp", action="store_true", default=False, help="Close 50%% at 1R, move SL to breakeven (default: disabled)")
@@ -1837,6 +1850,8 @@ if __name__ == "__main__":
         cooldown_candles=args.cooldown,
         trend_threshold=args.trend_threshold,
         max_positions=args.max_positions,
+        max_per_direction=args.max_per_direction,
+        timeout_candles=args.timeout_candles,
         slippage_pct=args.slippage_pct,
         use_next_open=True,
         fixed_size=args.fixed_size,
