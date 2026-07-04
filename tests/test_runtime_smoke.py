@@ -78,7 +78,10 @@ def test_live_trader_startup_logs_version_and_reconcile_on_balance_failure(monke
     assert any("Failed to get balance from Binance, skipping entry scan" in line for line in error_logs)
     assert reconcile_calls == [True]
     assert telegram_messages
-    assert "Version: ver1234" in telegram_messages[0]
+    # Compact startup: version as inline code, config on one line
+    assert "<code>ver1234</code>" in telegram_messages[0]
+    assert "Risk 1.5%/trade" in telegram_messages[0]
+    assert "Timeout 180h" in telegram_messages[0]
 
 
 def test_live_trader_skips_scan_when_already_at_max_positions(monkeypatch):

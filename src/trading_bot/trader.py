@@ -1057,16 +1057,21 @@ def main():
         try:
             eq = client.get_usdt_equity()
             if eq is not None:
-                startup_account = f"Equity: <b>${eq:,.2f}</b> | Open: {len(state['positions'])}\n"
+                open_syms = [s.replace("USDT", "") for s in state["positions"]]
+                open_str = f"{len(open_syms)} ({', '.join(open_syms)})" if open_syms else "0"
+                startup_account = f"Equity: <b>${eq:,.2f}</b> | Open: {open_str}\n"
         except Exception:
             pass
+    # Testnet called out only when it's ON — silence is the normal (live) state.
+    testnet_warning = "⚠️ <b>TESTNET mode</b>\n" if client.testnet else ""
     send_telegram(
         f"🤖 <b>Trader Online {mode_tag}</b>\n"
-        f"Version: {app_version}\n"
-        f"Engine: {signal_engine} | Risk: {cfg['risk_pct']}% | Max pos: {cfg['max_positions']}\n"
+        f"{testnet_warning}"
+        f"<code>{app_version}</code> · {signal_engine} · "
+        f"{len(SYMBOLS)} symbols\n"
+        f"Risk {cfg['risk_pct']}%/trade · Max {cfg['max_positions']} pos · "
+        f"Cooldown {cfg['cooldown_hours']}h · Timeout {cfg['timeout_hours']}h\n"
         f"{startup_account}"
-        f"Symbols: {', '.join(s.replace('USDT','') for s in SYMBOLS)}\n"
-        f"Testnet: {client.testnet}"
     )
 
     cycle_count = 0
