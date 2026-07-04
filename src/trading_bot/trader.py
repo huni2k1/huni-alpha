@@ -1069,7 +1069,7 @@ def main():
         f"{testnet_warning}"
         f"<code>{app_version}</code> · {signal_engine} · "
         f"{len(SYMBOLS)} symbols\n"
-        f"Risk {cfg['risk_pct']}%/trade · Max {cfg['max_positions']} pos · "
+        f"Risk {cfg['risk_pct']}% / trade · Max {cfg['max_positions']} pos · "
         f"Cooldown {cfg['cooldown_hours']}h · Timeout {cfg['timeout_hours']}h\n"
         f"{startup_account}"
     )

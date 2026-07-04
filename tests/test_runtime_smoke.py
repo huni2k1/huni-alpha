@@ -80,7 +80,7 @@ def test_live_trader_startup_logs_version_and_reconcile_on_balance_failure(monke
     assert telegram_messages
     # Compact startup: version as inline code, config on one line
     assert "<code>ver1234</code>" in telegram_messages[0]
-    assert "Risk 1.5%/trade" in telegram_messages[0]
+    assert "Risk 1.5% / trade" in telegram_messages[0]
     assert "Timeout 180h" in telegram_messages[0]
 
 
