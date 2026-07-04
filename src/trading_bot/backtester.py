@@ -693,6 +693,8 @@ def run_backtest(
     max_positions: int = 3,             # Max concurrent open positions
     max_per_direction: int = 0,         # Max concurrent same-direction positions (0=disabled)
     timeout_candles: int = 120,         # Force-close undecided positions after N candles (120 beat 180 in 12mo sweep)
+    streak_throttle_after: int = 0,     # Halve risk after N consecutive losses (0=disabled)
+    streak_throttle_mult: float = 0.5,  # Risk multiplier while throttled
     slippage_pct: float = 0.05,         # Adverse slippage per side (%)
     use_next_open: bool = True,         # Entry at next candle open (more realistic)
     fixed_size: float = 0.0,            # Fixed $ per trade (0=use risk% sizing)
@@ -929,6 +931,7 @@ def run_backtest(
     step2_start = time.time()
     log.info(f"STEP 2: Running backtest loop ({max_candles - trade_start_idx} candles)...")
     open_positions = []  # List of active position dicts
+    consecutive_losses = 0  # For streak throttle (risk de-escalation in loss clusters)
     last_signal_idx = {sym: -999 for sym in all_candles.keys()}
     sym_trades_map = {}  # {symbol: [trades]}
     peak_equity = account
@@ -1022,6 +1025,11 @@ def run_backtest(
                                                 sym_trades_map, fee_pct, t, slippage_pct)
                 open_positions.remove(pos)
                 position_close_count += 1
+                if all_trades:
+                    if float(all_trades[-1].get("pnl_usd", 0)) < 0:
+                        consecutive_losses += 1
+                    else:
+                        consecutive_losses = 0
 
         # ── TRUE EQUITY TRACKING (includes unrealized P&L) ────────
         # current_equity is free cash only. Compute total equity = free + locked + unrealized
@@ -1226,6 +1234,11 @@ def run_backtest(
                 # Dynamic risk based on Kelly Criterion (technical mode only).
                 # Statistical mode uses flat risk_pct — setup validation is the quality gate.
                 effective_risk_pct = risk_pct
+                # Streak throttle: de-risk while in a loss cluster, restore on a win.
+                # Keeps every validated signal (edge intact) but sizes down when
+                # the market is running over the book (correlated stop clusters).
+                if streak_throttle_after > 0 and consecutive_losses >= streak_throttle_after:
+                    effective_risk_pct = risk_pct * streak_throttle_mult
                 resolved_engine_ks = _ENGINE_COMPAT_ALIASES.get(signal_engine, signal_engine)
                 is_statistical = resolved_engine_ks in {"rule_match", "combined"}
                 if kelly_sizing and not is_statistical:
@@ -1780,6 +1793,8 @@ if __name__ == "__main__":
     parser.add_argument("--max-positions", type=int, default=SCANNER_MAX_POSITIONS, help="Max concurrent open positions (from scanner)")
     parser.add_argument("--max-per-direction", type=int, default=0, help="Max concurrent same-direction positions, correlation guard (0=disabled)")
     parser.add_argument("--timeout-candles", type=int, default=120, help="Force-close undecided positions after N candles (default 120 = 5 days on 1h)")
+    parser.add_argument("--streak-throttle-after", type=int, default=0, help="Throttle risk after N consecutive losses (0=disabled)")
+    parser.add_argument("--streak-throttle-mult", type=float, default=0.5, help="Risk multiplier while streak-throttled (default 0.5)")
     parser.add_argument("--slippage-pct", type=float, default=0.05, help="Adverse slippage %% per side (default: 0.05)")
     parser.add_argument("--fixed-size", type=float, default=0.0, help="Fixed $ per trade (0=use risk%% sizing)")
     parser.add_argument("--partial-tp", action="store_true", default=False, help="Close 50%% at 1R, move SL to breakeven (default: disabled)")
@@ -1852,6 +1867,8 @@ if __name__ == "__main__":
         max_positions=args.max_positions,
         max_per_direction=args.max_per_direction,
         timeout_candles=args.timeout_candles,
+        streak_throttle_after=args.streak_throttle_after,
+        streak_throttle_mult=args.streak_throttle_mult,
         slippage_pct=args.slippage_pct,
         use_next_open=True,
         fixed_size=args.fixed_size,
