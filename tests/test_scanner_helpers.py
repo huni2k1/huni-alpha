@@ -168,7 +168,9 @@ def test_rule_matches_context_respects_symbol_and_regime():
     assert _sig_rulebook._rule_matches_context(rule, "BTCUSDT", "bull") is True
     assert _sig_rulebook._rule_matches_context(rule, "ETHUSDT", "bull") is False
     assert _sig_rulebook._rule_matches_context(rule, "BTCUSDT", "bear") is False
-    assert _sig_rulebook._rule_matches_context(rule, "BTCUSDT", None) is True
+    # Fail closed: regime-scoped rule must not fire when regime is unknown
+    assert _sig_rulebook._rule_matches_context(rule, "BTCUSDT", None) is False
+    assert _sig_rulebook._rule_matches_context(rule, "BTCUSDT", "unknown") is False
 
 
 def test_generate_rule_match_signal_records_no_match_reason(monkeypatch):

@@ -132,3 +132,43 @@ def test_signal_generation_has_required_output_structure():
         for key in required_keys:
             assert hasattr(signal, key), f"Signal missing critical field: {key}"
             assert getattr(signal, key) is not None, f"Signal field {key} is None"
+
+
+# ── Forming-candle exclusion (live/backtest parity) ──────────────────────────
+
+class TestDropFormingCandle:
+    """Live signals must be computed on CLOSED candles only.
+
+    Binance includes the still-forming candle as the last klines element;
+    trading on it creates intra-hour phantom signals the analyzer never
+    validated and the backtester never replays (live/backtest divergence).
+    """
+
+    def _fake_klines(self, n=10):
+        return [[100.0, 101.0, 99.0, 100.5, 1000.0, 100500.0, 50250.0] for _ in range(n)]
+
+    def test_drop_forming_removes_last_candle_uncached(self, monkeypatch):
+        from trading_bot import binance_http
+        monkeypatch.setattr(binance_http, "fetch_klines", lambda s, i, l: self._fake_klines(10))
+        out = binance_http.fetch_klines_cached("BTCUSDT", "1h", 10, use_cache=False, drop_forming=True)
+        assert len(out) == 9
+
+    def test_default_keeps_all_candles(self, monkeypatch):
+        from trading_bot import binance_http
+        monkeypatch.setattr(binance_http, "fetch_klines", lambda s, i, l: self._fake_klines(10))
+        out = binance_http.fetch_klines_cached("BTCUSDT", "1h", 10, use_cache=False)
+        assert len(out) == 10
+
+    def test_drop_forming_none_passthrough(self, monkeypatch):
+        from trading_bot import binance_http
+        monkeypatch.setattr(binance_http, "fetch_klines", lambda s, i, l: None)
+        assert binance_http.fetch_klines_cached("BTCUSDT", "1h", 10, use_cache=False, drop_forming=True) is None
+
+    def test_trader_scan_uses_drop_forming(self):
+        import inspect
+        from trading_bot import trader
+        src = inspect.getsource(trader.main_loop) if hasattr(trader, "main_loop") else inspect.getsource(trader)
+        calls = [l for l in src.splitlines() if "fetch_klines_cached(" in l and "window_size" in l]
+        assert calls, "expected fetch_klines_cached call sites in trader"
+        for line in calls:
+            assert "drop_forming=True" in line, f"live fetch missing drop_forming=True: {line.strip()}"

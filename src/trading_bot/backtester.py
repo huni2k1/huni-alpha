@@ -796,7 +796,7 @@ def run_backtest(
     if btc_regime_series:
         log.info(f"✅ BTC regime series computed ({len(btc_regime_series)} candles)")
     else:
-        log.info("⚠️  No BTCUSDT in universe — regime filtering disabled")
+        log.info("⚠️  No BTCUSDT in universe — regime unknown; regime-scoped rules will not fire (fail closed)")
 
     # ── STEP 1b: Pre-compute indicators for all symbols (once) ────
     precompute_start = time.time()
@@ -1108,11 +1108,10 @@ def run_backtest(
             # Use pre-computed indicators (RSI, EMA, MACD, ADX, Bollinger, volume ratio)
             indicators_at_t = all_indicators.get(symbol, {}).get(t)
 
-            # Regime at this candle (None = no regime gating, matches live scanner default).
-            # "unknown" (warmup) collapses to None so setups with no scope still fire.
+            # Regime at this candle. None/"unknown" (warmup, or BTC missing) makes
+            # regime-scoped rules fail closed in _rule_matches_context — matching
+            # the analyzer, which excludes unknown-regime rows from mining.
             current_regime = btc_regime_series[t] if t < len(btc_regime_series) else None
-            if current_regime == "unknown":
-                current_regime = None
 
             try:
                 signal = generate_signal(
@@ -1759,7 +1758,7 @@ if __name__ == "__main__":
     parser.add_argument("--account", type=float, default=1000.0, help="Starting account USD")
     parser.add_argument("--interval", type=str, default="1h", choices=["1h", "4h", "1d"], help="Candle interval")
     parser.add_argument("--risk-pct", type=float, default=SCANNER_RISK_PCT, help="Risk per trade (from scanner)")
-    parser.add_argument("--fee-pct", type=float, default=0.06, help="Round-trip fee (default: 0.06 for Binance futures)")
+    parser.add_argument("--fee-pct", type=float, default=0.09, help="Round-trip fee (default: 0.09 = 2×0.045%% taker, matches live market orders)")
     parser.add_argument("--trailing-stop", action="store_true", help="Enable trailing stop (default: disabled)")
     parser.add_argument("--reset-monthly", action="store_true", help="Reset balance to starting account at beginning of each month")
     parser.add_argument("--output", type=str, default="backtest-results.json", help="Output JSON file")

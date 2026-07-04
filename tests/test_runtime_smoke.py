@@ -156,7 +156,7 @@ def test_live_trader_skips_symbol_in_cooldown(monkeypatch):
     monkeypatch.setattr(
         trader,
         "fetch_klines_cached",
-        lambda symbol, interval, limit, use_cache=False: [[1.0, 1.0, 1.0, 100.0, 1.0]] * limit,
+        lambda symbol, interval, limit, use_cache=False, **kwargs: [[1.0, 1.0, 1.0, 100.0, 1.0]] * limit,
     )
     monkeypatch.setattr(trader, "generate_signal", lambda *args, **kwargs: pytest.fail("cooldown symbol should not generate"))
     monkeypatch.setattr(trader.log, "info", lambda msg: info_logs.append(msg))
@@ -196,7 +196,7 @@ def test_live_trader_warns_on_insufficient_candle_data(monkeypatch):
     monkeypatch.setattr(trader, "monitor_positions", lambda *args, **kwargs: None)
     monkeypatch.setattr(trader, "classify_current_regime", lambda candles: "bull")
 
-    def _fake_fetch(symbol, interval, limit, use_cache=False):
+    def _fake_fetch(symbol, interval, limit, use_cache=False, **kwargs):
         if symbol == "BTCUSDT":
             return [[1.0, 1.0, 1.0, 100.0, 1.0]] * limit
         return [[1.0, 1.0, 1.0, 100.0, 1.0]] * 100
@@ -244,7 +244,7 @@ def test_live_trader_logs_score_below_threshold_summary(monkeypatch):
     monkeypatch.setattr(
         trader,
         "fetch_klines_cached",
-        lambda symbol, interval, limit, use_cache=False: [[1.0, 1.0, 1.0, 100.0, 1.0]] * limit,
+        lambda symbol, interval, limit, use_cache=False, **kwargs: [[1.0, 1.0, 1.0, 100.0, 1.0]] * limit,
     )
     from trading_bot.core.types import Signal
     _fake_signal = Signal(

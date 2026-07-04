@@ -154,7 +154,7 @@ def test_live_trader_logs_cycle_rejection_summary(monkeypatch):
     info_logs = []
     monkeypatch.setattr(trader.log, "info", lambda msg: info_logs.append(msg))
 
-    def _fake_fetch(symbol, interval, limit, use_cache=False):
+    def _fake_fetch(symbol, interval, limit, use_cache=False, **kwargs):
         assert interval == "1h"
         return [[1.0, 1.0, 1.0, 100.0, 1.0]] * limit
 

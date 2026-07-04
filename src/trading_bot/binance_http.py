@@ -133,14 +133,26 @@ def fetch_klines(symbol: str, interval: str, limit: int) -> Optional[list]:
 
 
 def fetch_klines_cached(symbol: str, interval: str, limit: int,
-                        use_cache: bool = True) -> Optional[list]:
+                        use_cache: bool = True,
+                        drop_forming: bool = False) -> Optional[list]:
     """Fetch klines with local disk caching for speed.
 
     For backtesting: caches entire date ranges to avoid repeated API calls.
     For live scanning: uses cache if available, falls back to API.
+
+    drop_forming: drop the last (still-forming) candle so signals are computed
+    on CLOSED candles only — the same data the analyzer mined and the
+    backtester replays. Binance always includes the current forming candle as
+    the final element of a klines response. Live callers must pass True;
+    leaving it in creates intra-candle phantom signals that were never
+    validated (confirmed live: 67 of 88 trades in Jun 13–Jul 4 were
+    forming-candle entries invisible to the backtest, net −$58).
     """
     if not use_cache:
-        return fetch_klines(symbol, interval, limit)
+        candles = fetch_klines(symbol, interval, limit)
+        if drop_forming and candles:
+            return candles[:-1]
+        return candles
 
     now = datetime.now(timezone.utc)
     candles_per_day = 24 if interval == "1h" else 6
@@ -154,7 +166,12 @@ def fetch_klines_cached(symbol: str, interval: str, limit: int,
     cached_candles = candle_cache.load_from_cache(symbol, interval, start_str, end_str)
     if cached_candles is not None:
         log.debug(f"  {symbol}: Loaded {len(cached_candles)} candles from cache")
-        return cached_candles[-limit:] if len(cached_candles) > limit else cached_candles
+        result = cached_candles[-limit:] if len(cached_candles) > limit else cached_candles
+        # Cache ranges ending today may include a candle that was still forming
+        # when cached — drop defensively (one closed candle is cheap vs 1000).
+        if drop_forming and result:
+            return result[:-1]
+        return result
 
     log.debug(f"  {symbol}: Cache miss, fetching from Binance API...")
     candles = fetch_klines(symbol, interval, limit)
@@ -163,6 +180,8 @@ def fetch_klines_cached(symbol: str, interval: str, limit: int,
         candle_cache.save_to_cache(symbol, interval, start_str, end_str, candles)
         log.debug(f"  {symbol}: Cached {len(candles)} candles for {start_str}–{end_str}")
 
+    if drop_forming and candles:
+        return candles[:-1]
     return candles
 
 

@@ -1090,7 +1090,7 @@ def main():
             # Classify BTC regime once per cycle — gates any regime-scoped statistical setups.
             current_regime: Optional[str] = None
             try:
-                btc_candles = fetch_klines_cached("BTCUSDT", "1h", cfg["window_size"], use_cache=False)
+                btc_candles = fetch_klines_cached("BTCUSDT", "1h", cfg["window_size"], use_cache=False, drop_forming=True)
                 if btc_candles and len(btc_candles) >= 220:
                     btc_candle_dicts = [{"close": float(c[3])} for c in btc_candles]
                     current_regime = classify_current_regime(btc_candle_dicts)
@@ -1103,7 +1103,7 @@ def main():
                         _snap.set_btc_pct_4h_context({0: pct_4h})
                         log.info(f"BTC 4-candle pct change: {pct_4h:+.2f}%")
             except Exception as exc:
-                log.warning(f"Regime classification failed: {exc} — statistical setups will match any regime")
+                log.warning(f"Regime classification failed: {exc} — regime-scoped setups disabled this cycle (fail closed)")
 
             for symbol in SYMBOLS:
                 if len(state["positions"]) >= cfg["max_positions"]:
@@ -1119,8 +1119,11 @@ def main():
                     log.info(f"  {symbol}: in cooldown, skip")
                     continue
 
-                # Fetch 1000-candle window
-                candles = fetch_klines_cached(symbol, "1h", cfg["window_size"], use_cache=False)
+                # Fetch 1000-candle window — CLOSED candles only (drop_forming).
+                # Signals must be computed on the same data the analyzer mined
+                # and the backtester replays; the forming candle creates
+                # intra-hour phantom signals that were never validated.
+                candles = fetch_klines_cached(symbol, "1h", cfg["window_size"], use_cache=False, drop_forming=True)
                 if not candles or len(candles) < 200:
                     log.warning(f"  {symbol}: insufficient candle data ({len(candles) if candles else 0}), skip")
                     time.sleep(1)

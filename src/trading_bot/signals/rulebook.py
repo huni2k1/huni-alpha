@@ -126,14 +126,21 @@ def _rule_specificity(rule: dict) -> int:
 def _rule_matches_context(rule: dict, symbol: str, current_regime: Optional[str] = None) -> bool:
     """Return True if this rule applies to the current symbol and market regime.
 
-    Regime filtering is skipped when current_regime is None so callers that
-    don't classify regime yet still get pooled and symbol-scoped rules.
+    Regime-scoped rules FAIL CLOSED: when the regime is unknown (None or
+    "unknown" — classification failed, warmup, or caller didn't classify),
+    a rule that requires a specific regime does NOT fire. This matches the
+    analyzer, which excludes unknown-regime rows from mining, so scoped rules
+    only ever trade in conditions they were validated on. Pooled and
+    symbol-scoped rules are unaffected.
     """
     f = rule.get("filter", {})
     if f.get("symbol") and f["symbol"] != symbol:
         return False
-    if f.get("regime") and current_regime and f["regime"] != current_regime:
-        return False
+    if f.get("regime"):
+        if current_regime is None or current_regime == "unknown":
+            return False  # fail closed: regime required but not known
+        if f["regime"] != current_regime:
+            return False
     return True
 
 

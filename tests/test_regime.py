@@ -74,10 +74,12 @@ def test_setup_matches_scope_regime_null_matches_any():
     assert scanner._setup_matches_scope(rule, "BTCUSDT", current_regime=None)
 
 
-def test_setup_matches_scope_current_regime_none_bypasses_filter():
-    """Back-compat: when caller doesn't classify regime, don't gate."""
+def test_setup_matches_scope_unknown_regime_fails_closed():
+    """Regime-scoped rules must NOT fire when regime is unknown (None or
+    "unknown") — they were only validated on confirmed-regime candles."""
     rule = {"filter": {"regime": "bull"}}
-    assert scanner._setup_matches_scope(rule, "BTCUSDT", current_regime=None)
+    assert not scanner._setup_matches_scope(rule, "BTCUSDT", current_regime=None)
+    assert not scanner._setup_matches_scope(rule, "BTCUSDT", current_regime="unknown")
 
 
 def test_setup_matches_scope_symbol_and_regime_combined():
