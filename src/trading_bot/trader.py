@@ -293,15 +293,37 @@ def _format_telegram_audit_lines(
     market_regime: str,
     protection_status: Optional[str] = None,
 ) -> str:
-    lines = [
-        f"Engine: <code>{html.escape(str(engine))}</code>",
-        f"Source: <code>{html.escape(str(source))}</code>",
-        f"Setup: <code>{html.escape(str(setup_name))}</code>",
-        f"Regime: <code>{html.escape(str(market_regime))}</code>",
-    ]
-    if protection_status is not None:
-        lines.append(f"Protection: <code>{html.escape(str(protection_status))}</code>")
-    return "\n".join(lines)
+    """One compact audit line; protection called out only when NOT armed.
+
+    `engine` is accepted for caller compatibility but not shown — it is
+    effectively constant in prod and was pure noise in alerts.
+    """
+    line = (
+        f"Setup: <code>{html.escape(str(setup_name))}</code> "
+        f"({html.escape(str(market_regime))} · {html.escape(str(source))})"
+    )
+    if protection_status is not None and str(protection_status) != "armed":
+        line += f"\n⚠️ Protection: <code>{html.escape(str(protection_status))}</code>"
+    return line
+
+
+def _format_close_footer(state: dict, client, dry_run: bool) -> str:
+    """'Today: +$X | Equity: $Y' — account context for every close alert."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    today_pnl = sum(
+        float(t.get("pnl_usd", 0) or 0)
+        for t in state.get("trade_log", [])
+        if str(t.get("exit_time", "")).startswith(today)
+    )
+    footer = f"Today: <b>{today_pnl:+.2f}</b> USDT"
+    if not dry_run:
+        try:
+            equity = client.get_usdt_equity()
+            if equity is not None:
+                footer += f" | Equity: <b>${equity:,.2f}</b>"
+        except Exception:
+            pass  # alert must never fail on a balance call
+    return footer
 
 
 def _bump_rejection_count(rejection_counts: dict[str, int], reason: str) -> None:
@@ -578,8 +600,8 @@ def monitor_positions(state: dict, client: BinanceClient, cfg: dict, dry_run: bo
                     f"{emoji} <b>{exit_reason}</b> {dir_emoji} {symbol.replace('USDT','')} "
                     f"{'LONG' if direction == 'LONG' else 'SHORT'}\n"
                     f"Entry: <code>${entry:,.4f}</code> → Exit: <code>${exit_price:,.4f}</code>\n"
-                    f"PnL: <b>{pnl_pct:+.2f}%</b> (${pnl_usd:+.2f})\n"
-                    f"Age: {age_hours:.1f}h\n"
+                    f"PnL: <b>{pnl_pct:+.2f}%</b> (${pnl_usd:+.2f}) | Held: {age_hours:.1f}h\n"
+                    f"{_format_close_footer(state, client, dry_run)}\n"
                     f"{_format_telegram_audit_lines(**audit)}"
                 )
 
@@ -754,14 +776,16 @@ def execute_entry(
 
     dir_emoji = "🟢" if direction == "LONG" else "🔴"
     dry_tag = " [DRY RUN]" if dry_run else ""
+    risk_usd = position_usdt * (sl_pct / 100.0)
+    rr = (tp_pct / sl_pct) if sl_pct > 0 else 0.0
     send_telegram(
         f"{dir_emoji} <b>NEW TRADE{dry_tag}</b> {symbol.replace('USDT','')} "
         f"{'LONG' if direction == 'LONG' else 'SHORT'}\n"
         f"Entry: <code>${fill_price:,.4f}</code>\n"
-        f"TP: <code>${tp_p:,.4f}</code> (+{tp_pct:.2f}%)\n"
-        f"SL: <code>${sl_p:,.4f}</code> (-{sl_pct:.2f}%)\n"
-        f"Size: ${position_usdt:.0f} ({quantity} {symbol.replace('USDT','')})\n"
-        f"Score: {score:.2f} | Strategy: {strategy}\n"
+        f"TP: <code>${tp_p:,.4f}</code> (+{tp_pct:.2f}%) | "
+        f"SL: <code>${sl_p:,.4f}</code> (-{sl_pct:.2f}%) | R:R {rr:.1f}\n"
+        f"Size: ${position_usdt:.0f} ({quantity} {symbol.replace('USDT','')}) | "
+        f"Risk: ${risk_usd:.2f}\n"
         f"{_format_telegram_audit_lines(**audit, protection_status='armed')}"
     )
 
@@ -866,6 +890,7 @@ def _record_reconciled_close(state: dict, client: BinanceClient, symbol: str) ->
             f"{direction} <i>(reconciled)</i>\n"
             f"Entry: <code>${entry_price:,.4f}</code> → Exit: <code>${exit_price:,.4f}</code>\n"
             f"PnL: <b>{pnl_pct:+.2f}%</b> (${pnl_usd:+.2f})\n"
+            f"{_format_close_footer(state, client, dry_run=False)}\n"
             f"{_format_telegram_audit_lines(**audit)}"
         )
     else:
@@ -1027,10 +1052,19 @@ def main():
     if not dry_run:
         reconcile_with_binance(state, client)
 
+    startup_account = ""
+    if not dry_run:
+        try:
+            eq = client.get_usdt_equity()
+            if eq is not None:
+                startup_account = f"Equity: <b>${eq:,.2f}</b> | Open: {len(state['positions'])}\n"
+        except Exception:
+            pass
     send_telegram(
         f"🤖 <b>Trader Online {mode_tag}</b>\n"
         f"Version: {app_version}\n"
         f"Engine: {signal_engine} | Risk: {cfg['risk_pct']}% | Max pos: {cfg['max_positions']}\n"
+        f"{startup_account}"
         f"Symbols: {', '.join(s.replace('USDT','') for s in SYMBOLS)}\n"
         f"Testnet: {client.testnet}"
     )

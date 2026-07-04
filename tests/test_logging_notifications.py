@@ -83,11 +83,11 @@ def test_execute_entry_telegram_includes_audit_context(monkeypatch):
 
     assert opened is True
     assert sent
-    assert "Engine: <code>combined</code>" in sent[0]
-    assert "Source: <code>statistical</code>" in sent[0]
-    assert "Setup: <code>wide_short_rsi_below_28</code>" in sent[0]
-    assert "Regime: <code>bear</code>" in sent[0]
-    assert "Protection: <code>armed</code>" in sent[0]
+    # Compact audit: setup (regime · source); risk context on entry alerts.
+    assert "Setup: <code>wide_short_rsi_below_28</code> (bear · statistical)" in sent[0]
+    assert "Risk: $" in sent[0]
+    assert "R:R" in sent[0]
+    assert "Protection:" not in sent[0]  # armed = normal, not alerted
 
 
 def test_monitor_positions_close_telegram_includes_audit_context(monkeypatch):
@@ -124,11 +124,11 @@ def test_monitor_positions_close_telegram_includes_audit_context(monkeypatch):
 
     assert "BTCUSDT" not in state["positions"]
     assert sent
-    assert "Engine: <code>combined</code>" in sent[0]
-    assert "Source: <code>technical</code>" in sent[0]
-    assert "Setup: <code>breakout</code>" in sent[0]
-    assert "Regime: <code>bull</code>" in sent[0]
-    assert "Protection: <code>armed</code>" in sent[0]
+    # Compact audit line: setup (regime · source). Engine dropped as noise;
+    # protection shown only when NOT armed; close alerts carry account context.
+    assert "Setup: <code>breakout</code> (bull · technical)" in sent[0]
+    assert "Protection:" not in sent[0]
+    assert "Today: " in sent[0]
 
 
 def test_live_trader_logs_cycle_rejection_summary(monkeypatch):

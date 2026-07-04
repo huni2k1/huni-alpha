@@ -396,7 +396,9 @@ def test_monitor_positions_records_tp_and_cancels_other_leg(monkeypatch):
     assert "BTCUSDT" not in state["positions"]
     assert state["trade_log"][0]["exit_reason"] == "TP"
     assert client.cancelled == [("BTCUSDT", "sl1")]
-    assert sent and "Protection: <code>armed</code>" in sent[0]
+    assert sent
+    assert "Setup: <code>breakout</code> (bull · technical)" in sent[0]
+    assert "Today: " in sent[0]  # close alerts carry account context
 
 
 def test_monitor_positions_timeout_close_failure_keeps_position(monkeypatch):
