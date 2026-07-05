@@ -136,7 +136,8 @@ def build_report(live: list[dict], bt: list[dict], days: int) -> tuple[str, list
 
 def main() -> int:
     from .binance_http import send_telegram
-    from .logging_setup import log
+    from .logging_setup import configure_logging, log
+    configure_logging()
 
     days = int(os.environ.get("PARITY_DAYS", "14"))
     now = datetime.now(timezone.utc)
@@ -172,8 +173,12 @@ def main() -> int:
     bt = results.get("trades", [])
 
     report, alerts = build_report(live, bt, days)
-    log.info("parity_check:\n" + report.replace("<b>", "").replace("</b>", ""))
+    plain = report.replace("<b>", "").replace("</b>", "")
+    log.info("parity_check:\n" + plain)
+    print(plain, flush=True)  # journalctl visibility under systemd (no tty)
     send_telegram(report)
+    # Exit 2 signals "alerts found" — the systemd unit whitelists it via
+    # SuccessExitStatus so a firing watchdog doesn't show as a failed unit.
     return 2 if alerts else 0
 
 
