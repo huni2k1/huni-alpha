@@ -1,0 +1,11 @@
+[Unit]
+Description=Huni Alpha weekly live-vs-backtest parity watchdog
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/huni-alpha
+EnvironmentFile=-/opt/huni-alpha/deploy/runtime.env
+Environment=PYTHONPATH=/opt/huni-alpha/src
+Environment=BINANCE_TESTNET=false
+ExecStart=/opt/huni-alpha/.venv/bin/python -m trading_bot.parity_check
