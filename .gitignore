@@ -67,3 +67,8 @@ research/
 
 # Archive files
 *.zip
+
+# Research artifacts from setup_analyzer re-mines (never auto-deploy a mined
+# rulebook — swaps go through out-of-sample A/B first)
+src/trading_bot/setup_analysis_report_*.json
+src/trading_bot/validated_setups_*.json
