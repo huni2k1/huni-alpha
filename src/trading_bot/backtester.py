@@ -695,6 +695,7 @@ def run_backtest(
     timeout_candles: int = 120,         # Force-close undecided positions after N candles (120 beat 180 in 12mo sweep)
     streak_throttle_after: int = 0,     # Halve risk after N consecutive losses (0=disabled)
     streak_throttle_mult: float = 0.5,  # Risk multiplier while throttled
+    regime_stability: int = 0,          # Require N consecutive identical BTC regime labels; unstable -> "unknown" (0=disabled)
     slippage_pct: float = 0.05,         # Adverse slippage per side (%)
     use_next_open: bool = True,         # Entry at next candle open (more realistic)
     fixed_size: float = 0.0,            # Fixed $ per trade (0=use risk% sizing)
@@ -797,6 +798,19 @@ def run_backtest(
     # regime_series stays empty and every lookup returns None (no gating).
     btc_candles_for_regime = all_candles.get("BTCUSDT", [])
     btc_regime_series = classify_regime_series(btc_candles_for_regime) if btc_candles_for_regime else []
+    # Regime-stability guard: a regime label only counts once it has held for N
+    # consecutive candles. Transitions (the exact moments that ran over the live
+    # book) become "unknown" -> regime-scoped rules fail closed, pooled rules
+    # still trade.
+    if regime_stability > 0 and btc_regime_series:
+        stable = []
+        for i, lab in enumerate(btc_regime_series):
+            window = btc_regime_series[max(0, i - regime_stability + 1):i + 1]
+            if len(window) == regime_stability and all(l == lab for l in window):
+                stable.append(lab)
+            else:
+                stable.append("unknown")
+        btc_regime_series = stable
     if btc_regime_series:
         log.info(f"✅ BTC regime series computed ({len(btc_regime_series)} candles)")
     else:
@@ -1795,6 +1809,7 @@ if __name__ == "__main__":
     parser.add_argument("--timeout-candles", type=int, default=120, help="Force-close undecided positions after N candles (default 120 = 5 days on 1h)")
     parser.add_argument("--streak-throttle-after", type=int, default=0, help="Throttle risk after N consecutive losses (0=disabled)")
     parser.add_argument("--streak-throttle-mult", type=float, default=0.5, help="Risk multiplier while streak-throttled (default 0.5)")
+    parser.add_argument("--regime-stability", type=int, default=0, help="Require N consecutive identical BTC regime labels before regime-scoped rules fire (0=disabled)")
     parser.add_argument("--slippage-pct", type=float, default=0.05, help="Adverse slippage %% per side (default: 0.05)")
     parser.add_argument("--fixed-size", type=float, default=0.0, help="Fixed $ per trade (0=use risk%% sizing)")
     parser.add_argument("--partial-tp", action="store_true", default=False, help="Close 50%% at 1R, move SL to breakeven (default: disabled)")
@@ -1869,6 +1884,7 @@ if __name__ == "__main__":
         timeout_candles=args.timeout_candles,
         streak_throttle_after=args.streak_throttle_after,
         streak_throttle_mult=args.streak_throttle_mult,
+        regime_stability=args.regime_stability,
         slippage_pct=args.slippage_pct,
         use_next_open=True,
         fixed_size=args.fixed_size,
