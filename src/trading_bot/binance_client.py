@@ -189,6 +189,19 @@ class BinanceClient:
             return None
         return float(data.get("totalWalletBalance", 0)) + float(data.get("totalUnrealizedProfit", 0))
 
+    def get_balance_breakdown(self) -> Optional[tuple]:
+        """(wallet_balance, floating_pnl) — wallet is realized-only and stable
+        between fills; floating is open-position unrealized. Split so Telegram
+        alerts reconcile message-to-message (equity alone drifts with the
+        market and reads as inconsistent)."""
+        data = self._request("GET", "/fapi/v2/account", signed=True)
+        if not data:
+            return None
+        return (
+            float(data.get("totalWalletBalance", 0)),
+            float(data.get("totalUnrealizedProfit", 0)),
+        )
+
     def get_open_positions(self) -> list:
         """All futures positions with non-zero size."""
         data = self._request("GET", "/fapi/v2/positionRisk", signed=True)

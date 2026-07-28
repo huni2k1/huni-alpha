@@ -318,9 +318,10 @@ def _format_close_footer(state: dict, client, dry_run: bool) -> str:
     footer = f"Today: <b>{today_pnl:+.2f}</b> USDT"
     if not dry_run:
         try:
-            equity = client.get_usdt_equity()
-            if equity is not None:
-                footer += f" | Equity: <b>${equity:,.2f}</b>"
+            breakdown = client.get_balance_breakdown()
+            if breakdown is not None:
+                wallet, floating = breakdown
+                footer += f" | Wallet: <b>${wallet:,.2f}</b> | Floating: {floating:+.2f}"
         except Exception:
             pass  # alert must never fail on a balance call
     return footer
@@ -1055,11 +1056,14 @@ def main():
     startup_account = ""
     if not dry_run:
         try:
-            eq = client.get_usdt_equity()
-            if eq is not None:
+            breakdown = client.get_balance_breakdown()
+            if breakdown is not None:
+                wallet, floating = breakdown
                 open_syms = [s.replace("USDT", "") for s in state["positions"]]
                 open_str = f"{len(open_syms)} ({', '.join(open_syms)})" if open_syms else "0"
-                startup_account = f"Equity: <b>${eq:,.2f}</b> | Open: {open_str}\n"
+                startup_account = (
+                    f"Wallet: <b>${wallet:,.2f}</b> | Floating: {floating:+.2f} | Open: {open_str}\n"
+                )
         except Exception:
             pass
     # Testnet called out only when it's ON — silence is the normal (live) state.
