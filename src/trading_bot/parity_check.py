@@ -140,8 +140,14 @@ def main() -> int:
     configure_logging()
 
     days = int(os.environ.get("PARITY_DAYS", "14"))
+    # Burn-in: the comparison backtest starts with empty slots and no
+    # cooldowns, while live starts mid-stream — so the window's first days
+    # mismatch structurally, not meaningfully. Simulate extra lead-in days
+    # (position timeout 5d + cooldown 2d < 10d) and only match the tail.
+    burnin = int(os.environ.get("PARITY_BURNIN_DAYS", "10"))
     now = datetime.now(timezone.utc)
     start = now - timedelta(days=days)
+    sim_start = start - timedelta(days=burnin)
 
     state_file = os.environ.get(
         "TRADER_STATE",
@@ -154,12 +160,15 @@ def main() -> int:
         log.error(f"parity_check: cannot read state file {state_file}: {exc}")
         return 1
 
+    # Match on ENTRY time within the window for both books, so a burned-in
+    # backtest and live are compared over identical candidate entries.
     live = [
         t for t in state.get("trade_log", [])
-        if (ts := _parse_ts(t.get("exit_time"))) and ts >= start
+        if (ts := _parse_ts(t.get("entry_time"))) and ts >= start
     ]
 
-    # Fresh backtest over the same window, prod-equivalent config.
+    # Fresh backtest with burn-in lead so slots/cooldowns are realistically
+    # occupied by the time the matching window opens.
     from .backtester import run_backtest
     from .signals.config import SYMBOLS
     results = run_backtest(
@@ -167,10 +176,13 @@ def main() -> int:
         months=1,  # ignored when start/end given
         account=1000.0,
         signal_engine="combined",
-        start_date=start,
+        start_date=sim_start,
         end_date=now,
     )
-    bt = results.get("trades", [])
+    bt = [
+        t for t in results.get("trades", [])
+        if (ts := _parse_ts(t.get("entry_time"))) and ts >= start
+    ]
 
     report, alerts = build_report(live, bt, days)
     plain = report.replace("<b>", "").replace("</b>", "")

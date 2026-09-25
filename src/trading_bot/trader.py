@@ -464,12 +464,20 @@ def _required_threshold(signal_engine: SignalEngine, strategy: str) -> Optional[
 # COOLDOWN HELPERS
 # ─────────────────────────────────────────────────────────────────
 def _in_cooldown(state: dict, symbol: str, cooldown_hours: int) -> bool:
-    """Live cooldown check — parses the stored timestamp, delegates the math."""
+    """Live cooldown check — parses the stored timestamp, delegates the math.
+
+    The anchor is floored to the hour so cooldowns expire on the candle grid,
+    exactly like the backtester's candle-count cooldown. Without flooring,
+    a cooldown set at 14:23 expired at 14:23 two days later, unlocking a
+    mid-hour entry on a candle the backtest wouldn't trade until 15:00 —
+    a systematic live/backtest divergence (26% of live entries were mid-hour).
+    """
     last_str = state["last_signal"].get(symbol)
     if not last_str:
         return False
     last_dt = datetime.fromisoformat(last_str)
-    elapsed_seconds = (datetime.now(timezone.utc) - last_dt).total_seconds()
+    anchor = last_dt.replace(minute=0, second=0, microsecond=0)
+    elapsed_seconds = (datetime.now(timezone.utc) - anchor).total_seconds()
     return _gate_in_cooldown(elapsed_seconds, cooldown_hours * 3600)
 
 

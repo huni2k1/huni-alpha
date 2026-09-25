@@ -1101,6 +1101,13 @@ def run_backtest(
             if at_max_positions(len(open_positions), max_positions):
                 break
 
+            # One position per symbol — matches the live trader, which skips
+            # any symbol it already holds. Without this, cooldown (48 candles)
+            # expiring before timeout (120) let the backtest stack a second
+            # position on the same symbol, which live can never do.
+            if any(p["symbol"] == symbol for p in open_positions):
+                continue
+
             # Cooldown check
             if in_cooldown(t - last_signal_idx[symbol], cooldown_candles):
                 continue
